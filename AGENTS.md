@@ -97,47 +97,58 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ SHA-256 calculado y documentado
 - ✅ Assets descargados localmente (logo, avatar, plano)
 - ✅ Proyecto Vite + React + TS + Tailwind scaffoldeado
-- ✅ `pnpm install` pasa
-- ✅ `pnpm lint` pasa
-- ✅ `pnpm build` pasa
+- ✅ `pnpm install` / `pnpm lint` / `pnpm build` pasan
 
-**Próxima fase**: Fase 2 — Réplica visual completa (las 9 vistas en React)
+**Fase 2 — Réplica visual completa**: COMPLETADA
+
+- ✅ Shell: Sidebar + Topbar + Layout + ThemeToggle
+- ✅ 9 vistas implementadas con datos mock
+- ✅ Tipos centralizados en `src/types/index.ts`
+- ✅ Datos mock centralizados en `src/data/mock.ts`
+- ✅ Navegación con React Router v6
+- ✅ Modal de activo funcional (6 pestañas)
+- ✅ Calendario visual (grid mensual)
+- ✅ Plano interactivo con marcadores arrastrables
+- ✅ Modo claro/oscuro funcional
+- ✅ `pnpm build` / `pnpm lint` / `pnpm typecheck` pasan
+
+**Próxima fase**: Fase 3 — Funcionalidad real de Activos e ítems (PostgreSQL + CRUD)
 
 ## Vistas
 
 | Vista | Estado | Validada |
 |-------|--------|----------|
-| Panel general (dashboard) | Pendiente | No |
-| Proyectos | Pendiente | No |
-| Activos e ítems | Pendiente | No |
-| Documentos | Pendiente | No |
-| Calendario | Pendiente | No |
-| Planos | Pendiente | No |
-| Ubicaciones | Pendiente | No |
-| Historial | Pendiente | No |
-| Configuración | Pendiente | No |
+| Panel general (dashboard) | Implementada (mock) | No |
+| Proyectos | Implementada (mock) | No |
+| Activos e ítems | Implementada (mock) | No |
+| Documentos | Implementada (mock) | No |
+| Calendario | Implementada (mock) | No |
+| Planos | Implementada (mock) | No |
+| Ubicaciones | Implementada (mock) | No |
+| Historial | Implementada (mock) | No |
+| Configuración | Implementada (mock) | No |
 
 ## Módulos
 
 | Módulo | Estado |
 |--------|--------|
-| Shell (sidebar + topbar + theme) | Pendiente |
-| Navegación | Pendiente |
-| Datos demostrativos | Pendiente |
+| Shell (sidebar + topbar + theme) | Implementado |
+| Navegación | Implementado |
+| Datos demostrativos | Implementado (mock) |
 | CRUD Activos → PostgreSQL | Pendiente |
 | Docker | Pendiente |
 
 ## Errores conocidos
 
-Ninguno (fase 1 limpia).
+Ninguno (fase 2 limpia).
 
 ## Último commit estable
 
-Pendiente de primer commit estructurado.
+Fase 2 — réplica visual completa (feat(ui): reproduce approved DocuCore views).
 
 ## Próximo paso exacto
 
-Implementar el shell de la aplicación (Sidebar, Topbar, Layout) y las 9 vistas en React con datos mock, replicando exactamente el HTML de referencia. Ver `docs/progress/CURRENT_STATUS.md` para detalle.
+Implementar el backend: Prisma schema con 13 entidades, Express API, migraciones y seed. Conectar la vista de Activos e ítems a PostgreSQL (CRUD real, filtros, paginación, modal dinámico, auditoría). Ver `docs/progress/CURRENT_STATUS.md` para detalle.
 
 ## Archivos protegidos
 
