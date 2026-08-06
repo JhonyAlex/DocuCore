@@ -7,6 +7,20 @@ export type DocStatus = 'Vencido' | 'Por vencer' | 'Vigente'
 export type DocType = 'Certificado' | 'Calibración' | 'Manual' | 'Acta' | 'Contrato'
 export type PulseColor = 'red' | 'amber' | 'green'
 
+export interface ItemFilters {
+  search: string
+  typeId: number | null
+  statusId: number | null
+  location: string | null
+}
+
+export interface Pagination {
+  page: number
+  totalPages: number
+  total: number
+  limit: number
+}
+
 export interface User {
   id: number
   name: string

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2020"],
+    "types": ["node"],
+    "esModuleInterop": true,
+    "noEmit": true,
+    "composite": false
+  },
+  "include": ["server"],
+  "exclude": ["src", "dist", "node_modules"]
+}

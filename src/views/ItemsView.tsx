@@ -1,11 +1,62 @@
-import { useState } from 'react'
-import type { Item } from '@/types'
+import { useCallback, useEffect, useState } from 'react'
+import type { Item, ItemFilters, Pagination } from '@/types'
 import ItemsFilters from '@/components/ItemsFilters'
 import ItemsTable from '@/components/ItemsTable'
 import ItemModal from '@/components/ItemModal'
+import { fetchItems, type ItemListParams } from '@/lib/api'
+import { mapApiItemToDisplay } from '@/lib/itemMappers'
+
+const LIMIT = 10
 
 export default function ItemsView() {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null)
+  const [items, setItems] = useState<Item[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [filters, setFilters] = useState<ItemFilters>({
+    search: '',
+    typeId: null,
+    statusId: null,
+    location: null,
+  })
+
+  const loadItems = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params: ItemListParams = {
+        page,
+        limit: LIMIT,
+        search: filters.search || undefined,
+        typeId: filters.typeId ?? undefined,
+        statusId: filters.statusId ?? undefined,
+        location: filters.location ?? undefined,
+      }
+      const res = await fetchItems(params)
+      setItems(res.data.map(mapApiItemToDisplay))
+      setTotal(res.total)
+      setTotalPages(res.totalPages)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al cargar ítems')
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }, [page, filters])
+
+  useEffect(() => {
+    void loadItems()
+  }, [loadItems])
+
+  const handleFilterChange = (next: ItemFilters) => {
+    setFilters(next)
+    setPage(1)
+  }
+
+  const pagination: Pagination = { page, totalPages, total, limit: LIMIT }
 
   return (
     <section className="fade-in">
@@ -26,8 +77,15 @@ export default function ItemsView() {
         </div>
       </div>
 
-      <ItemsFilters />
-      <ItemsTable onRowClick={setSelectedItem} />
+      <ItemsFilters filters={filters} onFilterChange={handleFilterChange} />
+      <ItemsTable
+        items={items}
+        loading={loading}
+        error={error}
+        pagination={pagination}
+        onRowClick={setSelectedItem}
+        onPageChange={setPage}
+      />
       <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
     </section>
   )

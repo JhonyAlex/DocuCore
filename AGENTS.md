@@ -112,7 +112,22 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ Modo claro/oscuro funcional
 - ✅ `pnpm build` / `pnpm lint` / `pnpm typecheck` pasan
 
-**Próxima fase**: Fase 3 — Funcionalidad real de Activos e ítems (PostgreSQL + CRUD)
+**Fase 3 — Funcionalidad real de Activos e ítems**: EN PROGRESO
+
+- ✅ Prisma schema con 13 entidades (PostgreSQL)
+- ✅ Migración inicial aplicada
+- ✅ Seed reproducible (6 items, 5 proyectos, 5 tipos, 5 estados, 5 ubicaciones)
+- ✅ Express API con Zod (GET/POST/PUT/PATCH /api/items)
+- ✅ CRUD verificado: crear, editar, cambiar estado, filtrar, paginar
+- ✅ Auditoría automática en operaciones de escritura
+- ✅ API client en frontend (`src/lib/api.ts`)
+- ✅ CSS class mapping (`src/lib/itemMappers.ts`) — fidelidad visual
+- ✅ ItemsView conectada al API (lectura + filtros + paginación)
+- 🔲 UI: botón "Nuevo ítem" → POST
+- 🔲 UI: ItemModal "Editar" → PUT
+- 🔲 UI: ItemModal "Dar de baja" → PATCH status
+
+**Próxima fase**: Fase 4 — Calidad y despliegue (tests + Docker + Dokploy)
 
 ## Vistas
 
@@ -135,8 +150,8 @@ docker compose up    # Levantar todo (DB + app)
 | Shell (sidebar + topbar + theme) | Implementado |
 | Navegación | Implementado |
 | Datos demostrativos | Implementado (mock) |
-| CRUD Activos → PostgreSQL | Pendiente |
-| Docker | Pendiente |
+| CRUD Activos → PostgreSQL | API implementada, UI lectura |
+| Docker | Implementado (PostgreSQL) |
 
 ## Errores conocidos
 
