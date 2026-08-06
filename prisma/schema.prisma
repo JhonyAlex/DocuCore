@@ -1,0 +1,239 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  BOOLEAN
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  role      String
+  initials  String
+  color     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  itemsOwned  Item[]          @relation("ItemResponsible")
+  memberships ProjectMember[]
+  auditLogs   AuditLog[]
+}
+
+model Project {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  name          String
+  description   String
+  status        ProjectStatus  @default(ACTIVE)
+  gradient      String
+  assetCount    Int            @default(0)
+  userCount     Int            @default(0)
+  locationCount Int            @default(0)
+  docCount      Int?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  items      Item[]
+  members    ProjectMember[]
+  documents  Document[]
+  events     Event[]
+  locations  Location[]
+}
+
+model ProjectMember {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  userId    Int
+  role      String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model ItemType {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items            Item[]
+  fieldDefinitions DynamicFieldDefinition[]
+}
+
+model DynamicFieldDefinition {
+  id         Int       @id @default(autoincrement())
+  itemTypeId Int
+  fieldName  String
+  fieldType  FieldType @default(TEXT)
+  required   Boolean   @default(false)
+  options    String[]
+  createdAt  DateTime  @default(now())
+
+  itemType ItemType @relation(fields: [itemTypeId], references: [id], onDelete: Cascade)
+
+  @@index([itemTypeId])
+}
+
+model Item {
+  id               Int       @id @default(autoincrement())
+  code             String    @unique
+  name             String
+  serialNumber     String
+  serialLabel      String
+  installDate      DateTime
+  typeId           Int
+  statusId         Int
+  location         String
+  projectId        Int
+  responsibleId    Int
+  initials         String
+  dynamicFields    Json?
+  nextEventLabel   String
+  nextEventDate    String
+  nextEventUrgency String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  type        ItemType  @relation(fields: [typeId], references: [id])
+  status      Status    @relation(fields: [statusId], references: [id])
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible User      @relation("ItemResponsible", fields: [responsibleId], references: [id])
+  documents   Document[]
+  events      Event[]
+  markers     FloorPlanMarker[]
+
+  @@index([typeId])
+  @@index([statusId])
+  @@index([projectId])
+  @@index([responsibleId])
+  @@index([location])
+}
+
+model Status {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  pulseDot  String?
+  createdAt DateTime @default(now())
+
+  items Item[]
+}
+
+model Document {
+  id         Int      @id @default(autoincrement())
+  name       String
+  size       String
+  uploadInfo String
+  type       String
+  version    String
+  issueDate  String
+  expiryDate String
+  status     String
+  fileFormat String
+  itemId     Int?
+  projectId  Int
+  createdAt  DateTime @default(now())
+
+  item    Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([projectId])
+}
+
+model Event {
+  id        Int      @id @default(autoincrement())
+  title     String
+  date      DateTime
+  type      String
+  projectId Int
+  itemId    Int?
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  item    Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([itemId])
+}
+
+model Location {
+  id          Int      @id @default(autoincrement())
+  name        String
+  parent      String
+  responsible String
+  assetCount  Int
+  surface     String
+  code        String   @unique
+  projectId   Int
+  createdAt   DateTime @default(now())
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  floorPlan FloorPlan?
+}
+
+model FloorPlan {
+  id          Int      @id @default(autoincrement())
+  name        String
+  locationId  Int      @unique
+  imageUrl    String
+  version     String
+  uploadedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  location Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  markers  FloorPlanMarker[]
+}
+
+model FloorPlanMarker {
+  id          Int      @id @default(autoincrement())
+  floorPlanId Int
+  itemId      Int?
+  left        Float
+  top         Float
+  code        String
+  label       String
+  pinColor    String
+  dotColor    String
+  animate     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  item       Item?     @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([floorPlanId])
+  @@index([itemId])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  action    String
+  entityId  String
+  detail    String
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
