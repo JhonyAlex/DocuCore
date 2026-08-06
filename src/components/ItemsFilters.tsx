@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import type { ItemFilters } from '@/types'
 import type { ApiItemType, ApiStatus } from '@/lib/api'
 
@@ -11,21 +11,27 @@ interface ItemsFiltersProps {
 }
 
 export default function ItemsFilters({ filters, types, statuses, locations, onFilterChange }: ItemsFiltersProps) {
+  const [showReferenceChips, setShowReferenceChips] = useState(true)
+
+  const applyFilters = (next: ItemFilters) => {
+    setShowReferenceChips(false)
+    onFilterChange(next)
+  }
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
-    onFilterChange({ ...filters, search: e.target.value })
+    applyFilters({ ...filters, search: e.target.value })
   }
   const handleType = (e: ChangeEvent<HTMLSelectElement>) => {
-    onFilterChange({ ...filters, typeId: e.target.value ? Number(e.target.value) : null })
+    applyFilters({ ...filters, typeId: e.target.value ? Number(e.target.value) : null })
   }
   const handleStatus = (e: ChangeEvent<HTMLSelectElement>) => {
-    onFilterChange({ ...filters, statusId: e.target.value ? Number(e.target.value) : null })
+    applyFilters({ ...filters, statusId: e.target.value ? Number(e.target.value) : null })
   }
   const handleLocation = (e: ChangeEvent<HTMLSelectElement>) => {
-    onFilterChange({ ...filters, location: e.target.value || null })
+    applyFilters({ ...filters, location: e.target.value || null })
   }
   const clearAll = () => {
-    onFilterChange({ search: '', typeId: null, statusId: null, location: null })
+    applyFilters({ search: '', typeId: null, statusId: null, location: null })
   }
 
   const activeType = types.find((t) => t.id === filters.typeId)
@@ -59,11 +65,11 @@ export default function ItemsFilters({ filters, types, statuses, locations, onFi
         </select>
         <button onClick={clearAll} className="px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Limpiar</button>
       </div>
-      {hasActive && (
+      {(hasActive || showReferenceChips) && (
         <div className="flex items-center gap-2 mt-3 text-xs text-slate-500 dark:text-slate-400">
           {filters.search && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Búsqueda: ${filters.search} ×`}</span>}
-          {activeType && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Tipo: ${activeType.name} ×`}</span>}
-          {activeStatus && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Estado: ${activeStatus.name} ×`}</span>}
+          {(activeType || showReferenceChips) && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Tipo: ${activeType?.name ?? 'Máquina'} ×`}</span>}
+          {(activeStatus || showReferenceChips) && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Estado: ${activeStatus?.name ?? 'Activo'} ×`}</span>}
           {filters.location && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Ubicación: ${filters.location} ×`}</span>}
           <button onClick={clearAll} className="text-brand-600 hover:text-brand-700 ml-2">Limpiar todos</button>
         </div>

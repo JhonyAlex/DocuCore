@@ -101,7 +101,7 @@ async function main(): Promise<void> {
     })
   }
 
-  console.log('  • Items (6)')
+  console.log('  • Items (142)')
   const itemsData: Array<{
     code: string
     name: string
@@ -144,6 +144,36 @@ async function main(): Promise<void> {
       },
     })
   }
+
+  const [project, machineType, activeStatus, responsible] = await Promise.all([
+    prisma.project.findUniqueOrThrow({ where: { code: PROJECT_CODE }, select: { id: true } }),
+    prisma.itemType.findUniqueOrThrow({ where: { name: 'Máquina' }, select: { id: true } }),
+    prisma.status.findUniqueOrThrow({ where: { name: 'Activo' }, select: { id: true } }),
+    prisma.user.findUniqueOrThrow({ where: { email: 'jr@docucore.local' }, select: { id: true } }),
+  ])
+
+  // The canonical records stay first so the reference page remains stable.
+  await prisma.item.createMany({
+    data: Array.from({ length: 136 }, (_, index) => {
+      const sequence = String(index + 1).padStart(3, '0')
+      return {
+        code: `AST-${sequence}`,
+        name: `Activo industrial ${sequence}`,
+        serialNumber: `AST-SN-${sequence}`,
+        serialLabel: `SN: AST-SN-${sequence}`,
+        installDate: new Date(Date.UTC(2025, index % 12, (index % 28) + 1)),
+        typeId: machineType.id,
+        statusId: activeStatus.id,
+        location: 'Planta 1 · Nave A',
+        projectId: project.id,
+        responsibleId: responsible.id,
+        initials: 'AI',
+        nextEventLabel: 'Mantenimiento preventivo',
+        nextEventDate: 'Pendiente de programar',
+        nextEventUrgency: 'slate',
+      }
+    }),
+  })
 
   console.log('  • Floor plan + markers (6)')
   const floorPlan = await prisma.floorPlan.create({

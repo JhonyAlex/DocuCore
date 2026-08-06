@@ -15,6 +15,7 @@ interface ItemModalProps {
 
 export default function ItemModal({ item, statuses, onClose, onEdit, onChangeStatus }: ItemModalProps) {
   const [activeTab, setActiveTab] = useState(0)
+  const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [changingStatus, setChangingStatus] = useState(false)
   if (!item) return null
@@ -60,15 +61,19 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
           <div className="p-5 overflow-y-auto scrollbar-thin">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
               <div className="md:col-span-2 grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                    <div className="text-xs text-slate-500">Estado</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <StatusChip label={displayItem.status} chipClass={displayItem.statusChipClass} pulseDot={displayItem.pulseDot} />
-                      <select value={item.statusId} onChange={(event) => void changeStatus(Number(event.target.value))} disabled={changingStatus || statuses.length === 0} aria-label="Cambiar estado" className="px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs disabled:opacity-40">
-                        {statuses.map((status) => <option key={status.id} value={status.id}>{status.name}</option>)}
-                      </select>
+                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                      <div className="text-xs text-slate-500">Estado</div>
+                      <div className="relative mt-1 inline-block">
+                        <button type="button" onClick={() => setShowStatusSelector((current) => !current)} aria-label="Cambiar estado" className="block">
+                          <StatusChip label={displayItem.status} chipClass={displayItem.statusChipClass} pulseDot={displayItem.pulseDot} />
+                        </button>
+                        {showStatusSelector && (
+                          <select value={item.statusId} onChange={(event) => void changeStatus(Number(event.target.value))} disabled={changingStatus || statuses.length === 0} aria-label="Seleccionar estado" className="absolute left-0 top-full z-10 mt-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs disabled:opacity-40">
+                            {statuses.map((status) => <option key={status.id} value={status.id}>{status.name}</option>)}
+                          </select>
+                        )}
+                      </div>
                     </div>
-                  </div>
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                     <div className="text-xs text-slate-500">Tipo</div>
                     <div className="mt-1 text-sm font-medium">{displayItem.type}</div>

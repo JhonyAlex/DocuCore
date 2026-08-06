@@ -10,7 +10,7 @@ import { mapApiItemToDisplay } from '@/lib/itemMappers'
 import { currentProject, currentUser } from '@/data/mock'
 import { useItemCreateRequest } from '@/contexts/ItemCreateContext'
 
-const LIMIT = 10
+const LIMIT = 6
 
 export default function ItemsView() {
   const { createRequested, clearCreateRequest } = useItemCreateRequest()
