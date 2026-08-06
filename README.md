@@ -31,7 +31,13 @@ pnpm db:migrate
 pnpm db:seed
 ```
 
-`pnpm db:seed` es determinista: reinicia las identidades y restaura los datos canónicos. No lo ejecutes contra una base de datos con datos no respaldados.
+`pnpm db:seed` es determinista: reinicia las identidades, restaura los activos/eventos/documentos canónicos y crea ficheros locales mínimos para sus versiones. En este entorno pre-release puede regenerarse la base y los datos temporales.
+
+## Documentos
+
+`Document` es el registro lógico y `DocumentVersion` conserva cada fichero de forma inmutable. La versión con el número más alto es la actual: de ella se calculan el estado (`Vigente`, `Por vencer` o `Vencido`) y el vencimiento que alimenta los próximos eventos del activo. Los documentos sin vencimiento no generan eventos.
+
+La API expone listado paginado y filtrable, KPIs, detalle con historial, subida, nueva versión, edición de metadatos/relación, descarga actual o histórica y eliminación bajo `/api/documents`. Las subidas son `multipart/form-data`, aceptan PDF, XLSX, XLS y TXT, y se limitan a 10 MB. Los nombres internos se generan con UUID; nunca se usa el nombre proporcionado para construir una ruta.
 
 ## Comandos
 
@@ -76,8 +82,11 @@ Variables principales:
 | `POSTGRES_USER` | Usuario de PostgreSQL |
 | `POSTGRES_PASSWORD` | Contraseña de PostgreSQL |
 | `POSTGRES_DB` | Base de datos PostgreSQL |
+| `DOCUMENT_STORAGE_PATH` | Directorio local de versiones; por defecto `./data/documents` en host y `/app/data/documents` en Docker |
 
 El health endpoint es `GET /api/health` y devuelve `{"status":"ok"}`.
+
+Compose conserva las versiones en el volumen independiente `document_data`. Playwright usa `test-results/e2e-documents`, que se limpia antes y después de cada suite, además de su PostgreSQL aislado en `:5436`.
 
 ## Referencia y activos
 

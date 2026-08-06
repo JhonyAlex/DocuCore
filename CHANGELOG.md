@@ -4,6 +4,10 @@
 
 ### Added
 
+- Módulo documental real: entidad lógica `Document`, historial inmutable `DocumentVersion`, almacenamiento local seguro, API multipart y descargas actual/históricas.
+- Relación Documento-Activo desde la interfaz, edición de metadatos, nueva versión e historial accesible.
+- E2E Documento ↔ Activo que verifica bytes descargados, versiones, persistencia, auditoría implícita y actualización/retiro de próximos eventos.
+- Volumen Docker `document_data` y almacenamiento E2E aislado para ficheros documentales.
 - Derivación de próximos eventos desde relaciones `Event`, vencimientos de `Document` y campos dinámicos de tipo fecha.
 - Lista relacional de “Próximos eventos” dentro de la ficha del activo, con origen, fecha, días y urgencia calculados.
 - PostgreSQL E2E aislado del volumen y puerto de desarrollo.
@@ -15,6 +19,7 @@
 
 ### Changed
 
+- El vencimiento y estado del documento se calculan exclusivamente desde la versión más reciente; los próximos eventos del activo ya consultan esa versión.
 - El alta y la edición de ítems ya no aceptan “Próximo evento”, “Fecha del evento” ni “Urgencia”; son datos derivados de solo lectura.
 - La respuesta de ítems expone `nextEvents`, `documentCount` y `eventCount` calculados desde relaciones vigentes.
 - Express puede servir `dist/` en producción sin capturar rutas `/api/*`.

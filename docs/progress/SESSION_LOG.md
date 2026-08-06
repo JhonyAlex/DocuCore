@@ -37,3 +37,11 @@ La anotación original de 25 fallos correspondía a una ejecución intermedia y 
 - Tras la autorización pre-release del usuario, se registró en `AGENTS.md` la libertad temporal para migraciones destructivas, reseeds y eliminación de estructuras obsoletas dentro de DocuCore.
 - Se aplicó `20260806120000_derive_item_events` a PostgreSQL persistente, se regeneró el seed y se reconstruyó `docucore-app`.
 - Verificación real final: 2 migraciones aplicadas, 142 ítems, 4 eventos, 3 documentos, `CNC-05` con dos próximos eventos derivados y ambos servicios Docker saludables.
+
+## 2026-08-06 — DOC-01 Documentos funcionales
+
+- Se sustituyó el modelo plano de `Document` por la entidad lógica y `DocumentVersion`; la migración nueva `20260806190000_document_versions` elimina el modelo temporal anterior sin modificar migraciones aplicadas.
+- Se añadió almacenamiento local configurable con `DOCUMENT_STORAGE_PATH`, UUID internos, comprobación anti path-traversal, límite de 10 MB y PDF/XLSX/XLS/TXT permitidos; Compose monta `document_data` y E2E usa un directorio aislado.
+- La API implementa listado/filtros/paginación, KPIs calculados, detalle/versiones, subida multipart, nueva versión, edición de relación, descargas actual/histórica y eliminación, con auditoría en cada escritura.
+- La vista Documentos y la ficha de Activos consumen los datos reales. La versión vigente controla los vencimientos y próximos eventos; un documento sin vencimiento no genera evento.
+- E2E comprobó bytes de v1/v2, historial, relación con `AST-001`, actualización del vencimiento, persistencia tras recarga y retirada de la relación sin errores o warnings de consola.

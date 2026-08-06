@@ -147,6 +147,15 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ README, Dokploy, changelog y documentación operativa
 - ✅ Regresión visual: 30 de 30 pares bajo el umbral explícito de 0.5% (máximo: Activos 1440 × 1000 oscuro, 0.3238%)
 
+**DOC-01 — Documentos funcionales**: FUNCIONAL, pendiente de regresión visual
+
+- ✅ `Document` + `DocumentVersion`, migración nueva, seed canónico y versión actual por número más alto
+- ✅ Almacenamiento local seguro configurable, volumen Docker de documentos y directorio E2E aislado
+- ✅ API multipart con versiones, metadatos/relación, descargas y auditoría
+- ✅ Vista Documentos + ficha de activo conectadas a relaciones reales
+- ✅ E2E de subida, versiones, descarga por bytes, persistencia y actualización/retiro de evento derivado
+- ⏳ Regresión visual pendiente: no se ha elevado el umbral de 0,5% ni modificado baselines
+
 ## Vistas
 
 | Vista | Estado | Validada |
@@ -154,7 +163,7 @@ docker compose up    # Levantar todo (DB + app)
 | Panel general (dashboard) | Implementada (mock) | Visual (3 objetivos) |
 | Proyectos | Implementada (mock) | Visual (3 objetivos) |
 | Activos e ítems | Implementada (PostgreSQL) | Visual + E2E |
-| Documentos | Implementada (mock) | Visual (3 objetivos) |
+| Documentos | Implementada (PostgreSQL + almacenamiento local) | E2E; visual pendiente |
 | Calendario | Implementada (mock) | Visual (3 objetivos) |
 | Planos | Implementada (mock) | Visual (3 objetivos) |
 | Ubicaciones | Implementada (mock) | Visual (3 objetivos) |
@@ -169,6 +178,7 @@ docker compose up    # Levantar todo (DB + app)
 | Navegación | Implementado |
 | Datos demostrativos | Implementado (mock) |
 | CRUD Activos → PostgreSQL | Implementado y verificado E2E |
+| Documentos → PostgreSQL + archivos | Implementado y verificado E2E |
 | Docker | Producción validada (app + PostgreSQL) |
 
 ## Errores conocidos
@@ -181,7 +191,7 @@ Auditoría funcional local y endurecimiento de Activos (`68f2cde`).
 
 ## Próximo paso exacto
 
-Revisar los cambios pendientes y priorizar `DOC-01`, `CAL-01` o `ITEM-02` para crear desde la interfaz las relaciones que alimentan los próximos eventos de `ITEM-03`.
+Priorizar `CAL-01` o `ITEM-02`; los vencimientos documentales ya alimentan de forma validada los próximos eventos de `ITEM-03`.
 
 ## Archivos protegidos
 

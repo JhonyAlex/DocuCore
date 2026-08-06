@@ -4,12 +4,10 @@
 
 ## Estado verificado
 
-- `main`: `4d4ea9a` (`Merge pull request #1 from JhonyAlex/feat/docucore-implementation`). El PR inicial ya está fusionado.
-- Rama de auditoría: `test/local-dogfood`.
-- Commit funcional de la auditoría: `68f2cde` (`fix(items): harden audited asset workflows`).
+- `main`: punto de partida `4188d9d` (`feat(items): derive upcoming events from relations`).
 - HTML protegido: 126104 bytes; SHA-256 `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`.
 - PostgreSQL local: `127.0.0.1:5435/docucore`, contenedor `docucore-db` saludable.
-- Base regenerada al finalizar: 142 ítems, 4 eventos relacionados, 3 documentos fechados, 0 códigos `QA-*` y 5 auditorías canónicas.
+- Base regenerada: 142 ítems, 4 eventos relacionados y 207 documentos lógicos (cinco asociados y un conjunto documental canónico), 0 códigos `QA-*` y 5 auditorías canónicas.
 - Regla pre-release activa: las migraciones destructivas, reseeds y retiradas de estructuras obsoletas necesarias están autorizadas hasta revocación expresa del usuario.
 
 ## Entorno auditado
@@ -32,7 +30,7 @@
 | Panel general | VISUAL MOCK | Ruta, tema y fidelidad validados; KPIs, periodo, exportación y accesos son demostrativos. |
 | Proyectos | VISUAL MOCK | Ruta y tarjetas validadas; alta/apertura no tienen persistencia. |
 | Activos e ítems | VALIDADO | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. |
-| Documentos | VISUAL MOCK | Tabla y fidelidad validadas; subida/descarga no tienen backend funcional. |
+| Documentos | FUNCIONAL | PostgreSQL, versiones inmutables, subida multipart, edición/relación, descarga y almacenamiento local persistente; E2E Documento-Activo verde. La regresión visual sigue pendiente. |
 | Calendario | VISUAL MOCK | Calendario y fidelidad validados; vistas/eventos no persisten. |
 | Planos | PARCIAL | Marcadores arrastrables en memoria; guardar, deshacer/rehacer, capas y versiones no persisten. |
 | Ubicaciones | VISUAL MOCK | Jerarquía y enlaces visuales; CRUD y navegación de plano no están conectados. |
@@ -66,7 +64,8 @@ La mayor diferencia visual actual es Activos 1440 × 1000 oscuro: 0,3238%, por d
 
 ## Limitaciones y avisos conocidos
 
-- `ITEM-03` ya deriva próximos eventos en lectura y está validado con relaciones canónicas, pero sigue `PARCIAL` hasta disponer de CRUD funcional para documentos, calendario y campos dinámicos que permita crear todas las relaciones desde la interfaz.
+- `ITEM-03` está VALIDADO para la fuente documental: el E2E crea, versiona y retira una relación documental y comprueba que los próximos eventos cambian de forma persistente. Calendario y campos dinámicos siguen pendientes de sus módulos propios.
+- Los documentos se guardan bajo `DOCUMENT_STORAGE_PATH`; Compose monta el volumen persistente `document_data` y Playwright usa un directorio temporal aislado.
 - El bundle de producción es de 569,03 kB y mantiene el aviso no bloqueante de Vite sobre chunks de más de 500 kB.
 - Node 26 muestra `DEP0205` desde el cargador de `tsx`; no falla las pruebas, pero conviene validar el proyecto también con la versión LTS soportada.
 - Los controles declarados como `VISUAL MOCK` o `PARCIAL` no deben presentarse como funcionales.
