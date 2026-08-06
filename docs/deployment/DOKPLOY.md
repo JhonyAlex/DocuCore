@@ -7,7 +7,7 @@ Dokploy puede desplegar DocuCore directamente desde el `docker-compose.yml` del 
 1. Crea una aplicación Compose desde el repositorio y selecciona `docker-compose.yml`.
 2. Define `POSTGRES_PASSWORD` con un valor fuerte y persistente.
 3. Define `APP_PORT` solo si el proxy o el host requieren un puerto distinto de `3001`.
-4. Mantén `DB_HOST_PORT=5435` únicamente si necesitas acceso directo desde el host; el servicio `app` siempre usa `db:5432` internamente.
+4. Define `DB_HOST_PORT` para elegir el puerto de PostgreSQL publicado en el host; Compose siempre publica ese puerto. El servicio `app` usa `db:5432` internamente y no depende de este valor.
 5. Despliega el stack.
 
 ## Variables
@@ -18,7 +18,7 @@ Dokploy puede desplegar DocuCore directamente desde el `docker-compose.yml` del 
 | `POSTGRES_PASSWORD` | Sí en producción | `docucore` | Contraseña de PostgreSQL |
 | `POSTGRES_DB` | No | `docucore` | Nombre de base de datos |
 | `APP_PORT` | No | `3001` | Puerto host de Express y SPA |
-| `DB_HOST_PORT` | No | `5435` | Exposición host opcional de PostgreSQL |
+| `DB_HOST_PORT` | No | `5435` | Puerto de PostgreSQL publicado en el host; no desactiva la publicación |
 
 No definas `DATABASE_URL` para el servicio `app` en Dokploy salvo que reemplaces intencionalmente la base incluida: Compose la configura con el hostname interno `db` y el puerto `5432`.
 
