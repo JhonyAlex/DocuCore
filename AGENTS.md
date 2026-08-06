@@ -166,11 +166,11 @@ Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; ev
 
 ## Último commit estable
 
-Fase 4 — calidad, fidelidad visual y despliegue (`docs(agents): update project continuity`).
+Auditoría funcional local y endurecimiento de Activos (`68f2cde`).
 
 ## Próximo paso exacto
 
-Instalar GitHub CLI (`gh`), localizar o crear una issue con `status:approved`, y abrir el Pull Request de `feat/docucore-implementation`. El push a `origin/feat/docucore-implementation` está verificado. Como mejora no bloqueante, evaluar code splitting para el bundle de producción.
+Revisar y subir `test/local-dogfood`, abrir un Pull Request hacia `main` y priorizar el siguiente módulo funcional desde `docs/progress/ROADMAP.md`. Como mejora no bloqueante, evaluar code splitting para el bundle de producción.
 
 ## Archivos protegidos
 
