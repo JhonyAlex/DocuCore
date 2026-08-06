@@ -4,6 +4,16 @@
 
 DocuCore es una plataforma de gestión documental y de activos industriales. Convierte un prototipo HTML aprobado en una aplicación real: React + TypeScript + PostgreSQL + Docker, con fidelidad visual total al diseño original.
 
+## Regla temporal de desarrollo pre-release
+
+> Hasta que el usuario la revoque expresamente, DocuCore se considera un entorno de desarrollo sin información productiva que deba preservarse.
+
+- Están autorizadas las migraciones destructivas, reinicios de base de datos, reseeds, eliminación o traslado de campos, tablas, archivos y datos obsoletos que sean necesarios para avanzar en la arquitectura correcta.
+- No se debe bloquear, aplazar ni limitar un cambio únicamente por un riesgo de pérdida de información del entorno actual, ni exigir copias de seguridad preventivas para ejecutar trabajo solicitado dentro de DocuCore.
+- Se debe priorizar el modelo final correcto sobre la compatibilidad con datos temporales, mocks, seeds o estructuras anteriores.
+- Esta autorización no permite modificar el HTML protegido, desactivar pruebas, alterar migraciones ya aplicadas ni ampliar el alcance fuera de DocuCore; esos límites siguen vigentes.
+- Toda eliminación o migración debe quedar documentada y validada, aunque no requiera confirmación previa por conservación de datos.
+
 ## Regla de fidelidad al HTML
 
 > Ningún agente puede rediseñar, reinterpretar, simplificar o sustituir la interfaz del HTML de referencia sin autorización expresa del usuario.
@@ -126,6 +136,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ UI: botón "Nuevo ítem" → POST
 - ✅ UI: ItemModal "Editar" → PUT
 - ✅ UI: ItemModal "Dar de baja" → PATCH status
+- ✅ Próximos eventos derivados de eventos, documentos y campos dinámicos fechados; sin edición manual en `Item`
 - ✅ E2E real: crear, editar, dar de baja y comprobar persistencia (Playwright, 1440 × 1000, 0 errores de consola)
 
 **Fase 4 — Calidad y despliegue**: COMPLETADA
@@ -134,7 +145,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ Playwright E2E: navegación, tema, modal, filtros/paginación, CRUD y consola
 - ✅ Dockerfile, Compose de aplicación, migraciones al inicio y healthchecks
 - ✅ README, Dokploy, changelog y documentación operativa
-- ✅ Regresión visual: 30 de 30 pares bajo el umbral explícito de 0.5% (máximo: Activos 1440 × 1000 oscuro, 0.2862%)
+- ✅ Regresión visual: 30 de 30 pares bajo el umbral explícito de 0.5% (máximo: Activos 1440 × 1000 oscuro, 0.3238%)
 
 ## Vistas
 
@@ -170,7 +181,7 @@ Auditoría funcional local y endurecimiento de Activos (`68f2cde`).
 
 ## Próximo paso exacto
 
-Revisar y subir `test/local-dogfood`, abrir un Pull Request hacia `main` y priorizar el siguiente módulo funcional desde `docs/progress/ROADMAP.md`. Como mejora no bloqueante, evaluar code splitting para el bundle de producción.
+Revisar los cambios pendientes y priorizar `DOC-01`, `CAL-01` o `ITEM-02` para crear desde la interfaz las relaciones que alimentan los próximos eventos de `ITEM-03`.
 
 ## Archivos protegidos
 

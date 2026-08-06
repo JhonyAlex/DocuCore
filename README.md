@@ -49,7 +49,7 @@ pnpm db:deploy       # Migraciones pendientes, apto para despliegue
 pnpm db:seed         # Datos canónicos reproducibles
 ```
 
-Los flujos Playwright arrancan la API, Vite y un servidor de solo lectura del HTML de referencia. Exigen Docker para PostgreSQL, aplican `prisma migrate deploy`, siembran antes de ejecutar y vuelven a sembrar al finalizar.
+Los flujos Playwright arrancan la API, Vite y un servidor de solo lectura del HTML de referencia. Exigen Docker para PostgreSQL, aplican `prisma migrate deploy`, siembran antes de ejecutar y vuelven a sembrar al finalizar. Usan el proyecto Compose aislado `docucore-e2e`, el contenedor `docucore-e2e-db`, el puerto `5436` y un volumen propio; no reinician ni siembran la base de desarrollo de `5435`.
 
 ## Regresión visual
 

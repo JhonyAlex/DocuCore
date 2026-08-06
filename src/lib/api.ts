@@ -18,6 +18,31 @@ export interface ApiUserRef {
   color: string
 }
 
+export interface ApiItemEvent {
+  id: string
+  title: string
+  date: string
+  daysUntil: number
+  urgency: 'amber' | 'red' | 'slate'
+  source: 'event' | 'document' | 'dynamic-field'
+  sourceLabel: string
+}
+
+export interface ItemWriteInput {
+  code: string
+  name: string
+  serialNumber: string
+  serialLabel: string
+  installDate: string
+  typeId: number
+  statusId: number
+  location: string
+  projectId: number
+  responsibleId: number
+  initials: string
+  dynamicFields?: Record<string, unknown>
+}
+
 export interface ApiItem {
   id: number
   code: string
@@ -31,9 +56,9 @@ export interface ApiItem {
   projectId: number
   responsibleId: number
   initials: string
-  nextEventLabel: string
-  nextEventDate: string
-  nextEventUrgency: string
+  nextEvents: ApiItemEvent[]
+  documentCount: number
+  eventCount: number
   type?: { id: number; name: string }
   status?: { id: number; name: string; pulseDot: string | null }
   responsible?: ApiUserRef
@@ -83,11 +108,11 @@ export function fetchItem(id: number): Promise<ApiItem> {
   return request<ApiItem>(`/items/${id}`)
 }
 
-export function createItem(data: Omit<ApiItem, 'id'>): Promise<ApiItem> {
+export function createItem(data: ItemWriteInput): Promise<ApiItem> {
   return request<ApiItem>('/items', { method: 'POST', body: JSON.stringify(data) })
 }
 
-export function updateItem(id: number, data: Partial<ApiItem>): Promise<ApiItem> {
+export function updateItem(id: number, data: Partial<ItemWriteInput>): Promise<ApiItem> {
   return request<ApiItem>(`/items/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 

@@ -1,9 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import type { ApiItem, ApiStatus } from '@/lib/api'
-import { mapApiItemToDisplay } from '@/lib/itemMappers'
+import { formatApiDate, mapApiItemEventToDisplay, mapApiItemToDisplay } from '@/lib/itemMappers'
 
 const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Historial', 'Plano']
+
+const eventCardStyles = {
+  amber: 'bg-amber-50/70 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50',
+  red: 'bg-red-50/70 dark:bg-red-900/20 border-red-100 dark:border-red-900/50',
+  slate: 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700',
+}
+
+const eventIconStyles = {
+  amber: 'bg-amber-100 dark:bg-amber-900/40 text-amber-600',
+  red: 'bg-red-100 dark:bg-red-900/40 text-red-600',
+  slate: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+  brand: 'bg-brand-100 dark:bg-brand-900/40 text-brand-600',
+}
+
+const sourceCardStyles = {
+  brand: 'bg-brand-50/50 dark:bg-brand-900/20 border-brand-100 dark:border-brand-900/50',
+}
 
 interface ItemModalProps {
   item: ApiItem | null
@@ -45,6 +62,10 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
 
   if (!item) return null
   const displayItem = mapApiItemToDisplay(item)
+  const nextEvents = item.nextEvents.map((event) => ({
+    ...mapApiItemEventToDisplay(event),
+    calendarDate: formatApiDate(event.date),
+  }))
   const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
 
   const changeStatus = async (statusId: number) => {
@@ -76,8 +97,8 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
           {tabs.map((tab, i) => (
             <button key={tab} onClick={() => setActiveTab(i)} className={`py-3 border-b-2 ${activeTab === i ? 'border-brand-600 text-brand-600 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'} whitespace-nowrap`}>
               {tab}
-              {tab === 'Documentos' && <span className="text-xs text-slate-400 ml-1">4</span>}
-              {tab === 'Eventos' && <span className="text-xs text-slate-400 ml-1">3</span>}
+              {tab === 'Documentos' && <span className="text-xs text-slate-400 ml-1">{item.documentCount}</span>}
+              {tab === 'Eventos' && <span className="text-xs text-slate-400 ml-1">{item.eventCount}</span>}
             </button>
           ))}
         </div>
@@ -130,26 +151,28 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
 
             <h4 className="font-medium mb-3">Próximos eventos</h4>
             <div className="space-y-2 mb-5">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50/70 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/50">
-                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 flex items-center justify-center">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+              {nextEvents.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400">
+                  Sin eventos programados. Se mostrarán aquí al relacionar una fecha con este activo.
                 </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium">Mantenimiento preventivo trimestral</div>
-                  <div className="text-xs text-slate-600 dark:text-slate-400">05/08/2026 · Recurrente cada 3 meses</div>
+              ) : nextEvents.map((event) => (
+                <div key={event.id} className={`flex items-center gap-3 p-3 rounded-lg border ${event.source === 'document' && event.urgency !== 'red' ? sourceCardStyles.brand : eventCardStyles[event.urgency]}`}>
+                  <div className={`w-10 h-10 rounded-lg ${event.source === 'document' && event.urgency !== 'red' ? eventIconStyles.brand : eventIconStyles[event.urgency]} flex items-center justify-center`}>
+                    {event.source === 'document' ? (
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    ) : (
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{event.label}</div>
+                    <div className="text-xs text-slate-600 dark:text-slate-400">{event.calendarDate} · {event.sourceLabel}</div>
+                  </div>
+                  <button type="button" className="px-3 py-1.5 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                    {event.source === 'event' ? 'Completar' : 'Detalles'}
+                  </button>
                 </div>
-                <button className="px-3 py-1.5 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">Completar</button>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-brand-50/50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-900/50">
-                <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-900/40 text-brand-600 flex items-center justify-center">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium">Revisión certificado garantía</div>
-                  <div className="text-xs text-slate-600 dark:text-slate-400">04/02/2027 · Anual</div>
-                </div>
-                <button className="px-3 py-1.5 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">Detalles</button>
-              </div>
+              ))}
             </div>
 
             <h4 className="font-medium mb-3">Documentos recientes</h4>

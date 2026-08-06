@@ -121,8 +121,14 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
                   <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{item.location}</td>
                   <td className="px-4 py-3"><StatusChip label={item.status} chipClass={item.statusChipClass} pulseDot={item.pulseDot} /></td>
                   <td className="px-4 py-3">
-                    <div className="text-xs">{item.nextEvent.label}</div>
-                    <div className={`text-xs ${urgencyClass[item.nextEvent.urgency]}`}>{item.nextEvent.date}</div>
+                    {item.nextEvent ? (
+                      <>
+                        <div className="text-xs">{item.nextEvent.label}</div>
+                        <div className={`text-xs ${urgencyClass[item.nextEvent.urgency]}`}>{item.nextEvent.date}</div>
+                      </>
+                    ) : (
+                      <div className="text-xs text-slate-400">Sin eventos programados</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">

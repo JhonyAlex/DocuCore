@@ -67,9 +67,6 @@ describe('items API validation', () => {
         projectId: 1,
         responsibleId: 1,
         initials: 'QA',
-        nextEventLabel: 'Revisión QA',
-        nextEventDate: '20/08/2026 · 14d',
-        nextEventUrgency: 'amber',
       }),
     })
 
@@ -77,6 +74,20 @@ describe('items API validation', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: 'Validation error',
       details: expect.arrayContaining([expect.objectContaining({ path: ['installDate'] })]),
+    })
+  })
+
+  it('rejects manually supplied upcoming-event fields', async () => {
+    const response = await fetch(`${baseUrl}/api/items`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nextEventLabel: 'Dato manual no permitido' }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Validation error',
+      details: expect.arrayContaining([expect.objectContaining({ code: 'unrecognized_keys' })]),
     })
   })
 })

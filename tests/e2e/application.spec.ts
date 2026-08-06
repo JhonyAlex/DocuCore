@@ -48,9 +48,6 @@ async function createSeededItem(page: Page, code: string): Promise<void> {
       projectId: 1,
       responsibleId: 1,
       initials: 'PG',
-      nextEventLabel: 'Revisión de prueba',
-      nextEventDate: '01/08/2026 · 17d',
-      nextEventUrgency: 'amber',
     },
   })
 
@@ -87,10 +84,17 @@ test.describe('DocuCore application', () => {
 
   test('opens and closes the item modal', async ({ page, consoleIssues }) => {
     await goToItems(page)
-    await page.locator('tbody tr').filter({ hasText: 'CNC-05' }).click()
-    await expect(page.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toBeVisible()
+    const canonicalRow = page.locator('tbody tr').filter({ hasText: 'CNC-05' })
+    await expect(canonicalRow).toContainText('Mant. preventivo')
+    await expect(canonicalRow).toContainText('05/08/2026 · 21d')
+    await canonicalRow.click()
+    const dialog = page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Próximos eventos', exact: true })).toBeVisible()
+    await expect(dialog.getByText('Mant. preventivo', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Revisión certificado garantía', { exact: true })).toBeVisible()
 
-    await page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' }).getByText('Cerrar', { exact: true }).click()
+    await dialog.getByText('Cerrar', { exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toHaveCount(0)
     expect(consoleIssues).toEqual([])
   })
@@ -211,8 +215,8 @@ test.describe('DocuCore application', () => {
     await page.locator('#item-type').selectOption({ label: 'Máquina' })
     await page.locator('#item-status').selectOption({ label: 'Activo' })
     await page.locator('#item-initials').fill('E2E')
-    await page.locator('#item-event-label').fill('Revisión E2E')
-    await page.locator('#item-event-date').fill('01/08/2026 · 17d')
+    await expect(page.getByLabel('Próximo evento', { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('Fecha del evento', { exact: true })).toHaveCount(0)
 
     const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/items'))
     await page.getByRole('button', { name: 'Crear ítem', exact: true }).click()
@@ -247,6 +251,7 @@ test.describe('DocuCore application', () => {
     const persistedRow = page.locator('tbody tr').filter({ hasText: code })
     await expect(persistedRow).toContainText('Activo E2E editado')
     await expect(persistedRow).toContainText('Fuera de servicio')
+    await expect(persistedRow).toContainText('Sin eventos programados')
     expect(consoleIssues).toEqual([])
   })
 

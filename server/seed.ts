@@ -113,16 +113,13 @@ async function main(): Promise<void> {
     location: string
     responsibleEmail: string
     initials: string
-    nextEventLabel: string
-    nextEventDate: string
-    nextEventUrgency: string
   }> = [
-    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', serialLabel: 'SN: HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', location: 'Planta 1 · Nave A', responsibleEmail: 'jr@docucore.local', initials: 'CN', nextEventLabel: 'Mant. preventivo', nextEventDate: '05/08/2026 · 21d', nextEventUrgency: 'amber' },
-    { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', serialLabel: 'SN: AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', location: 'Planta 1 · Sala compresores', responsibleEmail: 'agomez@docucore.local', initials: 'CP', nextEventLabel: 'Revisión urgente', nextEventDate: 'Atrasado · 3d', nextEventUrgency: 'red' },
-    { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', serialLabel: 'SN: WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', location: 'Planta 1 · Laboratorio', responsibleEmail: 'ltorres@docucore.local', initials: 'MG', nextEventLabel: 'Calibración anual', nextEventDate: '19/07/2026 · 4d', nextEventUrgency: 'amber' },
-    { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', serialLabel: 'Lote: EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', location: 'Planta 1 · Nave B · Pasillo 3', responsibleEmail: 'jr@docucore.local', initials: 'EX', nextEventLabel: 'Revisión anual', nextEventDate: '24/07/2026 · 9d', nextEventUrgency: 'amber' },
-    { code: 'SRV-03', name: 'Servidor Dell PowerEdge R750', serialNumber: 'DELL-R750-2023-003', serialLabel: 'SN: DELL-R750-2023-003', installDate: '15/06/2023', typeName: 'Servidor', statusName: 'Alerta', location: 'CPD · Rack 3 · U24', responsibleEmail: 'pmartin@docucore.local', initials: 'SV', nextEventLabel: 'Revisión firmware', nextEventDate: '12/08/2026 · 28d', nextEventUrgency: 'slate' },
-    { code: 'VH-014', name: 'Furgoneta Renault Master', serialNumber: '4521 LKM', serialLabel: 'Mat: 4521 LKM', installDate: '10/01/2021', typeName: 'Vehículo', statusName: 'Vencido', location: 'Parking exterior', responsibleEmail: 'jr@docucore.local', initials: 'VH', nextEventLabel: 'ITV', nextEventDate: 'Vencido hace 2d', nextEventUrgency: 'red' },
+    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', serialLabel: 'SN: HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', location: 'Planta 1 · Nave A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
+    { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', serialLabel: 'SN: AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', location: 'Planta 1 · Sala compresores', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
+    { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', serialLabel: 'SN: WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', location: 'Planta 1 · Laboratorio', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
+    { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', serialLabel: 'Lote: EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', location: 'Planta 1 · Nave B · Pasillo 3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
+    { code: 'SRV-03', name: 'Servidor Dell PowerEdge R750', serialNumber: 'DELL-R750-2023-003', serialLabel: 'SN: DELL-R750-2023-003', installDate: '15/06/2023', typeName: 'Servidor', statusName: 'Alerta', location: 'CPD · Rack 3 · U24', responsibleEmail: 'pmartin@docucore.local', initials: 'SV' },
+    { code: 'VH-014', name: 'Furgoneta Renault Master', serialNumber: '4521 LKM', serialLabel: 'Mat: 4521 LKM', installDate: '10/01/2021', typeName: 'Vehículo', statusName: 'Vencido', location: 'Parking exterior', responsibleEmail: 'jr@docucore.local', initials: 'VH' },
   ]
   for (const it of itemsData) {
     await prisma.item.create({
@@ -134,9 +131,6 @@ async function main(): Promise<void> {
         installDate: isoFromEu(it.installDate),
         location: it.location,
         initials: it.initials,
-        nextEventLabel: it.nextEventLabel,
-        nextEventDate: it.nextEventDate,
-        nextEventUrgency: it.nextEventUrgency,
         type: { connect: { name: it.typeName } },
         status: { connect: { name: it.statusName } },
         project: { connect: { code: PROJECT_CODE } },
@@ -168,12 +162,51 @@ async function main(): Promise<void> {
         projectId: project.id,
         responsibleId: responsible.id,
         initials: 'AI',
-        nextEventLabel: 'Mantenimiento preventivo',
-        nextEventDate: 'Pendiente de programar',
-        nextEventUrgency: 'slate',
       }
     }),
   })
+
+  console.log('  • Related events (4) + dated documents (3)')
+  const eventData = [
+    { itemCode: 'CNC-05', title: 'Mant. preventivo', date: '05/08/2026', type: 'Recurrente cada 3 meses' },
+    { itemCode: 'CP-02', title: 'Revisión urgente', date: '12/07/2026', type: 'Mantenimiento correctivo' },
+    { itemCode: 'EXT-A12', title: 'Revisión anual', date: '24/07/2026', type: 'Inspección reglamentaria' },
+    { itemCode: 'SRV-03', title: 'Revisión firmware', date: '12/08/2026', type: 'Mantenimiento de sistemas' },
+  ]
+  for (const event of eventData) {
+    await prisma.event.create({
+      data: {
+        title: event.title,
+        date: isoFromEu(event.date),
+        type: event.type,
+        project: { connect: { code: PROJECT_CODE } },
+        item: { connect: { code: event.itemCode } },
+      },
+    })
+  }
+
+  const documentData = [
+    { itemCode: 'CNC-05', name: 'Revisión certificado garantía', type: 'Anual', issueDate: '04/02/2024', expiryDate: '04/02/2027', status: 'Vigente' },
+    { itemCode: 'MG-203', name: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', status: 'Por vencer' },
+    { itemCode: 'VH-014', name: 'ITV', type: 'Certificado', issueDate: '13/07/2025', expiryDate: '13/07/2026', status: 'Vencido' },
+  ]
+  for (const document of documentData) {
+    await prisma.document.create({
+      data: {
+        name: document.name,
+        size: 'Documento relacionado',
+        uploadInfo: 'Datos canónicos',
+        type: document.type,
+        version: 'v1',
+        issueDate: document.issueDate,
+        expiryDate: document.expiryDate,
+        status: document.status,
+        fileFormat: 'PDF',
+        project: { connect: { code: PROJECT_CODE } },
+        item: { connect: { code: document.itemCode } },
+      },
+    })
+  }
 
   console.log('  • Floor plan + markers (6)')
   const floorPlan = await prisma.floorPlan.create({

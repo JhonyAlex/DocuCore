@@ -19,11 +19,8 @@ export const createItemSchema = z.object({
   projectId: z.number().int().positive(),
   responsibleId: z.number().int().positive(),
   initials: z.string().min(1),
-  nextEventLabel: z.string().min(1),
-  nextEventDate: z.string().min(1),
-  nextEventUrgency: z.enum(['amber', 'red', 'slate']),
   dynamicFields: z.record(z.unknown()).optional(),
-})
+}).strict()
 
 export const updateItemSchema = createItemSchema.partial()
 

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${process.env.DOCUCORE_DB_PORT ?? '5435'}/docucore?schema=public`
+const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${process.env.DOCUCORE_DB_PORT ?? '5436'}/docucore?schema=public`
 const apiPort = process.env.DOCUCORE_E2E_API_PORT ?? '3101'
 const apiUrl = `http://127.0.0.1:${apiPort}`
 
@@ -29,7 +29,13 @@ export default defineConfig({
       url: `${apiUrl}/api/health`,
       timeout: 60_000,
       reuseExistingServer: false,
-      env: { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: 'test', PORT: apiPort },
+      env: {
+        ...process.env,
+        DATABASE_URL: databaseUrl,
+        DOCUCORE_NOW: '2026-07-15T00:00:00.000Z',
+        NODE_ENV: 'test',
+        PORT: apiPort,
+      },
     },
     {
       command: 'pnpm dev',

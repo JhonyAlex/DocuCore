@@ -44,9 +44,12 @@ export interface Project {
 }
 
 export interface ItemNextEvent {
+  id: string
   label: string
   date: string
   urgency: 'amber' | 'red' | 'slate'
+  source: 'event' | 'document' | 'dynamic-field'
+  sourceLabel: string
 }
 
 export interface Item {
@@ -67,7 +70,7 @@ export interface Item {
   responsible: string
   responsibleInitials: string
   responsibleColor: string
-  nextEvent: ItemNextEvent
+  nextEvent: ItemNextEvent | null
 }
 
 export interface DocumentRecord {

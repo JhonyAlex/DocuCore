@@ -1,5 +1,5 @@
-import type { ApiItem } from '@/lib/api'
-import type { Item, PulseColor } from '@/types'
+import type { ApiItem, ApiItemEvent } from '@/lib/api'
+import type { Item, ItemNextEvent, PulseColor } from '@/types'
 
 const typeChipMap: Record<string, string> = {
   Máquina: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
@@ -55,13 +55,32 @@ const responsibleColorMap: Record<string, string> = {
   purple: 'bg-purple-500',
 }
 
-function formatDate(iso: string): string {
+export function formatApiDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   const dd = String(d.getUTCDate()).padStart(2, '0')
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
   const yyyy = d.getUTCFullYear()
   return `${dd}/${mm}/${yyyy}`
+}
+
+function formatRelativeDays(daysUntil: number): string {
+  if (daysUntil < 0) return `Atrasado · ${Math.abs(daysUntil)}d`
+  if (daysUntil === 0) return 'Hoy'
+  return `${daysUntil}d`
+}
+
+export function mapApiItemEventToDisplay(event: ApiItemEvent): ItemNextEvent {
+  return {
+    id: event.id,
+    label: event.title,
+    date: event.daysUntil < 0
+      ? formatRelativeDays(event.daysUntil)
+      : `${formatApiDate(event.date)} · ${formatRelativeDays(event.daysUntil)}`,
+    urgency: event.urgency,
+    source: event.source,
+    sourceLabel: event.sourceLabel,
+  }
 }
 
 export function mapApiItemToDisplay(api: ApiItem): Item {
@@ -78,7 +97,7 @@ export function mapApiItemToDisplay(api: ApiItem): Item {
     name: api.name,
     serialLabel: api.serialLabel,
     serialNumber: api.serialNumber,
-    installDate: formatDate(api.installDate),
+    installDate: formatApiDate(api.installDate),
     type: typeName as Item['type'],
     typeChipClass: typeChipMap[typeName] ?? '',
     status: statusName as Item['status'],
@@ -90,10 +109,6 @@ export function mapApiItemToDisplay(api: ApiItem): Item {
     responsible: api.responsible?.name ?? '',
     responsibleInitials: api.responsible?.initials ?? '',
     responsibleColor: responsibleColorMap[api.responsible?.color ?? ''] ?? '',
-    nextEvent: {
-      label: api.nextEventLabel,
-      date: api.nextEventDate,
-      urgency: api.nextEventUrgency as 'amber' | 'red' | 'slate',
-    },
+    nextEvent: api.nextEvents[0] ? mapApiItemEventToDisplay(api.nextEvents[0]) : null,
   }
 }

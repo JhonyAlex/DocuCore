@@ -1,0 +1,138 @@
+import { Prisma } from '@prisma/client'
+
+export type DerivedEventUrgency = 'amber' | 'red' | 'slate'
+export type DerivedEventSource = 'event' | 'document' | 'dynamic-field'
+
+export interface DerivedItemEvent {
+  id: string
+  title: string
+  date: string
+  daysUntil: number
+  urgency: DerivedEventUrgency
+  source: DerivedEventSource
+  sourceLabel: string
+}
+
+interface RelatedEvent {
+  id: number
+  title: string
+  date: Date
+  type: string
+}
+
+interface RelatedDocument {
+  id: number
+  name: string
+  expiryDate: string
+  type: string
+}
+
+interface DateFieldDefinition {
+  id: number
+  fieldName: string
+}
+
+export interface ItemEventRelations {
+  events: RelatedEvent[]
+  documents: RelatedDocument[]
+  dynamicFields: Prisma.JsonValue | null
+  type: {
+    fieldDefinitions: DateFieldDefinition[]
+  }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function utcDay(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+}
+
+function parseRelationDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  if (typeof value !== 'string') return null
+
+  const trimmed = value.trim()
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(trimmed)
+  const euMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed)
+  const parts = isoMatch
+    ? { year: Number(isoMatch[1]), month: Number(isoMatch[2]), day: Number(isoMatch[3]) }
+    : euMatch
+      ? { year: Number(euMatch[3]), month: Number(euMatch[2]), day: Number(euMatch[1]) }
+      : null
+
+  if (!parts) return null
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+  const valid = date.getUTCFullYear() === parts.year
+    && date.getUTCMonth() === parts.month - 1
+    && date.getUTCDate() === parts.day
+  return valid ? date : null
+}
+
+function urgencyFor(daysUntil: number): DerivedEventUrgency {
+  if (daysUntil < 0) return 'red'
+  if (daysUntil <= 21) return 'amber'
+  return 'slate'
+}
+
+function toDerivedEvent(
+  id: string,
+  title: string,
+  date: Date,
+  source: DerivedEventSource,
+  sourceLabel: string,
+  now: Date,
+): DerivedItemEvent {
+  const daysUntil = Math.round((utcDay(date) - utcDay(now)) / DAY_MS)
+  return {
+    id,
+    title,
+    date: new Date(utcDay(date)).toISOString(),
+    daysUntil,
+    urgency: urgencyFor(daysUntil),
+    source,
+    sourceLabel,
+  }
+}
+
+function dynamicFieldValues(value: Prisma.JsonValue | null): Record<string, unknown> {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return {}
+  return value
+}
+
+export function deriveItemEvents(relations: ItemEventRelations, now = new Date()): DerivedItemEvent[] {
+  const derived: DerivedItemEvent[] = relations.events.map((event) =>
+    toDerivedEvent(`event:${event.id}`, event.title, event.date, 'event', event.type, now),
+  )
+
+  for (const document of relations.documents) {
+    const date = parseRelationDate(document.expiryDate)
+    if (!date) continue
+    derived.push(toDerivedEvent(
+      `document:${document.id}`,
+      document.name,
+      date,
+      'document',
+      document.type,
+      now,
+    ))
+  }
+
+  const values = dynamicFieldValues(relations.dynamicFields)
+  for (const definition of relations.type.fieldDefinitions) {
+    const date = parseRelationDate(values[definition.fieldName])
+    if (!date) continue
+    derived.push(toDerivedEvent(
+      `dynamic-field:${definition.id}`,
+      definition.fieldName,
+      date,
+      'dynamic-field',
+      'Campo dinámico',
+      now,
+    ))
+  }
+
+  return derived.sort((left, right) => {
+    const dateDifference = Date.parse(left.date) - Date.parse(right.date)
+    return dateDifference !== 0 ? dateDifference : left.id.localeCompare(right.id)
+  })
+}

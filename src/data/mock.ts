@@ -96,7 +96,7 @@ export const items: Item[] = [
     responsible: 'J. Ramírez',
     responsibleInitials: 'JR',
     responsibleColor: 'bg-emerald-500',
-    nextEvent: { label: 'Mant. preventivo', date: '05/08/2026 · 21d', urgency: 'amber' },
+    nextEvent: { id: 'mock:1', label: 'Mant. preventivo', date: '05/08/2026 · 21d', urgency: 'amber', source: 'event', sourceLabel: 'Mantenimiento' },
   },
   {
     id: 2,
@@ -116,7 +116,7 @@ export const items: Item[] = [
     responsible: 'A. Gómez',
     responsibleInitials: 'AG',
     responsibleColor: 'bg-amber-500',
-    nextEvent: { label: 'Revisión urgente', date: 'Atrasado · 3d', urgency: 'red' },
+    nextEvent: { id: 'mock:2', label: 'Revisión urgente', date: 'Atrasado · 3d', urgency: 'red', source: 'event', sourceLabel: 'Mantenimiento' },
   },
   {
     id: 3,
@@ -135,7 +135,7 @@ export const items: Item[] = [
     responsible: 'L. Torres',
     responsibleInitials: 'LT',
     responsibleColor: 'bg-brand-500',
-    nextEvent: { label: 'Calibración anual', date: '19/07/2026 · 4d', urgency: 'amber' },
+    nextEvent: { id: 'mock:3', label: 'Calibración anual', date: '19/07/2026 · 4d', urgency: 'amber', source: 'document', sourceLabel: 'Calibración' },
   },
   {
     id: 4,
@@ -154,7 +154,7 @@ export const items: Item[] = [
     responsible: 'J. Ramírez',
     responsibleInitials: 'JR',
     responsibleColor: 'bg-emerald-500',
-    nextEvent: { label: 'Revisión anual', date: '24/07/2026 · 9d', urgency: 'amber' },
+    nextEvent: { id: 'mock:4', label: 'Revisión anual', date: '24/07/2026 · 9d', urgency: 'amber', source: 'event', sourceLabel: 'Inspección' },
   },
   {
     id: 5,
@@ -173,7 +173,7 @@ export const items: Item[] = [
     responsible: 'P. Martín',
     responsibleInitials: 'PM',
     responsibleColor: 'bg-indigo-500',
-    nextEvent: { label: 'Revisión firmware', date: '12/08/2026 · 28d', urgency: 'slate' },
+    nextEvent: { id: 'mock:5', label: 'Revisión firmware', date: '12/08/2026 · 28d', urgency: 'slate', source: 'event', sourceLabel: 'Mantenimiento' },
   },
   {
     id: 6,
@@ -193,7 +193,7 @@ export const items: Item[] = [
     responsible: 'J. Ramírez',
     responsibleInitials: 'JR',
     responsibleColor: 'bg-emerald-500',
-    nextEvent: { label: 'ITV', date: 'Vencido hace 2d', urgency: 'red' },
+    nextEvent: { id: 'mock:6', label: 'ITV', date: 'Vencido hace 2d', urgency: 'red', source: 'document', sourceLabel: 'Certificado' },
   },
 ]
 

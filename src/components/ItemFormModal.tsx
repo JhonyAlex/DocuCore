@@ -13,9 +13,6 @@ export interface ItemFormValues {
   projectId: number
   responsibleId: number
   initials: string
-  nextEventLabel: string
-  nextEventDate: string
-  nextEventUrgency: 'amber' | 'red' | 'slate'
 }
 
 interface ItemFormModalProps {
@@ -52,9 +49,6 @@ function initialValues(item: ApiItem | null, typeId: number, statusId: number, p
     projectId: item?.projectId ?? projectId,
     responsibleId: item?.responsibleId ?? responsibleId,
     initials: item?.initials ?? '',
-    nextEventLabel: item?.nextEventLabel ?? '',
-    nextEventDate: item?.nextEventDate ?? '',
-    nextEventUrgency: item?.nextEventUrgency === 'red' || item?.nextEventUrgency === 'slate' ? item.nextEventUrgency : 'amber',
   }
 }
 
@@ -191,22 +185,6 @@ export default function ItemFormModal({
               <div>
                 <FieldLabel htmlFor="item-initials">Iniciales</FieldLabel>
                 <input id="item-initials" value={values.initials} onChange={(event) => updateValue('initials', event.target.value)} required maxLength={4} className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
-              </div>
-              <div>
-                <FieldLabel htmlFor="item-event-label">Próximo evento</FieldLabel>
-                <input id="item-event-label" value={values.nextEventLabel} onChange={(event) => updateValue('nextEventLabel', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
-              </div>
-              <div>
-                <FieldLabel htmlFor="item-event-date">Fecha del evento</FieldLabel>
-                <input id="item-event-date" value={values.nextEventDate} onChange={(event) => updateValue('nextEventDate', event.target.value)} required placeholder="05/08/2026 · 21d" className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
-              </div>
-              <div>
-                <FieldLabel htmlFor="item-event-urgency">Urgencia del evento</FieldLabel>
-                <select id="item-event-urgency" value={values.nextEventUrgency} onChange={(event) => updateValue('nextEventUrgency', event.target.value as ItemFormValues['nextEventUrgency'])} className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
-                  <option value="amber">Próximo</option>
-                  <option value="red">Urgente</option>
-                  <option value="slate">Informativo</option>
-                </select>
               </div>
               <div>
                 <FieldLabel htmlFor="item-project">Proyecto</FieldLabel>

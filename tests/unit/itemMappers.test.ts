@@ -16,9 +16,17 @@ function apiItem(overrides: Partial<ApiItem>): ApiItem {
     projectId: 1,
     responsibleId: 2,
     initials: 'CN',
-    nextEventLabel: 'Mant. preventivo',
-    nextEventDate: '05/08/2026 · 21d',
-    nextEventUrgency: 'amber',
+    nextEvents: [{
+      id: 'event:1',
+      title: 'Mant. preventivo',
+      date: '2026-08-27T00:00:00.000Z',
+      daysUntil: 21,
+      urgency: 'amber',
+      source: 'event',
+      sourceLabel: 'Recurrente cada 3 meses',
+    }],
+    documentCount: 1,
+    eventCount: 2,
     type: { id: 1, name: 'Máquina' },
     status: { id: 1, name: 'Activo', pulseDot: null },
     responsible: { id: 2, name: 'J. Ramírez', initials: 'JR', color: 'emerald' },
@@ -35,6 +43,14 @@ describe('mapApiItemToDisplay', () => {
       initialsBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600',
       responsibleColor: 'bg-emerald-500',
       installDate: '04/02/2024',
+      nextEvent: {
+        id: 'event:1',
+        label: 'Mant. preventivo',
+        date: '27/08/2026 · 21d',
+        urgency: 'amber',
+        source: 'event',
+        sourceLabel: 'Recurrente cada 3 meses',
+      },
     })
   })
 
@@ -92,5 +108,9 @@ describe('mapApiItemToDisplay', () => {
       responsibleColor: '',
       installDate: 'invalid-date',
     })
+  })
+
+  it('shows no invented upcoming event when an item has no dated relations', () => {
+    expect(mapApiItemToDisplay(apiItem({ nextEvents: [], eventCount: 0, documentCount: 0 })).nextEvent).toBeNull()
   })
 })

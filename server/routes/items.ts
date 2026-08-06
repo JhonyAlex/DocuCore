@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
+import { deriveItemEvents } from '../lib/itemEvents'
 import { createItemSchema, updateItemSchema, changeStatusSchema } from '../lib/validate'
 
 const router: Router = Router()
@@ -9,9 +10,44 @@ const router: Router = Router()
 const ACTOR_USER_ID = 1
 
 const itemInclude = {
-  type: { select: { id: true, name: true } },
+  type: {
+    select: {
+      id: true,
+      name: true,
+      fieldDefinitions: {
+        where: { fieldType: 'DATE' as const },
+        select: { id: true, fieldName: true },
+      },
+    },
+  },
   status: { select: { id: true, name: true, pulseDot: true } },
   responsible: { select: { id: true, name: true, initials: true, color: true } },
+  events: {
+    where: { completedAt: null },
+    select: { id: true, title: true, date: true, type: true },
+  },
+  documents: {
+    select: { id: true, name: true, expiryDate: true, type: true },
+  },
+} satisfies Prisma.ItemInclude
+
+type ItemWithRelations = Prisma.ItemGetPayload<{ include: typeof itemInclude }>
+
+function derivedEventClock(): Date {
+  const configured = process.env.DOCUCORE_NOW ? new Date(process.env.DOCUCORE_NOW) : null
+  return configured && !Number.isNaN(configured.getTime()) ? configured : new Date()
+}
+
+function withDerivedEvents(item: ItemWithRelations) {
+  const nextEvents = deriveItemEvents(item, derivedEventClock())
+  const { events: _events, documents, type, ...base } = item
+  return {
+    ...base,
+    type: { id: type.id, name: type.name },
+    documentCount: documents.length,
+    eventCount: nextEvents.length,
+    nextEvents,
+  }
 }
 
 function toNumberId(value: string | undefined): number | null {
@@ -58,7 +94,7 @@ router.get(
     ])
 
     const totalPages = total === 0 ? 1 : Math.ceil(total / limit)
-    res.json({ data: rows, total, page, totalPages })
+    res.json({ data: rows.map(withDerivedEvents), total, page, totalPages })
   }),
 )
 
@@ -75,7 +111,7 @@ router.get(
       res.status(404).json({ error: 'Not found' })
       return
     }
-    res.json(item)
+    res.json(withDerivedEvents(item))
   }),
 )
 
@@ -105,7 +141,7 @@ router.post(
         },
       }),
     ])
-    res.status(201).json(created)
+    res.status(201).json(withDerivedEvents(created))
   }),
 )
 
@@ -140,7 +176,7 @@ router.put(
         },
       }),
     ])
-    res.json(updated)
+    res.json(withDerivedEvents(updated))
   }),
 )
 
@@ -169,7 +205,7 @@ router.patch(
         },
       }),
     ])
-    res.json(updated)
+    res.json(withDerivedEvents(updated))
   }),
 )
 

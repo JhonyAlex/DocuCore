@@ -4,6 +4,9 @@
 
 ### Added
 
+- Derivación de próximos eventos desde relaciones `Event`, vencimientos de `Document` y campos dinámicos de tipo fecha.
+- Lista relacional de “Próximos eventos” dentro de la ficha del activo, con origen, fecha, días y urgencia calculados.
+- PostgreSQL E2E aislado del volumen y puerto de desarrollo.
 - Configuración real de Vitest con pruebas de mapeo visual y validación HTTP de la API.
 - Suite Playwright para navegación, tema, modal, filtros, paginación y ciclo CRUD persistente.
 - Comparación visual directa contra el HTML protegido con artefactos app/referencia/diff y umbral explícito.
@@ -12,6 +15,8 @@
 
 ### Changed
 
+- El alta y la edición de ítems ya no aceptan “Próximo evento”, “Fecha del evento” ni “Urgencia”; son datos derivados de solo lectura.
+- La respuesta de ítems expone `nextEvents`, `documentCount` y `eventCount` calculados desde relaciones vigentes.
 - Express puede servir `dist/` en producción sin capturar rutas `/api/*`.
 - Las pruebas E2E reseed la base canónica antes y después de sus flujos.
 

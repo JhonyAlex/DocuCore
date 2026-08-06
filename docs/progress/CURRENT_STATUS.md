@@ -9,7 +9,8 @@
 - Commit funcional de la auditoría: `68f2cde` (`fix(items): harden audited asset workflows`).
 - HTML protegido: 126104 bytes; SHA-256 `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`.
 - PostgreSQL local: `127.0.0.1:5435/docucore`, contenedor `docucore-db` saludable.
-- Base restaurada al finalizar: 142 ítems, 0 códigos `QA-*` y 5 auditorías canónicas.
+- Base regenerada al finalizar: 142 ítems, 4 eventos relacionados, 3 documentos fechados, 0 códigos `QA-*` y 5 auditorías canónicas.
+- Regla pre-release activa: las migraciones destructivas, reseeds y retiradas de estructuras obsoletas necesarias están autorizadas hasta revocación expresa del usuario.
 
 ## Entorno auditado
 
@@ -19,10 +20,10 @@
 | pnpm | 9.15.9, coincide con `packageManager` |
 | Docker | 29.5.3 |
 | Docker Compose | 5.1.4 |
-| Migraciones | 1 aplicada, 0 pendientes |
+| Migraciones | 2 aplicadas, 0 pendientes |
 | Seed | Reproducible y verificado |
-| API | Healthcheck `{"status":"ok"}` |
-| Frontend | Vite respondió HTTP 200 durante la prueba |
+| API | Healthcheck `{"status":"ok"}` y `/api/items` real con `nextEvents` derivados |
+| Frontend | Imagen Docker reconstruida y servicio de producción saludable en `:3001` |
 
 ## Inventario funcional real
 
@@ -55,16 +56,17 @@ El shell es parcial: navegación, rutas directas, recarga, tema y “Nuevo ítem
 |---|---:|---:|
 | `pnpm lint` | ✅ | 4,6 s |
 | `pnpm typecheck` | ✅ | 6,1 s |
-| `pnpm test` | ✅ 2 archivos, 8 pruebas | 3,8 s |
+| `pnpm test` | ✅ 3 archivos, 14 pruebas | 1,2 s |
 | `pnpm build` | ✅ | 8,3 s |
 | `pnpm test:e2e` | ✅ 9/9 | 20,8 s |
 | `pnpm test:visual` | ✅ 30/30 | 70,3 s |
 | `pnpm db:seed` final | ✅ | 1,4 s |
 
-La mayor diferencia visual fue Activos 1440 × 1000 oscuro: 0,2862%, por debajo del umbral de 0,5%.
+La mayor diferencia visual actual es Activos 1440 × 1000 oscuro: 0,3238%, por debajo del umbral de 0,5%.
 
 ## Limitaciones y avisos conocidos
 
+- `ITEM-03` ya deriva próximos eventos en lectura y está validado con relaciones canónicas, pero sigue `PARCIAL` hasta disponer de CRUD funcional para documentos, calendario y campos dinámicos que permita crear todas las relaciones desde la interfaz.
 - El bundle de producción es de 569,03 kB y mantiene el aviso no bloqueante de Vite sobre chunks de más de 500 kB.
 - Node 26 muestra `DEP0205` desde el cargador de `tsx`; no falla las pruebas, pero conviene validar el proyecto también con la versión LTS soportada.
 - Los controles declarados como `VISUAL MOCK` o `PARCIAL` no deben presentarse como funcionales.
@@ -72,6 +74,6 @@ La mayor diferencia visual fue Activos 1440 × 1000 oscuro: 0,2862%, por debajo 
 
 ## Próximo paso exacto
 
-1. Revisar los commits de `test/local-dogfood`, subir la rama y abrir un PR hacia `main`.
-2. Priorizar `HIST-01` (historial real desde `AuditLog`) o `ITEM-02` (responsable y campos dinámicos) según necesidad de negocio.
-3. Evaluar code splitting y una matriz CI con Node LTS sin alterar el contrato visual.
+1. Revisar y publicar los cambios pendientes del árbol de trabajo.
+2. Priorizar `DOC-01`, `CAL-01` o `ITEM-02` para crear desde la interfaz las relaciones que alimentan `ITEM-03`.
+3. Evaluar code splitting en Node local y una matriz CI con Node LTS sin alterar el contrato visual.
