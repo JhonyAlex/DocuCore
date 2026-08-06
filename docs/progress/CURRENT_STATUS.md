@@ -53,5 +53,5 @@
 
 ### Próximo paso
 
-1. Hacer push de la rama `feat/docucore-implementation` y abrir Pull Request.
+1. Instalar GitHub CLI (`gh`), localizar o crear una issue con `status:approved`, y abrir el Pull Request de la rama ya subida `feat/docucore-implementation`.
 2. Evaluar code splitting para el aviso no bloqueante de bundle >500 kB sin alterar el contrato visual.

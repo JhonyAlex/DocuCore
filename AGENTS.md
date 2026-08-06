@@ -166,11 +166,11 @@ Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; ev
 
 ## Último commit estable
 
-Fase 4 — calidad, fidelidad visual y despliegue (pendiente de commit documental).
+Fase 4 — calidad, fidelidad visual y despliegue (`docs(agents): update project continuity`).
 
 ## Próximo paso exacto
 
-Hacer push de `feat/docucore-implementation` y abrir Pull Request. Como mejora no bloqueante, evaluar code splitting para el bundle de producción.
+Instalar GitHub CLI (`gh`), localizar o crear una issue con `status:approved`, y abrir el Pull Request de `feat/docucore-implementation`. El push a `origin/feat/docucore-implementation` está verificado. Como mejora no bloqueante, evaluar code splitting para el bundle de producción.
 
 ## Archivos protegidos
 
