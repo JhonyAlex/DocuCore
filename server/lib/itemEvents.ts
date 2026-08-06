@@ -23,8 +23,9 @@ interface RelatedEvent {
 interface RelatedDocument {
   id: number
   name: string
-  expiryDate: string
+  eventTitle: string | null
   type: string
+  versions: Array<{ expiryDate: Date | null }>
 }
 
 interface DateFieldDefinition {
@@ -105,11 +106,11 @@ export function deriveItemEvents(relations: ItemEventRelations, now = new Date()
   )
 
   for (const document of relations.documents) {
-    const date = parseRelationDate(document.expiryDate)
+    const date = parseRelationDate(document.versions[0]?.expiryDate)
     if (!date) continue
     derived.push(toDerivedEvent(
       `document:${document.id}`,
-      document.name,
+      document.eventTitle ?? document.name,
       date,
       'document',
       document.type,

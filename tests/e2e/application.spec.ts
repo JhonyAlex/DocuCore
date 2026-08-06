@@ -92,7 +92,7 @@ test.describe('DocuCore application', () => {
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole('heading', { name: 'Próximos eventos', exact: true })).toBeVisible()
     await expect(dialog.getByText('Mant. preventivo', { exact: true })).toBeVisible()
-    await expect(dialog.getByText('Revisión certificado garantía', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Manual técnico Haas ST-20 v2', { exact: true })).toBeVisible()
 
     await dialog.getByText('Cerrar', { exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toHaveCount(0)
@@ -252,6 +252,139 @@ test.describe('DocuCore application', () => {
     await expect(persistedRow).toContainText('Activo E2E editado')
     await expect(persistedRow).toContainText('Fuera de servicio')
     await expect(persistedRow).toContainText('Sin eventos programados')
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('uploads, versions, downloads, persists, and detaches a document from an asset', async ({ page, consoleIssues }) => {
+    const firstBytes = Buffer.from('DOCUCORE-DOCUMENT-V1-KNOWN-BYTES')
+    const secondBytes = Buffer.from('DOCUCORE-DOCUMENT-V2-KNOWN-BYTES')
+    const asset = await page.request.get('/api/items?search=AST-001&limit=1')
+    const assetBody = await asset.json()
+    const assetId = assetBody.data[0].id as number
+
+    await page.goto('/docs')
+    await expect(page.getByRole('heading', { name: 'Documentos', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Subir documento', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Subir documento' })
+    await dialog.getByLabel('Nombre').fill('Certificado E2E Documento-Activo')
+    await dialog.getByLabel('Tipo').selectOption({ label: 'Certificado' })
+    await dialog.getByLabel('Activo asociado').fill('AST-001')
+    await dialog.getByRole('option', { name: /AST-001 · Activo industrial 001/ }).click()
+    await dialog.getByLabel('Emisión').fill('2026-07-15')
+    await dialog.getByLabel('Vencimiento (opcional)').fill('2026-08-10')
+    await dialog.getByLabel('Fichero').setInputFiles({ name: 'known-v1.pdf', mimeType: 'application/pdf', buffer: firstBytes })
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
+    await dialog.getByRole('button', { name: 'Subir documento', exact: true }).last().click()
+    expect((await createResponse).status()).toBe(201)
+    await expect(page.getByText('Certificado E2E Documento-Activo', { exact: true })).toBeVisible()
+
+    const documentsResponse = await page.request.get('/api/documents?search=Certificado%20E2E%20Documento-Activo')
+    const documentId = ((await documentsResponse.json()).data[0].id) as number
+    const currentDownload = await page.request.get(`/api/documents/${documentId}/download`)
+    expect(currentDownload.status()).toBe(200)
+    expect(await currentDownload.body()).toEqual(firstBytes)
+
+    await goToItems(page)
+    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('AST-001')
+    await page.locator('tbody tr').filter({ hasText: 'AST-001' }).click()
+    const itemDialog = page.getByRole('dialog', { name: /Activo industrial 001/ })
+    await expect(itemDialog.getByText('Próximos eventos', { exact: true })).toBeVisible()
+    await expect(itemDialog.getByText('Certificado E2E Documento-Activo', { exact: true })).toBeVisible()
+    await itemDialog.getByRole('button', { name: /Documentos.*1/ }).click()
+    await expect(itemDialog.getByText('Certificado E2E Documento-Activo v1', { exact: true })).toBeVisible()
+    await itemDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
+
+    await page.goto('/docs')
+    await page.getByText('Certificado E2E Documento-Activo', { exact: true }).click()
+    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await expect(manageDialog.getByText('v1 · known-v1.pdf', { exact: true })).toBeVisible()
+    await manageDialog.getByLabel('Vencimiento (opcional)').fill('2026-09-20')
+    await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'known-v2.pdf', mimeType: 'application/pdf', buffer: secondBytes })
+    const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${documentId}/versions`))
+    await manageDialog.getByRole('button', { name: 'Subir nueva versión', exact: true }).click()
+    expect((await versionResponse).status()).toBe(201)
+    await expect(manageDialog.getByText('v2 · known-v2.pdf', { exact: true })).toBeVisible()
+    await expect(manageDialog.getByText('v1 · known-v1.pdf', { exact: true })).toBeVisible()
+    const historicalDownload = await page.request.get(`/api/documents/${documentId}/versions/1/download`)
+    expect(await historicalDownload.body()).toEqual(firstBytes)
+    const latestDownload = await page.request.get(`/api/documents/${documentId}/download`)
+    expect(await latestDownload.body()).toEqual(secondBytes)
+    await page.reload()
+    await expect(page.getByText('Certificado E2E Documento-Activo', { exact: true })).toBeVisible()
+
+    const itemAfterVersion = await page.request.get(`/api/items/${assetId}`)
+    const itemAfterVersionBody = await itemAfterVersion.json()
+    expect(itemAfterVersionBody.documentCount).toBe(1)
+    expect(itemAfterVersionBody.nextEvents).toEqual(expect.arrayContaining([expect.objectContaining({ id: `document:${documentId}`, date: '2026-09-20T00:00:00.000Z' })]))
+
+    await page.getByText('Certificado E2E Documento-Activo', { exact: true }).click()
+    const detachDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await detachDialog.getByLabel('Activo asociado').click()
+    await detachDialog.getByRole('option', { name: 'Sin activo' }).click()
+    const detachResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${documentId}`))
+    await detachDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    expect((await detachResponse).status()).toBe(200)
+    const detachedItem = await page.request.get(`/api/items/${assetId}`)
+    const detachedItemBody = await detachedItem.json()
+    expect(detachedItemBody.documentCount).toBe(0)
+    expect(detachedItemBody.nextEvents).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: `document:${documentId}` })]))
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('links an existing document and creates a new one from the asset ficha', async ({ page, consoleIssues }) => {
+    const docName = `E2E Vincular ${Date.now()}`
+    const newDocName = `${docName} nuevo`
+    const bytes = Buffer.from('DOCUCORE-LINK-KNOWN-BYTES')
+    const asset = await page.request.get('/api/items?search=AST-001&limit=1')
+    const assetBody = await asset.json()
+    const assetId = assetBody.data[0].id as number
+    const before = assetBody.data[0].documentCount as number
+
+    const create = await page.request.post('/api/documents', {
+      multipart: {
+        file: { name: 'link.pdf', mimeType: 'application/pdf', buffer: bytes },
+        name: docName,
+        type: 'Manual',
+        projectId: 1,
+        issueDate: '2026-08-01',
+        expiryDate: '2026-12-31',
+      },
+    })
+    expect(create.status()).toBe(201)
+    const documentsResponse = await page.request.get(`/api/documents?search=${encodeURIComponent(docName)}`)
+    const documentId = ((await documentsResponse.json()).data[0].id) as number
+
+    await goToItems(page)
+    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('AST-001')
+    await page.locator('tbody tr').filter({ hasText: 'AST-001' }).click()
+    const itemDialog = page.getByRole('dialog', { name: /Activo industrial 001/ })
+    await itemDialog.getByRole('button', { name: /^Documentos/ }).click()
+    await itemDialog.getByRole('button', { name: 'Vincular documento' }).click()
+    const linkDialog = page.getByRole('dialog', { name: 'Vincular documento' })
+    await linkDialog.getByLabel('Buscar documento').fill(docName)
+    await linkDialog.getByRole('option', { name: new RegExp(docName) }).click()
+    await expect(linkDialog).toBeHidden()
+    await expect(itemDialog.getByText(`${docName} v1`, { exact: true })).toBeVisible()
+
+    const linkedItem = await page.request.get(`/api/items/${assetId}`)
+    const linkedBody = await linkedItem.json()
+    expect(linkedBody.documentCount).toBe(before + 1)
+    expect(linkedBody.nextEvents).toEqual(expect.arrayContaining([expect.objectContaining({ id: `document:${documentId}` })]))
+
+    await itemDialog.getByRole('button', { name: 'Nuevo documento' }).click()
+    const createDialog = page.getByRole('dialog', { name: 'Subir documento' })
+    await expect(createDialog.getByLabel('Activo asociado')).toHaveValue(/AST-001 · Activo industrial 001/)
+    await createDialog.getByLabel('Nombre').fill(newDocName)
+    await createDialog.getByLabel('Emisión').fill('2026-08-01')
+    await createDialog.getByLabel('Vencimiento (opcional)').fill('2026-12-31')
+    await createDialog.getByLabel('Fichero').setInputFiles({ name: 'nuevo.pdf', mimeType: 'application/pdf', buffer: bytes })
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
+    await createDialog.getByRole('button', { name: 'Subir documento', exact: true }).last().click()
+    expect((await createResponse).status()).toBe(201)
+    await expect(itemDialog.getByText(`${newDocName} v1`, { exact: true })).toBeVisible()
+
+    const finalItem = await page.request.get(`/api/items/${assetId}`)
+    expect((await finalItem.json()).documentCount).toBe(before + 2)
     expect(consoleIssues).toEqual([])
   })
 

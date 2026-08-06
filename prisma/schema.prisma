@@ -136,25 +136,40 @@ model Status {
 }
 
 model Document {
-  id         Int      @id @default(autoincrement())
-  name       String
-  size       String
-  uploadInfo String
-  type       String
-  version    String
-  issueDate  String
-  expiryDate String
-  status     String
-  fileFormat String
-  itemId     Int?
-  projectId  Int
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  name      String
+  eventTitle String?
+  type      String
+  itemId    Int?
+  projectId Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  item    Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  item     Item?             @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions DocumentVersion[]
 
   @@index([itemId])
   @@index([projectId])
+}
+
+model DocumentVersion {
+  id           Int      @id @default(autoincrement())
+  documentId   Int
+  version      Int
+  originalName String
+  storageKey   String   @unique
+  mimeType     String
+  sizeBytes    Int
+  issueDate    DateTime
+  expiryDate   DateTime?
+  uploadedAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([documentId, uploadedAt])
+  @@index([expiryDate])
 }
 
 model Event {

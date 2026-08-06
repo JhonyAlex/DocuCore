@@ -35,6 +35,7 @@ export default defineConfig({
         DOCUCORE_NOW: '2026-07-15T00:00:00.000Z',
         NODE_ENV: 'test',
         PORT: apiPort,
+        DOCUMENT_STORAGE_PATH: `${process.cwd()}/test-results/e2e-documents`,
       },
     },
     {

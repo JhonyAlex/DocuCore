@@ -30,7 +30,7 @@ describe('deriveItemEvents', () => {
 
   it('uses a related document expiry as an item event', () => {
     const result = deriveItemEvents(relations({
-      documents: [{ id: 4, name: 'Certificado de calibración', expiryDate: '10/08/2026', type: 'Calibración' }],
+      documents: [{ id: 4, name: 'Certificado de calibración', eventTitle: null, versions: [{ expiryDate: new Date('2026-08-10T00:00:00.000Z') }], type: 'Calibración' }],
     }), now)
 
     expect(result).toEqual([
@@ -74,7 +74,7 @@ describe('deriveItemEvents', () => {
 
   it('returns no invented event when the item has no valid dated relation', () => {
     expect(deriveItemEvents(relations({
-      documents: [{ id: 1, name: 'Manual', expiryDate: '—', type: 'Manual' }],
+      documents: [{ id: 1, name: 'Manual', eventTitle: null, versions: [{ expiryDate: null }], type: 'Manual' }],
     }), now)).toEqual([])
   })
 })

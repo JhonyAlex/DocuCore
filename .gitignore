@@ -61,3 +61,4 @@ vite-err.txt
 
 # Temp
 *.tmp
+data/

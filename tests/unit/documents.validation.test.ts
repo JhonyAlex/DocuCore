@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest'
+import { createDocumentMetadataSchema, documentListQuerySchema, updateDocumentMetadataSchema } from '../../server/lib/validate'
+
+describe('document list query schema', () => {
+  it('accepts itemId=null to filter documents without an asset', () => {
+    const parsed = documentListQuerySchema.parse({ itemId: 'null', page: 1, limit: 20 })
+
+    expect(parsed.itemId).toBeNull()
+  })
+
+  it('accepts itemId=null as a raw null value', () => {
+    const parsed = documentListQuerySchema.parse({ itemId: null, page: 1, limit: 20 })
+
+    expect(parsed.itemId).toBeNull()
+  })
+
+  it('parses a positive numeric itemId', () => {
+    const parsed = documentListQuerySchema.parse({ itemId: '7', page: 1, limit: 20 })
+
+    expect(parsed.itemId).toBe(7)
+  })
+
+  it('treats an empty itemId as undefined (no filter)', () => {
+    const parsed = documentListQuerySchema.parse({ itemId: '', page: 1, limit: 20 })
+
+    expect(parsed.itemId).toBeUndefined()
+  })
+
+  it('rejects a non-numeric itemId', () => {
+    expect(() => documentListQuerySchema.parse({ itemId: 'abc', page: 1, limit: 20 })).toThrow()
+  })
+})
+
+describe('document metadata schemas', () => {
+  it('allows detaching an asset through updateDocumentMetadataSchema', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemId: null })
+
+    expect(parsed.itemId).toBeNull()
+  })
+
+  it('accepts an empty itemId as null when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemId: '' })
+
+    expect(parsed.itemId).toBeNull()
+  })
+
+  it('rejects createDocumentMetadataSchema with a non-numeric itemId', () => {
+    expect(() => createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, itemId: 'abc', issueDate: '2026-08-01',
+    })).toThrow()
+  })
+})

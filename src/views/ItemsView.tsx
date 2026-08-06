@@ -167,7 +167,7 @@ export default function ItemsView() {
         onPageChange={setPage}
         onRetry={() => void loadItems()}
       />
-      <ItemModal item={selectedItem} statuses={statuses} onClose={() => setSelectedItem(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} />
+      <ItemModal item={selectedItem} statuses={statuses} onClose={() => setSelectedItem(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDocumentsChanged={loadItems} />
       {formMode && <ItemFormModal mode={formMode} item={formItem} types={types} statuses={statuses} locations={locations} projectName={currentProject.name} responsibleName={responsibleName} projectId={formItem?.projectId ?? projectId} responsibleId={responsibleId} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveItem} />}
     </section>
   )

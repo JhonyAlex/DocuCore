@@ -26,11 +26,14 @@ services:
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-docucore}:${POSTGRES_PASSWORD:-docucore}@db:5432/${POSTGRES_DB:-docucore}?schema=public
+      DOCUMENT_STORAGE_PATH: /app/data/documents
     ports:
       - "${APP_PORT:-3001}:3001"
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - document_data:/app/data/documents
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -41,3 +44,4 @@ services:
 
 volumes:
   pgdata:
+  document_data:

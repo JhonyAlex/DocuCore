@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
+import { storeDocumentBuffer } from './lib/documentStorage'
 
 const prisma = new PrismaClient()
 
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
       "FloorPlanMarker",
       "FloorPlan",
       "Location",
+      "DocumentVersion",
       "Document",
       "Event",
       "Item",
@@ -166,7 +168,7 @@ async function main(): Promise<void> {
     }),
   })
 
-  console.log('  • Related events (4) + dated documents (3)')
+  console.log('  • Related events (4) + document versions (207 logical documents)')
   const eventData = [
     { itemCode: 'CNC-05', title: 'Mant. preventivo', date: '05/08/2026', type: 'Recurrente cada 3 meses' },
     { itemCode: 'CP-02', title: 'Revisión urgente', date: '12/07/2026', type: 'Mantenimiento correctivo' },
@@ -186,26 +188,45 @@ async function main(): Promise<void> {
   }
 
   const documentData = [
-    { itemCode: 'CNC-05', name: 'Revisión certificado garantía', type: 'Anual', issueDate: '04/02/2024', expiryDate: '04/02/2027', status: 'Vigente' },
-    { itemCode: 'MG-203', name: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', status: 'Por vencer' },
-    { itemCode: 'VH-014', name: 'ITV', type: 'Certificado', issueDate: '13/07/2025', expiryDate: '13/07/2026', status: 'Vencido' },
+    { itemCode: 'VH-014', name: 'Certificado ITV 2025', eventTitle: 'ITV', type: 'Certificado', issueDate: '14/07/2025', expiryDate: '13/07/2026', fileName: 'certificado-itv-2025.pdf', content: 'ITV 2025', sizeBytes: 2_400_000 },
+    { itemCode: 'MG-203', name: 'Certificado calibración WIKA', eventTitle: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', fileName: 'calibracion-wika.pdf', content: 'CALIBRACION WIKA', sizeBytes: 1_100_000 },
+    { itemCode: 'CNC-05', name: 'Manual técnico Haas ST-20', type: 'Manual', issueDate: '02/03/2024', expiryDate: null, fileName: 'manual-haas-st20.pdf', content: 'MANUAL HAAS ST-20', sizeBytes: 4_800_000, previous: { issueDate: '02/03/2023', expiryDate: null, fileName: 'manual-haas-st20-v2.pdf', content: 'MANUAL HAAS V2' } },
+    { itemCode: 'EXT-A12', name: 'Acta revisión extintor A12', eventTitle: 'Revisión anual', type: 'Acta', issueDate: '24/07/2025', expiryDate: '24/07/2026', fileName: 'acta-extintor-a12.pdf', content: 'ACTA EXTINTOR A12', sizeBytes: 840_000 },
+    { itemCode: 'CP-02', name: 'Contrato servicio Limpiezas Veloz', type: 'Contrato', issueDate: '12/08/2025', expiryDate: '12/08/2026', fileName: 'contrato-limpiezas.pdf', content: 'CONTRATO LIMPIEZAS', sizeBytes: 620_000 },
   ]
-  for (const document of documentData) {
-    await prisma.document.create({
+  for (const [index, document] of documentData.entries()) {
+    const logicalDocument = await prisma.document.create({
       data: {
         name: document.name,
-        size: 'Documento relacionado',
-        uploadInfo: 'Datos canónicos',
+        eventTitle: document.eventTitle,
         type: document.type,
-        version: 'v1',
-        issueDate: document.issueDate,
-        expiryDate: document.expiryDate,
-        status: document.status,
-        fileFormat: 'PDF',
+        createdAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
+        updatedAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         project: { connect: { code: PROJECT_CODE } },
         item: { connect: { code: document.itemCode } },
       },
     })
+    if (document.previous) {
+      const storageKey = await storeDocumentBuffer(Buffer.from(document.previous.content), 'application/pdf')
+      await prisma.documentVersion.create({ data: { documentId: logicalDocument.id, version: 1, originalName: document.previous.fileName, storageKey, mimeType: 'application/pdf', sizeBytes: Buffer.byteLength(document.previous.content), issueDate: isoFromEu(document.previous.issueDate), expiryDate: document.previous.expiryDate ? isoFromEu(document.previous.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:01') } })
+    }
+    const content = Buffer.alloc(document.sizeBytes, document.content)
+    const storageKey = await storeDocumentBuffer(content, 'application/pdf')
+    await prisma.documentVersion.create({ data: { documentId: logicalDocument.id, version: document.previous ? 2 : 1, originalName: document.fileName, storageKey, mimeType: 'application/pdf', sizeBytes: content.length, issueDate: isoFromEu(document.issueDate), expiryDate: document.expiryDate ? isoFromEu(document.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })
+  }
+
+  const expiryGroups = [
+    { count: 183, expiryDate: null },
+    { count: 15, expiryDate: '20/07/2026' },
+    { count: 4, expiryDate: '10/07/2026' },
+  ]
+  for (const group of expiryGroups) {
+    for (let index = 0; index < group.count; index += 1) {
+      const document = await prisma.document.create({ data: { name: `Documento canónico ${group.expiryDate ?? 'vigente'} ${index + 1}`, type: 'Archivo', createdAt: isoFromEu('01/01/2025'), updatedAt: isoFromEu('01/01/2025'), project: { connect: { code: PROJECT_CODE } } } })
+      const content = `CANONICAL-${group.expiryDate ?? 'CURRENT'}-${index + 1}`
+      const storageKey = await storeDocumentBuffer(Buffer.from(content), 'application/pdf')
+      await prisma.documentVersion.create({ data: { documentId: document.id, version: 1, originalName: `canonico-${document.id}.pdf`, storageKey, mimeType: 'application/pdf', sizeBytes: Buffer.byteLength(content), issueDate: isoFromEu('01/01/2026'), expiryDate: group.expiryDate ? isoFromEu(group.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })
+    }
   }
 
   console.log('  • Floor plan + markers (6)')

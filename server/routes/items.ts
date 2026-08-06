@@ -27,7 +27,18 @@ const itemInclude = {
     select: { id: true, title: true, date: true, type: true },
   },
   documents: {
-    select: { id: true, name: true, expiryDate: true, type: true },
+    orderBy: { updatedAt: 'desc' },
+    select: {
+      id: true,
+      name: true,
+      eventTitle: true,
+      type: true,
+      versions: {
+        orderBy: { version: 'desc' },
+        take: 1,
+        select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, expiryDate: true, uploadedAt: true },
+      },
+    },
   },
 } satisfies Prisma.ItemInclude
 
@@ -45,6 +56,16 @@ function withDerivedEvents(item: ItemWithRelations) {
     ...base,
     type: { id: type.id, name: type.name },
     documentCount: documents.length,
+    documents: documents.map((document) => ({
+      id: document.id,
+      name: document.name,
+      type: document.type,
+      currentVersion: document.versions[0] ? {
+        ...document.versions[0],
+        expiryDate: document.versions[0].expiryDate?.toISOString() ?? null,
+        uploadedAt: document.versions[0].uploadedAt.toISOString(),
+      } : null,
+    })),
     eventCount: nextEvents.length,
     nextEvents,
   }

@@ -4,6 +4,7 @@ import cors from 'cors'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import itemsRouter from './routes/items'
+import documentsRouter from './routes/documents'
 import metaRouter from './routes/meta'
 import { errorHandler } from './middleware/error'
 
@@ -16,6 +17,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
 app.use('/api/items', itemsRouter)
+app.use('/api/documents', documentsRouter)
 app.use('/api', metaRouter)
 
 app.use('/api', (_req, res) => {
