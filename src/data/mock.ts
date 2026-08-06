@@ -13,6 +13,7 @@ export const currentUser: User = {
 }
 
 export const currentProject = {
+  id: 1,
   name: 'Planta Industrial Norte',
   code: 'PRJ-2026-001',
   assetCount: 142,

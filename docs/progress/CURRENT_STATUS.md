@@ -2,82 +2,44 @@
 
 ## Fecha: 2026-08-06
 
-## Fase: 1 — Recuperación e integridad ✅
+## Fase: 3 — Activos e ítems persistentes ✅
 
 ### Completado
 
-1. **HTML protegido**: `docs/reference/docucore-prototype.html` (copia exacta del aprobado)
-   - SHA-256: `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`
-   - Tamaño: 126104 bytes
-   - Líneas: 1709
+1. **Fase 1 — Integridad**
+   - HTML aprobado protegido en `docs/reference/docucore-prototype.html`.
+   - SHA-256: `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`.
+   - Assets locales: logo, avatar y plano.
 
-2. **Assets locales descargados**:
-   - `public/logo.png` — logo DocuCore
-   - `public/avatar.png` — avatar usuario (María Fernández)
-   - `public/floor-plan.png` — plano de planta industrial
+2. **Fase 2 — Réplica visual**
+   - Shell y las nueve vistas React implementadas.
+   - Tema claro/oscuro, modal de activo, calendario y plano con marcadores arrastrables.
+   - Datos demo y tipos centralizados.
 
-3. **Proyecto scaffoldeado**: Vite + React 18 + TypeScript strict + Tailwind CSS v3
-   - Tailwind config con paleta `brand` idéntica al HTML
-   - CSS custom portado (scrollbar-thin, fade-in, pin, pulse-dot, kbd, chip, nav-link.active, cal-cell)
-   - React Router v6 configurado
-   - Inter font vía `@fontsource/inter` (sin CDN)
+3. **Fase 3 — Persistencia de activos**
+   - Prisma/PostgreSQL: 13 entidades, migración `20260806050621_init` aplicada.
+   - Express + Zod: healthcheck, items CRUD, filtros, paginación y metadatos.
+   - Seed reproducible: limpia tablas con `TRUNCATE … RESTART IDENTITY CASCADE`, conserva IDs estables y restaura 6 ítems canónicos.
+   - Frontend de Activos conectado al API con mapeo CSS para conservar la fidelidad visual.
+   - UI funcional: crear, editar, seleccionar/cambiar estado y dar de baja.
+   - Auditoría automática de operaciones de escritura.
 
-4. **Validaciones Phase 1**:
-   - `pnpm install` ✅
-   - `pnpm lint` ✅ (0 warnings)
-   - `pnpm build` ✅ (34 modules, 2.29s)
+### Evidencia verificada
 
-### Estructura actual
+- `pnpm build` ✅
+- `pnpm lint` ✅ (0 warnings)
+- `pnpm typecheck` ✅
+- `npx prisma migrate dev --name init` ✅
+- `pnpm db:seed` ✅
+- PostgreSQL `docucore-db` ✅ healthy (host port 5435)
+- API: GET/POST/PUT/PATCH, filtros y paginación ✅
+- Playwright 1440 × 1000: crear, editar, dar de baja y persistencia ✅
+- Errores de consola durante E2E: 0 ✅
 
-```
-DocuCore/
-├── AGENTS.md
-├── .gitignore
-├── eslint.config.js
-├── index.html
-├── package.json
-├── postcss.config.js
-├── tailwind.config.js
-├── tsconfig.json
-├── tsconfig.node.json
-├── vite.config.ts
-├── src/
-│   ├── App.tsx          # Placeholder
-│   ├── index.css        # Tailwind + CSS custom del HTML
-│   └── main.tsx         # Entry point con BrowserRouter
-├── public/
-│   ├── logo.png
-│   ├── avatar.png
-│   └── floor-plan.png
-├── docs/
-│   ├── reference/
-│   │   └── docucore-prototype.html
-│   └── progress/
-│       └── CURRENT_STATUS.md
-└── .atl/
-```
+### Próxima fase: Fase 4 — Calidad y despliegue
 
-### Próxima fase: Fase 2 — Réplica visual completa
-
-Objetivo: implementar las 9 vistas en React con datos mock, manteniendo fidelidad visual total al HTML.
-
-**Orden de implementación**:
-1. Shell: Sidebar + Topbar + Layout + ThemeToggle
-2. Dashboard view (L177-486)
-3. Projects view (L487-599)
-4. Items view (L600-873) — incluye modal
-5. Documents view (L874-1031)
-6. Calendar view (L1032-1085)
-7. Plans view (L1086-1250) — incluye plano + marcadores
-8. Locations view (L1251-1396)
-9. History view (L1397-1492)
-10. Config view (L1493-1690)
-
-**Criterios de salida Fase 2**:
-- Todas las vistas existen y navegan
-- Tema claro/oscuro funcional
-- Modal de activo funcional
-- Calendario visual
-- Plano con marcadores arrastrables
-- `pnpm build` pasa
-- Comparación visual inicial
+1. Vitest unit/integration coverage.
+2. Playwright E2E formal y regresión visual contra el HTML protegido.
+3. Dockerfile para la aplicación, Compose completo y healthchecks de app.
+4. README, Dokploy, changelog y documentación operativa.
+5. Revisión de bundle (>500 kB) y code splitting si procede.

@@ -1,32 +1,16 @@
-import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type { ItemFilters } from '@/types'
-import { fetchItemTypes, fetchStatuses, fetchLocations, type ApiItemType, type ApiStatus } from '@/lib/api'
+import type { ApiItemType, ApiStatus } from '@/lib/api'
 
 interface ItemsFiltersProps {
   filters: ItemFilters
+  types: ApiItemType[]
+  statuses: ApiStatus[]
+  locations: string[]
   onFilterChange: (next: ItemFilters) => void
 }
 
-export default function ItemsFilters({ filters, onFilterChange }: ItemsFiltersProps) {
-  const [types, setTypes] = useState<ApiItemType[]>([])
-  const [statuses, setStatuses] = useState<ApiStatus[]>([])
-  const [locations, setLocations] = useState<string[]>([])
-
-  useEffect(() => {
-    let active = true
-    Promise.all([fetchItemTypes(), fetchStatuses(), fetchLocations()])
-      .then(([t, s, l]) => {
-        if (!active) return
-        setTypes(t)
-        setStatuses(s)
-        setLocations(l)
-      })
-      .catch(() => undefined)
-    return () => {
-      active = false
-    }
-  }, [])
+export default function ItemsFilters({ filters, types, statuses, locations, onFilterChange }: ItemsFiltersProps) {
 
   const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
     onFilterChange({ ...filters, search: e.target.value })

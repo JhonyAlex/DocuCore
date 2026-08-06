@@ -54,6 +54,10 @@ vite.config.js
 # Server debug output
 server-out.txt
 server-err.txt
+vite-out.txt
+vite-err.txt
+vite-out.txt
+vite-err.txt
 
 # Temp
 *.tmp

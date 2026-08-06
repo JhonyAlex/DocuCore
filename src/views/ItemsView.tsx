@@ -3,16 +3,26 @@ import type { Item, ItemFilters, Pagination } from '@/types'
 import ItemsFilters from '@/components/ItemsFilters'
 import ItemsTable from '@/components/ItemsTable'
 import ItemModal from '@/components/ItemModal'
-import { fetchItems, type ItemListParams } from '@/lib/api'
+import ItemFormModal from '@/components/ItemFormModal'
+import type { ItemFormValues } from '@/components/ItemFormModal'
+import { changeItemStatus, createItem, fetchItemTypes, fetchItems, fetchLocations, fetchStatuses, updateItem, type ApiItem, type ApiItemType, type ApiStatus, type ItemListParams } from '@/lib/api'
 import { mapApiItemToDisplay } from '@/lib/itemMappers'
+import { currentProject, currentUser } from '@/data/mock'
+import { useItemCreateRequest } from '@/contexts/ItemCreateContext'
 
 const LIMIT = 10
 
 export default function ItemsView() {
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null)
-  const [items, setItems] = useState<Item[]>([])
+  const { createRequested, clearCreateRequest } = useItemCreateRequest()
+  const [selectedItem, setSelectedItem] = useState<ApiItem | null>(null)
+  const [items, setItems] = useState<ApiItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [types, setTypes] = useState<ApiItemType[]>([])
+  const [statuses, setStatuses] = useState<ApiStatus[]>([])
+  const [locations, setLocations] = useState<string[]>([])
+  const [optionsError, setOptionsError] = useState(false)
+  const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -36,11 +46,12 @@ export default function ItemsView() {
         location: filters.location ?? undefined,
       }
       const res = await fetchItems(params)
-      setItems(res.data.map(mapApiItemToDisplay))
+      setItems(res.data)
+      setSelectedItem((current) => current ? res.data.find((item) => item.id === current.id) ?? current : null)
       setTotal(res.total)
       setTotalPages(res.totalPages)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar ítems')
+    } catch {
+      setError('No se pudieron cargar los ítems. Inténtalo de nuevo.')
       setItems([])
     } finally {
       setLoading(false)
@@ -51,12 +62,76 @@ export default function ItemsView() {
     void loadItems()
   }, [loadItems])
 
+  useEffect(() => {
+    let active = true
+    Promise.all([fetchItemTypes(), fetchStatuses(), fetchLocations()])
+      .then(([nextTypes, nextStatuses, nextLocations]) => {
+        if (!active) return
+        setTypes(nextTypes)
+        setStatuses(nextStatuses)
+        setLocations(nextLocations)
+      })
+      .catch(() => {
+        if (active) setOptionsError(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!createRequested) return
+    setSelectedItem(null)
+    setFormMode('create')
+    clearCreateRequest()
+  }, [clearCreateRequest, createRequested])
+
   const handleFilterChange = (next: ItemFilters) => {
     setFilters(next)
     setPage(1)
   }
 
+  const toUserError = (writeError: unknown) => {
+    const message = writeError instanceof Error ? writeError.message : ''
+    if (message.includes('409')) return 'Ya existe un ítem con ese código.'
+    if (message.includes('404')) return 'El ítem ya no está disponible. Actualiza la lista e inténtalo de nuevo.'
+    if (message.includes('400') || message.includes('422')) return 'Revisa los campos obligatorios e inténtalo de nuevo.'
+    return 'No se pudo guardar el ítem. Inténtalo de nuevo.'
+  }
+
+  const saveItem = async (values: ItemFormValues) => {
+    try {
+      if (formMode === 'edit') {
+        if (!selectedItem) throw new Error('El ítem ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
+        const updated = await updateItem(selectedItem.id, values)
+        setSelectedItem(updated)
+      } else {
+        await createItem(values)
+      }
+      await loadItems()
+      setFormMode(null)
+    } catch (writeError) {
+      throw new Error(toUserError(writeError))
+    }
+  }
+
+  const handleStatusChange = async (statusId: number) => {
+    if (!selectedItem) throw new Error('El ítem ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
+    try {
+      const updated = await changeItemStatus(selectedItem.id, statusId)
+      setSelectedItem(updated)
+      await loadItems()
+    } catch (writeError) {
+      throw new Error(toUserError(writeError))
+    }
+  }
+
   const pagination: Pagination = { page, totalPages, total, limit: LIMIT }
+  const displayedItems: Item[] = items.map(mapApiItemToDisplay)
+  const projectId = Number(currentProject.id)
+  const formItem = formMode === 'edit' ? selectedItem : null
+  const responsibleId = formItem?.responsibleId ?? currentUser.id
+  const responsibleName = formItem?.responsible?.name ?? currentUser.name
 
   return (
     <section className="fade-in">
@@ -70,23 +145,24 @@ export default function ItemsView() {
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
             Exportar CSV
           </button>
-          <button className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          <button type="button" onClick={() => setFormMode('create')} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" /></svg>
             Nuevo ítem
           </button>
         </div>
       </div>
 
-      <ItemsFilters filters={filters} onFilterChange={handleFilterChange} />
+      <ItemsFilters filters={filters} types={types} statuses={statuses} locations={locations} onFilterChange={handleFilterChange} />
       <ItemsTable
-        items={items}
+        items={displayedItems}
         loading={loading}
         error={error}
         pagination={pagination}
-        onRowClick={setSelectedItem}
+        onRowClick={(item) => setSelectedItem(items.find((apiItem) => apiItem.id === item.id) ?? null)}
         onPageChange={setPage}
       />
-      <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <ItemModal item={selectedItem} statuses={statuses} onClose={() => setSelectedItem(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} />
+      {formMode && <ItemFormModal mode={formMode} item={formItem} types={types} statuses={statuses} locations={locations} projectName={currentProject.name} responsibleName={responsibleName} projectId={formItem?.projectId ?? projectId} responsibleId={responsibleId} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveItem} />}
     </section>
   )
 }

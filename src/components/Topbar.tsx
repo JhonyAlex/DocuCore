@@ -1,11 +1,19 @@
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/hooks/useTheme'
 import { routeLabels } from '@/lib/navigation'
+import { useItemCreateRequest } from '@/contexts/ItemCreateContext'
 
 export default function Topbar() {
   const { isDark, toggle } = useTheme()
   const location = useLocation()
+  const navigate = useNavigate()
+  const { requestCreate } = useItemCreateRequest()
   const label = routeLabels[location.pathname] ?? 'Panel general'
+
+  const openItemForm = () => {
+    requestCreate()
+    void navigate('/items')
+  }
 
   return (
     <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur px-6 flex items-center gap-4">
@@ -32,8 +40,8 @@ export default function Topbar() {
           <svg className={`w-5 h-5${!isDark ? ' hidden' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
         </button>
 
-        <button className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+        <button type="button" onClick={openItemForm} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Nuevo ítem
         </button>
       </div>

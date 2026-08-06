@@ -112,20 +112,21 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ Modo claro/oscuro funcional
 - ✅ `pnpm build` / `pnpm lint` / `pnpm typecheck` pasan
 
-**Fase 3 — Funcionalidad real de Activos e ítems**: EN PROGRESO
+**Fase 3 — Funcionalidad real de Activos e ítems**: COMPLETADA
 
 - ✅ Prisma schema con 13 entidades (PostgreSQL)
 - ✅ Migración inicial aplicada
-- ✅ Seed reproducible (6 items, 5 proyectos, 5 tipos, 5 estados, 5 ubicaciones)
+- ✅ Seed reproducible con reinicio de identidades (6 items, 5 proyectos, 5 tipos, 5 estados, 5 ubicaciones)
 - ✅ Express API con Zod (GET/POST/PUT/PATCH /api/items)
 - ✅ CRUD verificado: crear, editar, cambiar estado, filtrar, paginar
 - ✅ Auditoría automática en operaciones de escritura
 - ✅ API client en frontend (`src/lib/api.ts`)
 - ✅ CSS class mapping (`src/lib/itemMappers.ts`) — fidelidad visual
 - ✅ ItemsView conectada al API (lectura + filtros + paginación)
-- 🔲 UI: botón "Nuevo ítem" → POST
-- 🔲 UI: ItemModal "Editar" → PUT
-- 🔲 UI: ItemModal "Dar de baja" → PATCH status
+- ✅ UI: botón "Nuevo ítem" → POST
+- ✅ UI: ItemModal "Editar" → PUT
+- ✅ UI: ItemModal "Dar de baja" → PATCH status
+- ✅ E2E real: crear, editar, dar de baja y comprobar persistencia (Playwright, 1440 × 1000, 0 errores de consola)
 
 **Próxima fase**: Fase 4 — Calidad y despliegue (tests + Docker + Dokploy)
 
@@ -135,7 +136,7 @@ docker compose up    # Levantar todo (DB + app)
 |-------|--------|----------|
 | Panel general (dashboard) | Implementada (mock) | No |
 | Proyectos | Implementada (mock) | No |
-| Activos e ítems | Implementada (mock) | No |
+| Activos e ítems | Implementada (PostgreSQL) | Funcional E2E |
 | Documentos | Implementada (mock) | No |
 | Calendario | Implementada (mock) | No |
 | Planos | Implementada (mock) | No |
@@ -150,20 +151,20 @@ docker compose up    # Levantar todo (DB + app)
 | Shell (sidebar + topbar + theme) | Implementado |
 | Navegación | Implementado |
 | Datos demostrativos | Implementado (mock) |
-| CRUD Activos → PostgreSQL | API implementada, UI lectura |
+| CRUD Activos → PostgreSQL | Implementado y verificado E2E |
 | Docker | Implementado (PostgreSQL) |
 
 ## Errores conocidos
 
-Ninguno (fase 2 limpia).
+Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; evaluar code splitting en Fase 4.
 
 ## Último commit estable
 
-Fase 2 — réplica visual completa (feat(ui): reproduce approved DocuCore views).
+Fase 3 — gestión persistente de activos (feat(items): implement persistent asset management).
 
 ## Próximo paso exacto
 
-Implementar el backend: Prisma schema con 13 entidades, Express API, migraciones y seed. Conectar la vista de Activos e ítems a PostgreSQL (CRUD real, filtros, paginación, modal dinámico, auditoría). Ver `docs/progress/CURRENT_STATUS.md` para detalle.
+Implementar Fase 4: pruebas Vitest/Playwright (E2E y regresión visual), Dockerfile de aplicación, Compose completo, healthchecks, README de despliegue y compatibilidad Dokploy. Ver `docs/progress/CURRENT_STATUS.md` para detalle.
 
 ## Archivos protegidos
 
