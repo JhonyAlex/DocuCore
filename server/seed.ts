@@ -17,21 +17,23 @@ const PROJECT_CODE = 'PRJ-2026-001'
 async function main(): Promise<void> {
   console.log('🌱 Seeding DocuCore database...')
 
-  await prisma.$transaction([
-    prisma.auditLog.deleteMany(),
-    prisma.floorPlanMarker.deleteMany(),
-    prisma.floorPlan.deleteMany(),
-    prisma.location.deleteMany(),
-    prisma.document.deleteMany(),
-    prisma.event.deleteMany(),
-    prisma.item.deleteMany(),
-    prisma.dynamicFieldDefinition.deleteMany(),
-    prisma.projectMember.deleteMany(),
-    prisma.itemType.deleteMany(),
-    prisma.status.deleteMany(),
-    prisma.project.deleteMany(),
-    prisma.user.deleteMany(),
-  ])
+  await prisma.$executeRawUnsafe(`
+    TRUNCATE TABLE
+      "AuditLog",
+      "FloorPlanMarker",
+      "FloorPlan",
+      "Location",
+      "Document",
+      "Event",
+      "Item",
+      "DynamicFieldDefinition",
+      "ProjectMember",
+      "ItemType",
+      "Status",
+      "Project",
+      "User"
+    RESTART IDENTITY CASCADE
+  `)
 
   console.log('  • Users (5)')
   await prisma.user.createMany({
