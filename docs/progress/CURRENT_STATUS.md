@@ -2,7 +2,7 @@
 
 ## Fecha: 2026-08-06
 
-## Fase: 3 — Activos e ítems persistentes ✅
+## Fase: 4 — Calidad y despliegue ✅
 
 ### Completado
 
@@ -19,10 +19,17 @@
 3. **Fase 3 — Persistencia de activos**
    - Prisma/PostgreSQL: 13 entidades, migración `20260806050621_init` aplicada.
    - Express + Zod: healthcheck, items CRUD, filtros, paginación y metadatos.
-   - Seed reproducible: limpia tablas con `TRUNCATE … RESTART IDENTITY CASCADE`, conserva IDs estables y restaura 6 ítems canónicos.
+   - Seed reproducible: limpia tablas con `TRUNCATE … RESTART IDENTITY CASCADE`, conserva IDs estables y restaura los seis ítems canónicos visibles más 136 registros deterministas para reflejar las 142 posiciones del proyecto.
    - Frontend de Activos conectado al API con mapeo CSS para conservar la fidelidad visual.
    - UI funcional: crear, editar, seleccionar/cambiar estado y dar de baja.
-   - Auditoría automática de operaciones de escritura.
+    - Auditoría automática de operaciones de escritura.
+
+4. **Fase 4 — Calidad y despliegue**
+   - Vitest configurado con siete pruebas: mapeo de tokens CSS de ítems y validación HTTP real de Express/Zod.
+   - Playwright configura PostgreSQL Docker, `prisma migrate deploy`, seed inicial/final, API aislada, Vite y servidor de solo lectura del HTML de referencia.
+   - E2E formal: las nueve rutas y breadcrumbs, tema, modal, filtros/paginación API, CRUD persistente, rutas API 404 y errores de consola.
+   - Regresión visual directa sin baselines mutables: 30 pares app/referencia con PNG app, referencia y diff bajo `test-results/visual/`.
+   - Dockerfile de producción, SPA fallback de Express que no intercepta `/api/*`, healthchecks, Compose y documentación Dokploy.
 
 ### Evidencia verificada
 
@@ -35,11 +42,16 @@
 - API: GET/POST/PUT/PATCH, filtros y paginación ✅
 - Playwright 1440 × 1000: crear, editar, dar de baja y persistencia ✅
 - Errores de consola durante E2E: 0 ✅
+- `pnpm lint` ✅ (Fase 4)
+- `pnpm typecheck` ✅ (Fase 4)
+- `pnpm test` ✅ (2 archivos, 7 pruebas)
+- `pnpm test:e2e` ✅ (6 pruebas)
+- `pnpm build` ✅; mantiene aviso no bloqueante de bundle >500 kB.
+- `docker compose config` ✅
+- Docker Compose: imagen de aplicación construida y `GET /api/health` respondió `{"status":"ok"}` usando el puerto host alternativo 43123, porque 3001 y 3102 estaban ocupados por procesos previos.
+- `pnpm test:visual` ✅: 30 de 30 pares bajo el umbral explícito de 0.5%. Máximo: Activos 1440 × 1000 oscuro, 0.2862%.
 
-### Próxima fase: Fase 4 — Calidad y despliegue
+### Próximo paso
 
-1. Vitest unit/integration coverage.
-2. Playwright E2E formal y regresión visual contra el HTML protegido.
-3. Dockerfile para la aplicación, Compose completo y healthchecks de app.
-4. README, Dokploy, changelog y documentación operativa.
-5. Revisión de bundle (>500 kB) y code splitting si procede.
+1. Hacer push de la rama `feat/docucore-implementation` y abrir Pull Request.
+2. Evaluar code splitting para el aviso no bloqueante de bundle >500 kB sin alterar el contrato visual.

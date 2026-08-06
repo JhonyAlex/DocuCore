@@ -116,7 +116,7 @@ docker compose up    # Levantar todo (DB + app)
 
 - ✅ Prisma schema con 13 entidades (PostgreSQL)
 - ✅ Migración inicial aplicada
-- ✅ Seed reproducible con reinicio de identidades (6 items, 5 proyectos, 5 tipos, 5 estados, 5 ubicaciones)
+- ✅ Seed reproducible con reinicio de identidades (142 items, 5 proyectos, 5 tipos, 5 estados, 5 ubicaciones)
 - ✅ Express API con Zod (GET/POST/PUT/PATCH /api/items)
 - ✅ CRUD verificado: crear, editar, cambiar estado, filtrar, paginar
 - ✅ Auditoría automática en operaciones de escritura
@@ -128,21 +128,27 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ UI: ItemModal "Dar de baja" → PATCH status
 - ✅ E2E real: crear, editar, dar de baja y comprobar persistencia (Playwright, 1440 × 1000, 0 errores de consola)
 
-**Próxima fase**: Fase 4 — Calidad y despliegue (tests + Docker + Dokploy)
+**Fase 4 — Calidad y despliegue**: COMPLETADA
+
+- ✅ Vitest: mapeo de ítems y validación HTTP real de Express/Zod
+- ✅ Playwright E2E: navegación, tema, modal, filtros/paginación, CRUD y consola
+- ✅ Dockerfile, Compose de aplicación, migraciones al inicio y healthchecks
+- ✅ README, Dokploy, changelog y documentación operativa
+- ✅ Regresión visual: 30 de 30 pares bajo el umbral explícito de 0.5% (máximo: Activos 1440 × 1000 oscuro, 0.2862%)
 
 ## Vistas
 
 | Vista | Estado | Validada |
 |-------|--------|----------|
-| Panel general (dashboard) | Implementada (mock) | No |
-| Proyectos | Implementada (mock) | No |
-| Activos e ítems | Implementada (PostgreSQL) | Funcional E2E |
-| Documentos | Implementada (mock) | No |
-| Calendario | Implementada (mock) | No |
-| Planos | Implementada (mock) | No |
-| Ubicaciones | Implementada (mock) | No |
-| Historial | Implementada (mock) | No |
-| Configuración | Implementada (mock) | No |
+| Panel general (dashboard) | Implementada (mock) | Visual (3 objetivos) |
+| Proyectos | Implementada (mock) | Visual (3 objetivos) |
+| Activos e ítems | Implementada (PostgreSQL) | Visual + E2E |
+| Documentos | Implementada (mock) | Visual (3 objetivos) |
+| Calendario | Implementada (mock) | Visual (3 objetivos) |
+| Planos | Implementada (mock) | Visual (3 objetivos) |
+| Ubicaciones | Implementada (mock) | Visual (3 objetivos) |
+| Historial | Implementada (mock) | Visual (3 objetivos) |
+| Configuración | Implementada (mock) | Visual (3 objetivos) |
 
 ## Módulos
 
@@ -152,19 +158,19 @@ docker compose up    # Levantar todo (DB + app)
 | Navegación | Implementado |
 | Datos demostrativos | Implementado (mock) |
 | CRUD Activos → PostgreSQL | Implementado y verificado E2E |
-| Docker | Implementado (PostgreSQL) |
+| Docker | Producción validada (app + PostgreSQL) |
 
 ## Errores conocidos
 
-Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; evaluar code splitting en Fase 4.
+Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; evaluar code splitting en una mejora posterior.
 
 ## Último commit estable
 
-Fase 3 — gestión persistente de activos (feat(items): implement persistent asset management).
+Fase 4 — calidad, fidelidad visual y despliegue (pendiente de commit documental).
 
 ## Próximo paso exacto
 
-Implementar Fase 4: pruebas Vitest/Playwright (E2E y regresión visual), Dockerfile de aplicación, Compose completo, healthchecks, README de despliegue y compatibilidad Dokploy. Ver `docs/progress/CURRENT_STATUS.md` para detalle.
+Hacer push de `feat/docucore-implementation` y abrir Pull Request. Como mejora no bloqueante, evaluar code splitting para el bundle de producción.
 
 ## Archivos protegidos
 
