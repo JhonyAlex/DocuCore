@@ -1,20 +1,20 @@
 import { expect, test as base } from '@playwright/test'
 
 type ConsoleFixture = {
-  consoleErrors: string[]
+  consoleIssues: string[]
 }
 
 export const test = base.extend<ConsoleFixture>({
-  consoleErrors: async ({ page }, use, testInfo) => {
-    const errors: string[] = []
+  consoleIssues: async ({ page }, use, testInfo) => {
+    const issues: string[] = []
     page.on('console', (message) => {
-      if (message.type() === 'error') errors.push(message.text())
+      if (message.type() === 'error' || message.type() === 'warning') issues.push(message.text())
     })
-    page.on('pageerror', (error) => errors.push(error.message))
+    page.on('pageerror', (error) => issues.push(error.message))
 
-    await use(errors)
+    await use(issues)
 
-    expect(errors, `Unexpected browser errors in ${testInfo.title}`).toEqual([])
+    expect(issues, `Unexpected browser console issues in ${testInfo.title}`).toEqual([])
   },
 })
 

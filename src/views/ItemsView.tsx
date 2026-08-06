@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Item, ItemFilters, Pagination } from '@/types'
 import ItemsFilters from '@/components/ItemsFilters'
 import ItemsTable from '@/components/ItemsTable'
@@ -32,8 +32,11 @@ export default function ItemsView() {
     statusId: null,
     location: null,
   })
+  const latestLoadRequest = useRef(0)
 
   const loadItems = useCallback(async () => {
+    const requestId = latestLoadRequest.current + 1
+    latestLoadRequest.current = requestId
     setLoading(true)
     setError(null)
     try {
@@ -46,15 +49,17 @@ export default function ItemsView() {
         location: filters.location ?? undefined,
       }
       const res = await fetchItems(params)
+      if (requestId !== latestLoadRequest.current) return
       setItems(res.data)
       setSelectedItem((current) => current ? res.data.find((item) => item.id === current.id) ?? current : null)
       setTotal(res.total)
       setTotalPages(res.totalPages)
     } catch {
+      if (requestId !== latestLoadRequest.current) return
       setError('No se pudieron cargar los ítems. Inténtalo de nuevo.')
       setItems([])
     } finally {
-      setLoading(false)
+      if (requestId === latestLoadRequest.current) setLoading(false)
     }
   }, [page, filters])
 
@@ -160,6 +165,7 @@ export default function ItemsView() {
         pagination={pagination}
         onRowClick={(item) => setSelectedItem(items.find((apiItem) => apiItem.id === item.id) ?? null)}
         onPageChange={setPage}
+        onRetry={() => void loadItems()}
       />
       <ItemModal item={selectedItem} statuses={statuses} onClose={() => setSelectedItem(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} />
       {formMode && <ItemFormModal mode={formMode} item={formItem} types={types} statuses={statuses} locations={locations} projectName={currentProject.name} responsibleName={responsibleName} projectId={formItem?.projectId ?? projectId} responsibleId={responsibleId} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveItem} />}

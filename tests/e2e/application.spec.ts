@@ -60,7 +60,7 @@ async function createSeededItem(page: Page, code: string): Promise<void> {
 test.describe('DocuCore application', () => {
   test.describe.configure({ mode: 'serial' })
 
-  test('navigates to all destinations and updates breadcrumbs', async ({ page, consoleErrors }) => {
+  test('navigates to all destinations and updates breadcrumbs', async ({ page, consoleIssues }) => {
     await page.goto('/dashboard')
 
     for (const destination of navDestinations) {
@@ -70,10 +70,10 @@ test.describe('DocuCore application', () => {
       await expect(page.getByRole('heading', { name: destination.heading ?? destination.label, exact: true })).toBeVisible()
     }
 
-    expect(consoleErrors).toEqual([])
+    expect(consoleIssues).toEqual([])
   })
 
-  test('toggles the color theme without browser errors', async ({ page, consoleErrors }) => {
+  test('toggles the color theme without browser errors', async ({ page, consoleIssues }) => {
     await page.goto('/dashboard')
     await expect(page.locator('html')).toHaveClass(/dark/)
 
@@ -82,20 +82,20 @@ test.describe('DocuCore application', () => {
 
     await page.getByTitle('Cambiar tema').click()
     await expect(page.locator('html')).toHaveClass(/dark/)
-    expect(consoleErrors).toEqual([])
+    expect(consoleIssues).toEqual([])
   })
 
-  test('opens and closes the item modal', async ({ page, consoleErrors }) => {
+  test('opens and closes the item modal', async ({ page, consoleIssues }) => {
     await goToItems(page)
     await page.locator('tbody tr').filter({ hasText: 'CNC-05' }).click()
     await expect(page.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' }).getByText('Cerrar', { exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toHaveCount(0)
-    expect(consoleErrors).toEqual([])
+    expect(consoleIssues).toEqual([])
   })
 
-  test('uses API-backed filtering and pagination', async ({ page, consoleErrors }) => {
+  test('uses API-backed filtering and pagination', async ({ page, consoleIssues }) => {
     for (let index = 1; index <= 5; index += 1) {
       await createSeededItem(page, `PAGE-${index}`)
     }
@@ -114,10 +114,89 @@ test.describe('DocuCore application', () => {
     await filterResponse
     await expect(page.getByText('Mostrando 1-1 de 1 resultados')).toBeVisible()
     await expect(page.getByText('Torno CNC Haas ST-20', { exact: true })).toBeVisible()
-    expect(consoleErrors).toEqual([])
+    expect(consoleIssues).toEqual([])
   })
 
-  test('creates, edits, decommissions, and persists an item through the UI', async ({ page, consoleErrors }) => {
+  test('keeps the latest filter result when responses arrive out of order', async ({ page, consoleIssues }) => {
+    let delayedInstrumentRequest = false
+    await page.route('**/api/items?**', async (route) => {
+      const url = new URL(route.request().url())
+      const shouldDelay = !delayedInstrumentRequest
+        && url.searchParams.get('typeId') === '5'
+        && !url.searchParams.has('statusId')
+
+      if (!shouldDelay) {
+        await route.continue()
+        return
+      }
+
+      delayedInstrumentRequest = true
+      const response = await route.fetch()
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      await route.fulfill({ response })
+    })
+
+    await goToItems(page)
+    const selects = page.locator('main select')
+    const instrumentRequest = page.waitForRequest((request) => request.url().includes('typeId=5') && !request.url().includes('statusId='))
+    await selects.nth(0).selectOption({ label: 'Instrumento' })
+    await instrumentRequest
+    await expect(selects.nth(0)).toHaveValue('5')
+
+    const latestResponse = page.waitForResponse((response) => response.url().includes('typeId=5') && response.url().includes('statusId=1'))
+    await selects.nth(1).selectOption({ label: 'Activo' })
+    await latestResponse
+    await expect(page.getByText('No se encontraron ítems', { exact: true })).toBeVisible()
+    await page.waitForTimeout(800)
+    await expect(page.getByText('No se encontraron ítems', { exact: true })).toBeVisible()
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('recovers the items list after a temporary API failure', async ({ page }) => {
+    let apiAvailable = false
+    await page.route('**/api/items?**', async (route) => {
+      if (apiAvailable) {
+        await route.continue()
+        return
+      }
+
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Temporarily unavailable' }),
+      })
+    })
+
+    await page.goto('/items')
+    await expect(page.getByRole('alert')).toContainText('No se pudieron cargar los ítems')
+    await expect(page.getByRole('button', { name: 'Reintentar', exact: true })).toBeVisible()
+
+    apiAvailable = true
+    await page.getByRole('button', { name: 'Reintentar', exact: true }).click()
+    await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveCount(0)
+  })
+
+  test('closes item dialogs with Escape and restores focus', async ({ page, consoleIssues }) => {
+    await goToItems(page)
+    await page.locator('tbody tr').filter({ hasText: 'CNC-05' }).click()
+    await expect(page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })).toHaveCount(0)
+
+    const createButton = page.locator('section').getByRole('button', { name: 'Nuevo ítem', exact: true })
+    await createButton.focus()
+    await createButton.click()
+    const formDialog = page.getByRole('dialog', { name: 'Nuevo ítem' })
+    await expect(formDialog).toBeVisible()
+    await expect(formDialog.locator('#item-code')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(formDialog).toHaveCount(0)
+    await expect(createButton).toBeFocused()
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('creates, edits, decommissions, and persists an item through the UI', async ({ page, consoleIssues }) => {
     const code = 'E2E-900'
     await goToItems(page)
     await page.getByRole('button', { name: 'Nuevo ítem', exact: true }).last().click()
@@ -168,14 +247,14 @@ test.describe('DocuCore application', () => {
     const persistedRow = page.locator('tbody tr').filter({ hasText: code })
     await expect(persistedRow).toContainText('Activo E2E editado')
     await expect(persistedRow).toContainText('Fuera de servicio')
-    expect(consoleErrors).toEqual([])
+    expect(consoleIssues).toEqual([])
   })
 
-  test('does not expose the SPA fallback under /api routes', async ({ page, consoleErrors }) => {
+  test('does not expose the SPA fallback under /api routes', async ({ page, consoleIssues }) => {
     const response = await page.request.get('/api/not-found')
 
     expect(response.status()).toBe(404)
     await expect(response.json()).resolves.toEqual({ error: 'Not found' })
-    expect(consoleErrors).toEqual([])
+    expect(consoleIssues).toEqual([])
   })
 })

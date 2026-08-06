@@ -14,6 +14,7 @@ interface ItemsTableProps {
   pagination: Pagination
   onRowClick: (item: Item) => void
   onPageChange: (page: number) => void
+  onRetry: () => void
 }
 
 type PageToken = number | 'ellipsis'
@@ -30,7 +31,7 @@ function pageWindow(current: number, total: number): PageToken[] {
   return pages
 }
 
-export default function ItemsTable({ items, loading, error, pagination, onRowClick, onPageChange }: ItemsTableProps) {
+export default function ItemsTable({ items, loading, error, pagination, onRowClick, onPageChange, onRetry }: ItemsTableProps) {
   const { page, totalPages, total, limit } = pagination
   const start = total === 0 ? 0 : (page - 1) * limit + 1
   const end = Math.min(page * limit, total)
@@ -88,7 +89,12 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
               ))}
             {!loading && error && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-red-600 dark:text-red-400">{`Error: ${error}`}</td>
+                <td colSpan={9} className="px-4 py-8 text-center text-red-600 dark:text-red-400">
+                  <div role="alert">
+                    <div>{`Error: ${error}`}</div>
+                    <button type="button" onClick={onRetry} className="mt-3 px-3 py-1.5 rounded-md border border-red-200 dark:border-red-900 text-sm hover:bg-red-50 dark:hover:bg-red-900/20">Reintentar</button>
+                  </div>
+                </td>
               </tr>
             )}
             {!loading && !error && items.length === 0 && (

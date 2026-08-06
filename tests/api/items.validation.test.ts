@@ -50,4 +50,33 @@ describe('items API validation', () => {
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({ error: 'Invalid id' })
   })
+
+  it('rejects an invalid calendar date instead of returning an internal error', async () => {
+    const response = await fetch(`${baseUrl}/api/items`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        code: 'QA-BAD-DATE',
+        name: 'Fecha inválida QA',
+        serialNumber: 'QA-BAD',
+        serialLabel: 'SN: QA-BAD',
+        installDate: '2026-02-30',
+        typeId: 1,
+        statusId: 1,
+        location: 'Planta 1 · Nave A',
+        projectId: 1,
+        responsibleId: 1,
+        initials: 'QA',
+        nextEventLabel: 'Revisión QA',
+        nextEventDate: '20/08/2026 · 14d',
+        nextEventUrgency: 'amber',
+      }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Validation error',
+      details: expect.arrayContaining([expect.objectContaining({ path: ['installDate'] })]),
+    })
+  })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ApiItem, ApiItemType, ApiStatus } from '@/lib/api'
 
 export interface ItemFormValues {
@@ -79,7 +79,34 @@ export default function ItemFormModal({
   const [values, setValues] = useState(() => initialValues(item, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const codeInputRef = useRef<HTMLInputElement>(null)
+  const onCloseRef = useRef(onClose)
+  const savingRef = useRef(saving)
   const optionsReady = types.length > 0 && statuses.length > 0 && locations.length > 0
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    savingRef.current = saving
+  }, [saving])
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || savingRef.current) return
+      event.preventDefault()
+      onCloseRef.current()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    codeInputRef.current?.focus()
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [item?.id, mode])
 
   useEffect(() => {
     setValues(initialValues(item, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
@@ -105,11 +132,11 @@ export default function ItemFormModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="item-form-title" className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <div className="text-xs font-mono text-slate-500">{mode === 'create' ? 'NUEVO ÍTEM' : item?.code}</div>
-            <h3 className="font-semibold text-lg">{mode === 'create' ? 'Nuevo ítem' : 'Editar ítem'}</h3>
+            <h3 id="item-form-title" className="font-semibold text-lg">{mode === 'create' ? 'Nuevo ítem' : 'Editar ítem'}</h3>
           </div>
           <button type="button" onClick={onClose} disabled={saving} aria-label="Cerrar formulario" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -122,7 +149,7 @@ export default function ItemFormModal({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <FieldLabel htmlFor="item-code">Código</FieldLabel>
-                <input id="item-code" value={values.code} onChange={(event) => updateValue('code', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
+                <input ref={codeInputRef} id="item-code" value={values.code} onChange={(event) => updateValue('code', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
               </div>
               <div>
                 <FieldLabel htmlFor="item-name">Nombre</FieldLabel>

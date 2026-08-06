@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import type { ApiItem, ApiStatus } from '@/lib/api'
 import { mapApiItemToDisplay } from '@/lib/itemMappers'
@@ -18,6 +18,31 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
   const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [changingStatus, setChangingStatus] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  const itemId = item?.id
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
+    if (!itemId) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onCloseRef.current()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    dialogRef.current?.focus()
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [itemId])
+
   if (!item) return null
   const displayItem = mapApiItemToDisplay(item)
   const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
@@ -36,13 +61,13 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`item-dialog-title-${item.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <div className="text-xs font-mono text-slate-500">{displayItem.code}</div>
-            <h3 className="font-semibold text-lg">{displayItem.name}</h3>
+            <h3 id={`item-dialog-title-${item.id}`} className="font-semibold text-lg">{displayItem.name}</h3>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+          <button onClick={onClose} aria-label="Cerrar" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
