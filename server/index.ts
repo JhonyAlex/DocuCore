@@ -1,6 +1,8 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import itemsRouter from './routes/items'
 import metaRouter from './routes/meta'
 import { errorHandler } from './middleware/error'
@@ -16,12 +18,30 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/items', itemsRouter)
 app.use('/api', metaRouter)
 
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' })
+})
+
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.resolve(process.cwd(), 'dist')
+  app.use(express.static(distPath))
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
+}
+
 app.use(errorHandler)
 
-const PORT = process.env.PORT ?? 3001
+export function startServer(port: number | string = process.env.PORT ?? 3001) {
+  return app.listen(port, () => {
+    console.log(`DocuCore API listening on port ${port}`)
+  })
+}
 
-app.listen(PORT, () => {
-  console.log(`DocuCore API listening on port ${PORT}`)
-})
+const isEntrypoint = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+
+if (isEntrypoint) {
+  startServer()
+}
 
 export default app
