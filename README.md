@@ -1,6 +1,6 @@
 # DocuCore
 
-DocuCore es una plataforma de gestión documental y activos industriales. La interfaz React replica el HTML aprobado y los activos e ítems se gestionan mediante Express, Prisma y PostgreSQL.
+DocuCore es una plataforma de gestión documental y activos industriales. La interfaz React replica el HTML aprobado y los activos se gestionan mediante Express, Prisma y PostgreSQL.
 
 ## Inicio rápido
 
@@ -59,7 +59,7 @@ Los flujos Playwright arrancan la API, Vite y un servidor de solo lectura del HT
 
 ## Regresión visual
 
-`pnpm test:visual` captura Dashboard, Projects, Items, Documents, Calendar, Plans, Locations, History, Config y el modal de ítem en `1440x1000` oscuro, `1440x1000` claro y `1920x1080` oscuro.
+`pnpm test:visual` captura Dashboard, Projects, Items, Documents, Calendar, Plans, Locations, History, Config y el modal de activo en `1440x1000` oscuro, `1440x1000` claro y `1920x1080` oscuro.
 
 Las capturas de aplicación, referencia y diff se escriben en `test-results/visual/`, directorio ignorado por Git. `pixelmatch` falla si más de `0.5%` de los píxeles difiere: es un umbral deliberadamente estricto para detectar rediseños visibles, no una aprobación automática de baselines.
 
