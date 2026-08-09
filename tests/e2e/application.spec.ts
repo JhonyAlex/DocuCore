@@ -392,6 +392,54 @@ test.describe('DocuCore application', () => {
     expect(consoleIssues).toEqual([])
   })
 
+  test('persists an edited document expiry and exposes it as the linked asset next event', async ({ page, consoleIssues }) => {
+    const suffix = Date.now().toString().slice(-6)
+    const code = `EVT-${suffix}`
+    const documentName = `Vencimiento editable ${suffix}`
+    await createSeededItem(page, code)
+
+    const createResponse = await page.request.post('/api/documents', {
+      multipart: {
+        file: { name: 'editable-expiry.pdf', mimeType: 'application/pdf', buffer: Buffer.from('DOCUCORE-EDITABLE-EXPIRY') },
+        name: documentName,
+        type: 'Certificado',
+        projectId: 1,
+        issueDate: '2026-07-01',
+      },
+    })
+    expect(createResponse.status()).toBe(201)
+    const created = await createResponse.json() as { id: number }
+
+    await page.goto('/docs')
+    await page.getByText(documentName, { exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await dialog.getByLabel('Activo asociado').fill(code)
+    await dialog.getByRole('option', { name: new RegExp(code) }).click()
+    await dialog.getByLabel('Vencimiento (opcional)').fill('2026-07-20')
+    const updateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${created.id}`))
+    await dialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    const updatedResponse = await updateResponse
+    expect(updatedResponse.status()).toBe(200)
+    const updated = await updatedResponse.json() as { itemId: number | null; currentVersion: { expiryDate: string | null } }
+    expect(updated.itemId).not.toBeNull()
+    expect(updated.currentVersion.expiryDate).toBe('2026-07-20T00:00:00.000Z')
+
+    const documentRow = page.locator('tbody tr').filter({ hasText: documentName })
+    await expect(documentRow).toContainText(code)
+    await expect(documentRow).toContainText('20/07/2026')
+
+    await goToItems(page)
+    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill(code)
+    const itemRow = page.locator('tbody tr').filter({ hasText: code })
+    await expect(itemRow).toContainText(documentName)
+    await expect(itemRow).toContainText('20/07/2026')
+    await itemRow.click()
+    const itemDialog = page.getByRole('dialog', { name: new RegExp(`Ítem de paginación ${code}`) })
+    await expect(itemDialog.getByText(documentName, { exact: true })).toBeVisible()
+    await expect(itemDialog.getByText(/20\/07\/2026/)).toBeVisible()
+    expect(consoleIssues).toEqual([])
+  })
+
   test('does not expose the SPA fallback under /api routes', async ({ page, consoleIssues }) => {
     const response = await page.request.get('/api/not-found')
 

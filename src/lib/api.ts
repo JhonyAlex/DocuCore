@@ -337,7 +337,7 @@ export function createDocumentVersion(id: number, input: Pick<DocumentMetadataIn
   return request(`/documents/${id}/versions`, { method: 'POST', body })
 }
 
-export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'itemId'>>): Promise<ApiDocument> {
+export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'itemId' | 'issueDate' | 'expiryDate'>>): Promise<ApiDocument> {
   return request(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
 }
 

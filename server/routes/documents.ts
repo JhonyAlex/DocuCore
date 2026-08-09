@@ -206,11 +206,38 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   const input = updateDocumentMetadataSchema.parse(req.body)
   const before = await assertDocumentExists(id)
   await assertDocumentRelation(input.projectId ?? before.projectId, input.itemId === undefined ? before.itemId : input.itemId)
+  const versionMetadataChanged = input.issueDate !== undefined || input.expiryDate !== undefined
+  const currentVersion = before.versions[0]
+  if (versionMetadataChanged && !currentVersion) {
+    const error = new Error('Document version not found') as Error & { status?: number }
+    error.status = 409
+    throw error
+  }
   const updated = await prisma.$transaction(async (tx) => {
     const document = await tx.document.update({ where: { id }, data: { name: input.name, type: input.type, projectId: input.projectId, itemId: input.itemId }, include: documentInclude })
+    if (versionMetadataChanged && currentVersion) {
+      await tx.documentVersion.update({
+        where: { id: currentVersion.id },
+        data: {
+          issueDate: input.issueDate === undefined ? undefined : new Date(input.issueDate),
+          expiryDate: input.expiryDate === undefined ? undefined : input.expiryDate === null ? null : new Date(input.expiryDate),
+        },
+      })
+    }
     const relationChanged = before.itemId !== document.itemId
-    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: relationChanged ? 'Relación documento-ítem actualizada' : 'Metadatos de documento actualizados', entityId: String(id), detail: relationChanged ? `Ítem ${before.itemId ?? 'sin asignar'} → ${document.itemId ?? 'sin asignar'}` : 'Nombre, tipo o proyecto actualizado' } })
-    return document
+    const action = relationChanged && versionMetadataChanged
+      ? 'Documento y relación actualizados'
+      : relationChanged
+        ? 'Relación documento-ítem actualizada'
+        : versionMetadataChanged
+          ? 'Fechas de documento actualizadas'
+          : 'Metadatos de documento actualizados'
+    const detail = [
+      relationChanged ? `Ítem ${before.itemId ?? 'sin asignar'} → ${document.itemId ?? 'sin asignar'}` : null,
+      versionMetadataChanged ? `Fechas de v${currentVersion?.version ?? 1} actualizadas` : null,
+    ].filter(Boolean).join(' · ') || 'Nombre, tipo o proyecto actualizado'
+    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action, entityId: String(id), detail } })
+    return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
   })
   res.json(serializeDocument(updated))
 }))

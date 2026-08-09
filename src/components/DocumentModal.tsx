@@ -70,7 +70,7 @@ export default function DocumentModal({ document, initialItemId, initialItemLabe
     setSaving(true)
     try {
       if (isNew && file) await createDocument(metadata(), file)
-      if (!isNew && document) await updateDocument(document.id, { name, type, itemId: itemId ? Number(itemId) : null })
+      if (!isNew && document) await updateDocument(document.id, { name, type, itemId: itemId ? Number(itemId) : null, issueDate, expiryDate: expiryDate || null })
       await onChanged()
       onClose()
     } catch {

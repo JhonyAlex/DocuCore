@@ -43,6 +43,7 @@ export const updateLocationSchema = createLocationSchema.partial()
 const optionalPositiveId = z.preprocess((value) => value === '' || value === undefined ? undefined : Number(value), z.number().int().positive().optional())
 const nullableOptionalPositiveId = z.preprocess((value) => value === 'null' || value === null ? null : value === '' || value === undefined ? undefined : Number(value), z.number().int().positive().nullable().optional())
 const optionalDateSchema = z.preprocess((value) => value === '' || value === undefined ? undefined : value, isoDateSchema.optional())
+const nullableOptionalDateSchema = z.preprocess((value) => value === '' ? null : value, isoDateSchema.nullable().optional())
 
 export const createDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160),
@@ -57,7 +58,9 @@ export const updateDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   type: z.string().trim().min(1).max(80).optional(),
   projectId: z.preprocess((value) => value === undefined ? undefined : Number(value), z.number().int().positive().optional()),
-  itemId: z.preprocess((value) => value === null || value === '' ? null : Number(value), z.number().int().positive().nullable().optional()),
+  itemId: z.preprocess((value) => value === null || value === '' ? null : value === undefined ? undefined : Number(value), z.number().int().positive().nullable().optional()),
+  issueDate: optionalDateSchema,
+  expiryDate: nullableOptionalDateSchema,
 }).strict()
 
 export const documentListQuerySchema = z.object({

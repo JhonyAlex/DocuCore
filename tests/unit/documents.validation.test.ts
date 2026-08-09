@@ -44,6 +44,22 @@ describe('document metadata schemas', () => {
     expect(parsed.itemId).toBeNull()
   })
 
+  it('accepts current-version dates when updating document metadata', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ issueDate: '2026-08-01', expiryDate: '2026-12-31' })
+
+    expect(parsed).toMatchObject({ issueDate: '2026-08-01', expiryDate: '2026-12-31' })
+  })
+
+  it('accepts null to clear the current expiry date', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ expiryDate: null })
+
+    expect(parsed.expiryDate).toBeNull()
+  })
+
+  it('rejects an invalid current-version expiry date', () => {
+    expect(() => updateDocumentMetadataSchema.parse({ expiryDate: '31/12/2026' })).toThrow()
+  })
+
   it('rejects createDocumentMetadataSchema with a non-numeric itemId', () => {
     expect(() => createDocumentMetadataSchema.parse({
       name: 'X', type: 'Manual', projectId: 1, itemId: 'abc', issueDate: '2026-08-01',
