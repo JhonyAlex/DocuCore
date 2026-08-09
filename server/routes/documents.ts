@@ -19,7 +19,7 @@ const upload = multer({
 })
 
 const documentInclude = {
-  item: { select: { id: true, code: true, name: true } },
+  items: { include: { item: { select: { id: true, code: true, name: true } } } },
   project: { select: { id: true, code: true, name: true } },
   versions: { orderBy: { version: 'desc' as const }, take: 1 },
 } satisfies Prisma.DocumentInclude
@@ -45,11 +45,10 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
     id: document.id,
     name: document.name,
     type: document.type,
-    itemId: document.itemId,
+    items: document.items.map((link) => link.item),
     projectId: document.projectId,
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
-    item: document.item,
     project: document.project,
     currentVersion: currentVersion ? {
       id: currentVersion.id,
@@ -84,25 +83,30 @@ async function assertDocumentExists(id: number): Promise<DocumentWithCurrentVers
   return document
 }
 
-async function assertDocumentRelation(projectId: number, itemId: number | null | undefined): Promise<void> {
+async function assertDocumentItems(projectId: number, itemIds: number[]): Promise<void> {
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })
   if (!project) {
     const error = new Error('Project not found') as Error & { status?: number }
     error.status = 404
     throw error
   }
-  if (!itemId) return
-  const item = await prisma.item.findUnique({ where: { id: itemId }, select: { projectId: true } })
-  if (!item) {
+  const uniqueIds = [...new Set(itemIds)]
+  if (uniqueIds.length === 0) return
+  const items = await prisma.item.findMany({ where: { id: { in: uniqueIds } }, select: { id: true, projectId: true } })
+  if (items.length !== uniqueIds.length) {
     const error = new Error('Item not found') as Error & { status?: number }
     error.status = 404
     throw error
   }
-  if (item.projectId !== projectId) {
-    const error = new Error('The item must belong to the document project') as Error & { status?: number }
+  if (items.some((item) => item.projectId !== projectId)) {
+    const error = new Error('All items must belong to the document project') as Error & { status?: number }
     error.status = 400
     throw error
   }
+}
+
+function itemCodes(document: DocumentWithCurrentVersion): string {
+  return document.items.map((link) => link.item.code).join(', ') || 'sin activos'
 }
 
 router.get('/', asyncHandler(async (req, res) => {
@@ -110,12 +114,12 @@ router.get('/', asyncHandler(async (req, res) => {
   const rows = await prisma.document.findMany({
     where: {
       projectId: parsed.projectId,
-      itemId: parsed.itemId,
+      items: parsed.itemId === null ? { none: {} } : parsed.itemId !== undefined ? { some: { itemId: parsed.itemId } } : undefined,
       type: parsed.type ? { equals: parsed.type, mode: 'insensitive' } : undefined,
       OR: parsed.search ? [
         { name: { contains: parsed.search, mode: 'insensitive' } },
-        { item: { code: { contains: parsed.search, mode: 'insensitive' } } },
-        { item: { name: { contains: parsed.search, mode: 'insensitive' } } },
+        { items: { some: { item: { code: { contains: parsed.search, mode: 'insensitive' } } } } },
+        { items: { some: { item: { name: { contains: parsed.search, mode: 'insensitive' } } } } },
       ] : undefined,
     },
     include: documentInclude,
@@ -156,12 +160,18 @@ router.post('/', asyncHandler(async (req, res) => {
   await uploadSingle(req, res)
   if (!req.file) return res.status(400).json({ error: 'A document file is required' })
   const input = createDocumentMetadataSchema.parse(req.body)
-  await assertDocumentRelation(input.projectId, input.itemId)
+  const itemIds = input.itemIds ?? []
+  await assertDocumentItems(input.projectId, itemIds)
   const storageKey = await storeDocumentFile(req.file)
   try {
     const created = await prisma.$transaction(async (tx) => {
       const document = await tx.document.create({
-        data: { name: input.name, type: input.type, projectId: input.projectId, itemId: input.itemId ?? null },
+        data: {
+          name: input.name,
+          type: input.type,
+          projectId: input.projectId,
+          items: { create: itemIds.map((itemId) => ({ item: { connect: { id: itemId } } })) },
+        },
       })
       await tx.documentVersion.create({
         data: { documentId: document.id, version: 1, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate: input.expiryDate ? new Date(input.expiryDate) : null },
@@ -205,7 +215,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   const input = updateDocumentMetadataSchema.parse(req.body)
   const before = await assertDocumentExists(id)
-  await assertDocumentRelation(input.projectId ?? before.projectId, input.itemId === undefined ? before.itemId : input.itemId)
+  if (input.itemIds !== undefined) await assertDocumentItems(input.projectId ?? before.projectId, input.itemIds ?? [])
   const versionMetadataChanged = input.issueDate !== undefined || input.expiryDate !== undefined
   const currentVersion = before.versions[0]
   if (versionMetadataChanged && !currentVersion) {
@@ -214,7 +224,19 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     throw error
   }
   const updated = await prisma.$transaction(async (tx) => {
-    const document = await tx.document.update({ where: { id }, data: { name: input.name, type: input.type, projectId: input.projectId, itemId: input.itemId }, include: documentInclude })
+    const document = await tx.document.update({
+      where: { id },
+      data: {
+        name: input.name,
+        type: input.type,
+        projectId: input.projectId,
+        items: input.itemIds === undefined ? undefined : {
+          deleteMany: {},
+          create: (input.itemIds ?? []).map((itemId) => ({ item: { connect: { id: itemId } } })),
+        },
+      },
+      include: documentInclude,
+    })
     if (versionMetadataChanged && currentVersion) {
       await tx.documentVersion.update({
         where: { id: currentVersion.id },
@@ -224,7 +246,9 @@ router.patch('/:id', asyncHandler(async (req, res) => {
         },
       })
     }
-    const relationChanged = before.itemId !== document.itemId
+    const previousItemIds = before.items.map((link) => link.item.id).sort((left, right) => left - right)
+    const nextItemIds = (input.itemIds ?? previousItemIds).slice().sort((left, right) => left - right)
+    const relationChanged = JSON.stringify(previousItemIds) !== JSON.stringify(nextItemIds)
     const action = relationChanged && versionMetadataChanged
       ? 'Documento y relación actualizados'
       : relationChanged
@@ -233,7 +257,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
           ? 'Fechas de documento actualizadas'
           : 'Metadatos de documento actualizados'
     const detail = [
-      relationChanged ? `Ítem ${before.itemId ?? 'sin asignar'} → ${document.itemId ?? 'sin asignar'}` : null,
+      relationChanged ? `Activos ${itemCodes(before)} → ${itemCodes(document)}` : null,
       versionMetadataChanged ? `Fechas de v${currentVersion?.version ?? 1} actualizadas` : null,
     ].filter(Boolean).join(' · ') || 'Nombre, tipo o proyecto actualizado'
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action, entityId: String(id), detail } })

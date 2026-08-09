@@ -52,7 +52,6 @@ export interface ItemWriteInput {
   code: string
   name: string
   serialNumber: string
-  serialLabel: string
   installDate: string
   typeId: number
   statusId: number
@@ -75,7 +74,6 @@ export interface ApiItem {
   code: string
   name: string
   serialNumber: string
-  serialLabel: string
   installDate: string
   typeId: number
   statusId: number
@@ -160,9 +158,8 @@ export interface ApiDocument {
   id: number
   name: string
   type: string
-  itemId: number | null
+  items: Array<{ id: number; code: string; name: string }>
   projectId: number
-  item: { id: number; code: string; name: string } | null
   project: { id: number; code: string; name: string }
   currentVersion: ApiDocumentVersion | null
   status: 'Vigente' | 'Por vencer' | 'Vencido'
@@ -193,7 +190,7 @@ export interface DocumentMetadataInput {
   name: string
   type: string
   projectId: number
-  itemId?: number | null
+  itemIds?: number[]
   issueDate: string
   expiryDate?: string | null
 }
@@ -234,7 +231,7 @@ function documentFormData(input: DocumentMetadataInput, file: File): FormData {
   body.set('name', input.name)
   body.set('type', input.type)
   body.set('projectId', String(input.projectId))
-  if (input.itemId) body.set('itemId', String(input.itemId))
+  if (input.itemIds?.length) body.set('itemIds', JSON.stringify(input.itemIds))
   body.set('issueDate', input.issueDate)
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
   body.set('file', file)
@@ -337,7 +334,7 @@ export function createDocumentVersion(id: number, input: Pick<DocumentMetadataIn
   return request(`/documents/${id}/versions`, { method: 'POST', body })
 }
 
-export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'itemId' | 'issueDate' | 'expiryDate'>>): Promise<ApiDocument> {
+export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'itemIds' | 'issueDate' | 'expiryDate'>>): Promise<ApiDocument> {
   return request(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
 }
 

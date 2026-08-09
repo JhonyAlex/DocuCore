@@ -32,16 +32,34 @@ describe('document list query schema', () => {
 })
 
 describe('document metadata schemas', () => {
-  it('allows detaching an asset through updateDocumentMetadataSchema', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemId: null })
+  it('allows detaching all assets through updateDocumentMetadataSchema', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemIds: null })
 
-    expect(parsed.itemId).toBeNull()
+    expect(parsed.itemIds).toBeNull()
   })
 
-  it('accepts an empty itemId as null when updating', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemId: '' })
+  it('accepts an empty itemIds as null when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemIds: '' })
 
-    expect(parsed.itemId).toBeNull()
+    expect(parsed.itemIds).toBeNull()
+  })
+
+  it('treats an empty itemIds array as null when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemIds: [] })
+
+    expect(parsed.itemIds).toBeNull()
+  })
+
+  it('accepts a list of item ids when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemIds: [2, 5] })
+
+    expect(parsed.itemIds).toEqual([2, 5])
+  })
+
+  it('parses a JSON string itemIds when updating (multipart compatible)', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ itemIds: '[2,5]' })
+
+    expect(parsed.itemIds).toEqual([2, 5])
   })
 
   it('accepts current-version dates when updating document metadata', () => {
@@ -60,9 +78,33 @@ describe('document metadata schemas', () => {
     expect(() => updateDocumentMetadataSchema.parse({ expiryDate: '31/12/2026' })).toThrow()
   })
 
-  it('rejects createDocumentMetadataSchema with a non-numeric itemId', () => {
+  it('rejects a non-numeric itemIds list', () => {
+    expect(() => updateDocumentMetadataSchema.parse({ itemIds: 'abc' })).toThrow()
+  })
+
+  it('rejects a non-positive item id', () => {
+    expect(() => updateDocumentMetadataSchema.parse({ itemIds: [0] })).toThrow()
+  })
+
+  it('accepts a JSON string itemIds when creating a document', () => {
+    const parsed = createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, itemIds: '[2,5]', issueDate: '2026-08-01',
+    })
+
+    expect(parsed.itemIds).toEqual([2, 5])
+  })
+
+  it('accepts a list of item ids when creating a document', () => {
+    const parsed = createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, itemIds: [2, 5], issueDate: '2026-08-01',
+    })
+
+    expect(parsed.itemIds).toEqual([2, 5])
+  })
+
+  it('rejects createDocumentMetadataSchema with a non-numeric itemIds', () => {
     expect(() => createDocumentMetadataSchema.parse({
-      name: 'X', type: 'Manual', projectId: 1, itemId: 'abc', issueDate: '2026-08-01',
+      name: 'X', type: 'Manual', projectId: 1, itemIds: 'abc', issueDate: '2026-08-01',
     })).toThrow()
   })
 })

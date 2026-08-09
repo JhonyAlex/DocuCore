@@ -44,7 +44,6 @@ async function createSeededItem(page: Page, code: string): Promise<void> {
       code,
       name: `Ítem de paginación ${code}`,
       serialNumber: `SERIE-${code}`,
-      serialLabel: `SN: ${code}`,
       installDate: '2026-07-15',
       typeId: machine.id,
       statusId: active.id,
@@ -204,7 +203,39 @@ test.describe('DocuCore application', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('creates, edits, decommissions, and persists an item through the UI', async ({ page, consoleIssues }) => {
+  test('keeps the item dialog anchored at the top and changes status directly from the inline menu', async ({ page, consoleIssues }) => {
+    await goToItems(page)
+    const row = page.locator('tbody tr').filter({ hasText: 'CNC-05' })
+    await row.click()
+    const itemDialog = page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })
+
+    // El campo Estado abre inmediatamente las opciones, sin controles intermedios.
+    await itemDialog.getByLabel('Cambiar estado').click()
+    const statusListbox = itemDialog.getByRole('listbox', { name: 'Seleccionar estado' })
+    await expect(statusListbox).toBeVisible()
+    await statusListbox.getByRole('option', { name: 'Fuera de servicio' }).click()
+    await expect(itemDialog.getByText('Fuera de servicio', { exact: true })).toBeVisible()
+    await expect(statusListbox).toHaveCount(0)
+
+    // Restaura el estado original para no contaminar el resto de la suite.
+    await itemDialog.getByLabel('Cambiar estado').click()
+    await itemDialog.getByRole('listbox', { name: 'Seleccionar estado' }).getByRole('option', { name: 'Activo' }).click()
+    await expect(itemDialog.getByText('Activo', { exact: true })).toBeVisible()
+
+    // El modal queda anclado arriba: el borde superior no se mueve al cambiar de pestaña.
+    const boxBefore = await itemDialog.boundingBox()
+    expect(boxBefore).not.toBeNull()
+    expect(boxBefore!.y).toBeLessThan(64)
+    await itemDialog.getByRole('button', { name: /^Documentos/ }).click()
+    const boxAfter = await itemDialog.boundingBox()
+    expect(boxAfter).not.toBeNull()
+    expect(boxAfter!.y).toBe(boxBefore!.y)
+
+    await itemDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('creates, edits, decommissions, reactivates, and persists an item through the UI', async ({ page, consoleIssues }) => {
     const code = 'E2E-900'
     await goToItems(page)
     await page.getByRole('button', { name: 'Nuevo ítem', exact: true }).last().click()
@@ -213,7 +244,6 @@ test.describe('DocuCore application', () => {
     await page.locator('#item-code').fill(code)
     await page.locator('#item-name').fill('Activo de prueba E2E')
     await page.locator('#item-serial-number').fill('E2E-SERIAL-900')
-    await page.locator('#item-serial-label').fill('SN: E2E-SERIAL-900')
     await page.locator('#item-install-date').fill('2026-07-15')
     await page.locator('#item-location').selectOption({ label: 'Planta 1 · Nave A' })
     await page.locator('#item-type').selectOption({ label: 'Máquina' })
@@ -246,6 +276,11 @@ test.describe('DocuCore application', () => {
     expect((await decommissionResponse).status()).toBe(200)
     await expect(page.locator('.fixed.inset-0 span').filter({ hasText: 'Fuera de servicio' })).toBeVisible()
 
+    const reactivateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes('/status'))
+    await page.getByRole('button', { name: 'Reactivar', exact: true }).click()
+    expect((await reactivateResponse).status()).toBe(200)
+    await expect(page.locator('.fixed.inset-0 span').filter({ hasText: 'Activo' })).toBeVisible()
+
     const reloadResponse = page.waitForResponse((response) => response.url().includes('/api/items?') && response.request().method() === 'GET')
     await page.reload()
     await reloadResponse
@@ -254,8 +289,86 @@ test.describe('DocuCore application', () => {
     await persistedItemResponse
     const persistedRow = page.locator('tbody tr').filter({ hasText: code })
     await expect(persistedRow).toContainText('Activo E2E editado')
-    await expect(persistedRow).toContainText('Fuera de servicio')
+    await expect(persistedRow).toContainText('Activo')
     await expect(persistedRow).toContainText('Sin eventos programados')
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('duplicates an item with copied properties, a fresh default status, and new unique identifiers', async ({ page, consoleIssues }) => {
+    const sourceResponse = await page.request.get('/api/items?search=CP-02&limit=1')
+    const source = (await sourceResponse.json() as { data: Array<{ code: string; typeId: number; statusId: number; locationId: number; responsibleId: number; installDate: string }> }).data[0]
+    expect(source.code).toBe('CP-02')
+    const statusesResponse = await page.request.get('/api/statuses')
+    const statuses = (await statusesResponse.json()) as Array<{ id: number; name: string }>
+    const activeStatusId = statuses.find((status) => status.name === 'Activo')!.id
+    // Premisa: el origen está «Fuera de servicio»; el duplicado debe nacer con el
+    // estado por defecto de un ítem nuevo (Activo), no heredar el ciclo de vida.
+    expect(activeStatusId).not.toBe(source.statusId)
+    await goToItems(page)
+    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('CP-02')
+    const sourceRow = page.locator('tbody tr').filter({ hasText: 'CP-02' })
+    const actionsButton = sourceRow.getByRole('button', { name: 'Acciones de CP-02' })
+    const tableScroller = sourceRow.locator('xpath=ancestor::div[contains(@class, "overflow-x-auto")][1]')
+    const scrollHeightBefore = await tableScroller.evaluate((element) => element.scrollHeight)
+    await actionsButton.click()
+    const actionsMenu = page.getByRole('menu')
+    await expect(actionsMenu).toBeVisible()
+    expect(await actionsMenu.evaluate((element) => element.parentElement === document.body)).toBe(true)
+    expect(await tableScroller.evaluate((element) => element.scrollHeight)).toBe(scrollHeightBefore)
+    await page.keyboard.press('Escape')
+    await expect(actionsMenu).toHaveCount(0)
+    await actionsButton.click()
+    await page.getByRole('menuitem', { name: 'Duplicar', exact: true }).click()
+
+    const dialog = page.getByRole('dialog', { name: 'Duplicar ítem' })
+    await expect(dialog.locator('#item-code')).toHaveValue('')
+    await expect(dialog.locator('#item-name')).toHaveValue('Compresor Atlas Copco GA37')
+    await expect(dialog.locator('#item-serial-number')).toHaveValue('')
+    await expect(dialog.getByLabel('Etiqueta de serie')).toHaveCount(0)
+    await expect(dialog.locator('#item-install-date')).toHaveValue('2021-03-12')
+    await expect(dialog.locator('#item-location')).toHaveValue(/\d+/)
+    await expect(dialog.locator('#item-type')).toHaveValue(/\d+/)
+    await expect(dialog.locator('#item-status')).toHaveValue(String(activeStatusId))
+    await expect(dialog.locator('#item-initials')).toHaveValue('CP')
+
+    await dialog.locator('#item-code').fill('CP-DUP-E2E')
+    await dialog.locator('#item-serial-number').fill('AC-37-2021-04')
+    const conflictResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/items'))
+    await dialog.getByRole('button', { name: 'Crear duplicado', exact: true }).click()
+    expect((await conflictResponse).status()).toBe(409)
+    await expect(dialog.getByRole('alert')).toContainText('código o número de serie')
+    const expectedConflictIssue = consoleIssues.findIndex((issue) => issue.includes('409 (Conflict)'))
+    expect(expectedConflictIssue).toBeGreaterThanOrEqual(0)
+    consoleIssues.splice(expectedConflictIssue, 1)
+
+    await dialog.locator('#item-serial-number').fill('AC-37-2021-04-DUP')
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/items'))
+    await dialog.getByRole('button', { name: 'Crear duplicado', exact: true }).click()
+    const createdResponse = await createResponse
+    expect(createdResponse.status()).toBe(201)
+    const created = await createdResponse.json() as { id: number; code: string; name: string; serialNumber: string; installDate: string; typeId: number; statusId: number; locationId: number; responsibleId: number; documentCount: number; eventCount: number }
+    expect(created).toMatchObject({
+      code: 'CP-DUP-E2E',
+      name: 'Compresor Atlas Copco GA37',
+      serialNumber: 'AC-37-2021-04-DUP',
+      installDate: source.installDate,
+      typeId: source.typeId,
+      statusId: activeStatusId,
+      locationId: source.locationId,
+      responsibleId: source.responsibleId,
+      documentCount: 0,
+      eventCount: 0,
+    })
+
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: 'Compresor Atlas Copco GA37' })).toBeVisible()
+    await page.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
+    const duplicatedItemResponse = page.waitForResponse((response) => response.url().includes('search=CP-DUP-E2E') && response.url().includes('/api/items?'))
+    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('CP-DUP-E2E')
+    await duplicatedItemResponse
+    const row = page.locator('tbody tr').filter({ hasText: 'CP-DUP-E2E' })
+    await expect(row).toContainText('Compresor Atlas Copco GA37')
+    await expect(row).toContainText('SN: AC-37-2021-04-DUP')
     expect(consoleIssues).toEqual([])
   })
 
@@ -272,7 +385,7 @@ test.describe('DocuCore application', () => {
     const dialog = page.getByRole('dialog', { name: 'Subir documento' })
     await dialog.getByLabel('Nombre').fill('Certificado E2E Documento-Activo')
     await dialog.getByLabel('Tipo').selectOption({ label: 'Certificado' })
-    await dialog.getByLabel('Activo asociado').fill('AST-001')
+    await dialog.getByLabel('Activos asociados').fill('AST-001')
     await dialog.getByRole('option', { name: /AST-001 · Activo industrial 001/ }).click()
     await dialog.getByLabel('Emisión').fill('2026-07-15')
     await dialog.getByLabel('Vencimiento (opcional)').fill('2026-08-10')
@@ -303,9 +416,8 @@ test.describe('DocuCore application', () => {
     const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
     await expect(manageDialog.getByText('v1 · known-v1.pdf', { exact: true })).toBeVisible()
     await manageDialog.getByLabel('Vencimiento (opcional)').fill('2026-09-20')
-    await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'known-v2.pdf', mimeType: 'application/pdf', buffer: secondBytes })
     const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${documentId}/versions`))
-    await manageDialog.getByRole('button', { name: 'Subir nueva versión', exact: true }).click()
+    await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'known-v2.pdf', mimeType: 'application/pdf', buffer: secondBytes })
     expect((await versionResponse).status()).toBe(201)
     await expect(manageDialog.getByText('v2 · known-v2.pdf', { exact: true })).toBeVisible()
     await expect(manageDialog.getByText('v1 · known-v1.pdf', { exact: true })).toBeVisible()
@@ -323,8 +435,7 @@ test.describe('DocuCore application', () => {
 
     await page.getByText('Certificado E2E Documento-Activo', { exact: true }).click()
     const detachDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
-    await detachDialog.getByLabel('Activo asociado').click()
-    await detachDialog.getByRole('option', { name: 'Sin activo' }).click()
+    await detachDialog.getByLabel('Quitar AST-001 · Activo industrial 001').click()
     const detachResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${documentId}`))
     await detachDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
     expect((await detachResponse).status()).toBe(200)
@@ -377,7 +488,7 @@ test.describe('DocuCore application', () => {
 
     await itemDialog.getByRole('button', { name: 'Nuevo documento' }).click()
     const createDialog = page.getByRole('dialog', { name: 'Subir documento' })
-    await expect(createDialog.getByLabel('Activo asociado')).toHaveValue(/AST-001 · Activo industrial 001/)
+    await expect(createDialog.getByLabel('Quitar AST-001 · Activo industrial 001')).toBeVisible()
     await createDialog.getByLabel('Nombre').fill(newDocName)
     await createDialog.getByLabel('Emisión').fill('2026-08-01')
     await createDialog.getByLabel('Vencimiento (opcional)').fill('2026-12-31')
@@ -413,15 +524,15 @@ test.describe('DocuCore application', () => {
     await page.goto('/docs')
     await page.getByText(documentName, { exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Gestionar documento' })
-    await dialog.getByLabel('Activo asociado').fill(code)
+    await dialog.getByLabel('Activos asociados').fill(code)
     await dialog.getByRole('option', { name: new RegExp(code) }).click()
     await dialog.getByLabel('Vencimiento (opcional)').fill('2026-07-20')
     const updateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${created.id}`))
     await dialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
     const updatedResponse = await updateResponse
     expect(updatedResponse.status()).toBe(200)
-    const updated = await updatedResponse.json() as { itemId: number | null; currentVersion: { expiryDate: string | null } }
-    expect(updated.itemId).not.toBeNull()
+    const updated = await updatedResponse.json() as { items: Array<{ code: string }>; currentVersion: { expiryDate: string | null } }
+    expect(updated.items.some((item) => item.code === code)).toBe(true)
     expect(updated.currentVersion.expiryDate).toBe('2026-07-20T00:00:00.000Z')
 
     const documentRow = page.locator('tbody tr').filter({ hasText: documentName })
@@ -437,6 +548,57 @@ test.describe('DocuCore application', () => {
     const itemDialog = page.getByRole('dialog', { name: new RegExp(`Ítem de paginación ${code}`) })
     await expect(itemDialog.getByText(documentName, { exact: true })).toBeVisible()
     await expect(itemDialog.getByText(/20\/07\/2026/)).toBeVisible()
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('associates a document with multiple assets, opens it from the whole row, and keeps the other link when removing one', async ({ page, consoleIssues }) => {
+    const documentName = `Multi activo ${Date.now()}`
+    const bytes = Buffer.from('DOCUCORE-MULTI-ASSET')
+    const firstAsset = await page.request.get('/api/items?search=AST-001&limit=1')
+    const firstAssetId = ((await firstAsset.json()).data[0].id) as number
+    const secondAsset = await page.request.get('/api/items?search=CNC-05&limit=1')
+    const secondAssetId = ((await secondAsset.json()).data[0].id) as number
+
+    await page.goto('/docs')
+    await page.getByRole('button', { name: 'Subir documento', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Subir documento' })
+    await dialog.getByLabel('Nombre').fill(documentName)
+    await dialog.getByLabel('Tipo').selectOption({ label: 'Manual' })
+    await dialog.getByLabel('Activos asociados').fill('AST-001')
+    await dialog.getByRole('option', { name: /AST-001 · Activo industrial 001/ }).click()
+    await dialog.getByLabel('Activos asociados').fill('CNC-05')
+    await dialog.getByRole('option', { name: /CNC-05 · Torno CNC Haas ST-20/ }).click()
+    await dialog.getByLabel('Emisión').fill('2026-07-15')
+    await dialog.getByLabel('Fichero').setInputFiles({ name: 'multi.pdf', mimeType: 'application/pdf', buffer: bytes })
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
+    await dialog.getByRole('button', { name: 'Subir documento', exact: true }).last().click()
+    const createdResponse = await createResponse
+    expect(createdResponse.status()).toBe(201)
+    const created = await createdResponse.json() as { id: number; items: Array<{ code: string }> }
+    expect(created.items.map((item) => item.code).sort()).toEqual(['AST-001', 'CNC-05'])
+
+    const row = page.locator('tbody tr').filter({ hasText: documentName })
+    await expect(row).toContainText('AST-001 · Activo industrial 001')
+    await expect(row).toContainText('CNC-05 · Torno CNC Haas ST-20')
+    await row.click()
+    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await expect(manageDialog.getByLabel('Quitar AST-001 · Activo industrial 001')).toBeVisible()
+    await expect(manageDialog.getByLabel('Quitar CNC-05 · Torno CNC Haas ST-20')).toBeVisible()
+
+    for (const assetId of [firstAssetId, secondAssetId]) {
+      const item = await page.request.get(`/api/items/${assetId}`)
+      const itemBody = await item.json()
+      expect(itemBody.documents.some((document: { id: number }) => document.id === created.id)).toBe(true)
+    }
+
+    await manageDialog.getByLabel('Quitar CNC-05 · Torno CNC Haas ST-20').click()
+    const updateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${created.id}`))
+    await manageDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    expect((await updateResponse).status()).toBe(200)
+    const removedItem = await page.request.get(`/api/items/${secondAssetId}`)
+    expect((await removedItem.json()).documents.some((document: { id: number }) => document.id === created.id)).toBe(false)
+    const keptItem = await page.request.get(`/api/items/${firstAssetId}`)
+    expect((await keptItem.json()).documents.some((document: { id: number }) => document.id === created.id)).toBe(true)
     expect(consoleIssues).toEqual([])
   })
 

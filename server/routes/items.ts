@@ -27,17 +27,21 @@ const itemInclude = {
     where: { completedAt: null },
     select: { id: true, title: true, date: true, type: true },
   },
-  documents: {
-    orderBy: { updatedAt: 'desc' },
-    select: {
-      id: true,
-      name: true,
-      eventTitle: true,
-      type: true,
-      versions: {
-        orderBy: { version: 'desc' },
-        take: 1,
-        select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, expiryDate: true, uploadedAt: true },
+  documentItems: {
+    orderBy: { document: { updatedAt: 'desc' } },
+    include: {
+      document: {
+        select: {
+          id: true,
+          name: true,
+          eventTitle: true,
+          type: true,
+          versions: {
+            orderBy: { version: 'desc' },
+            take: 1,
+            select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, expiryDate: true, uploadedAt: true },
+          },
+        },
       },
     },
   },
@@ -51,8 +55,9 @@ function derivedEventClock(): Date {
 }
 
 function withDerivedEvents(item: ItemWithRelations) {
-  const nextEvents = deriveItemEvents(item, derivedEventClock())
-  const { events: _events, documents, type, ...base } = item
+  const documents = item.documentItems.map((link) => link.document)
+  const nextEvents = deriveItemEvents({ ...item, documents }, derivedEventClock())
+  const { events: _events, documentItems: _documentItems, type, ...base } = item
   return {
     ...base,
     type: { id: type.id, name: type.name },
@@ -295,6 +300,18 @@ router.patch(
       return
     }
     const parsed = changeStatusSchema.parse(req.body)
+    const [existing, targetStatus] = await Promise.all([
+      prisma.item.findUnique({ where: { id }, select: { code: true, status: { select: { name: true } } } }),
+      prisma.status.findUnique({ where: { id: parsed.statusId }, select: { name: true } }),
+    ])
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    if (!targetStatus) {
+      res.status(400).json({ error: 'Invalid status' })
+      return
+    }
     const [updated] = await prisma.$transaction([
       prisma.item.update({
         where: { id },
@@ -305,8 +322,8 @@ router.patch(
         data: {
           userId: ACTOR_USER_ID,
           action: 'Cambio estado',
-          entityId: String(id),
-          detail: `Estado actualizado a #${parsed.statusId}`,
+          entityId: existing.code,
+          detail: `${existing.status.name} → ${targetStatus.name}`,
           timestamp: new Date(),
         },
       }),

@@ -11,7 +11,6 @@ export const createItemSchema = z.object({
   code: z.string().min(1),
   name: z.string().min(1),
   serialNumber: z.string().min(1),
-  serialLabel: z.string().min(1),
   installDate: isoDateSchema,
   typeId: z.number().int().positive(),
   statusId: z.number().int().positive(),
@@ -45,11 +44,33 @@ const nullableOptionalPositiveId = z.preprocess((value) => value === 'null' || v
 const optionalDateSchema = z.preprocess((value) => value === '' || value === undefined ? undefined : value, isoDateSchema.optional())
 const nullableOptionalDateSchema = z.preprocess((value) => value === '' ? null : value, isoDateSchema.nullable().optional())
 
+// itemIds viaja como string JSON en FormData (multipart) y como array en JSON.
+function parseItemIds(value: unknown): unknown {
+  if (value === undefined || value === '') return undefined
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      return value
+    }
+  }
+  return value
+}
+
+const optionalItemIds = z.preprocess(parseItemIds, z.array(z.number().int().positive()).max(20).optional())
+const nullableOptionalItemIds = z.preprocess((value) => {
+  if (value === null || value === '') return null
+  const parsed = parseItemIds(value)
+  if (Array.isArray(parsed) && parsed.length === 0) return null
+  return parsed
+}, z.array(z.number().int().positive()).max(20).nullable().optional())
+
 export const createDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160),
   type: z.string().trim().min(1).max(80),
   projectId: z.preprocess((value) => Number(value), z.number().int().positive()),
-  itemId: optionalPositiveId,
+  itemIds: optionalItemIds,
   issueDate: isoDateSchema,
   expiryDate: optionalDateSchema,
 }).strict()
@@ -58,7 +79,7 @@ export const updateDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   type: z.string().trim().min(1).max(80).optional(),
   projectId: z.preprocess((value) => value === undefined ? undefined : Number(value), z.number().int().positive().optional()),
-  itemId: z.preprocess((value) => value === null || value === '' ? null : value === undefined ? undefined : Number(value), z.number().int().positive().nullable().optional()),
+  itemIds: nullableOptionalItemIds,
   issueDate: optionalDateSchema,
   expiryDate: nullableOptionalDateSchema,
 }).strict()

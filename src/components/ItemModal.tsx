@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
-import { downloadDocument, fetchDocuments, updateDocument, type ApiItem, type ApiStatus } from '@/lib/api'
-import { formatApiDate, mapApiItemEventToDisplay, mapApiItemToDisplay } from '@/lib/itemMappers'
+import { downloadDocument, fetchDocument, fetchDocuments, updateDocument, type ApiItem, type ApiStatus } from '@/lib/api'
+import { formatApiDate, formatDocumentSize, mapApiItemEventToDisplay, mapApiItemToDisplay } from '@/lib/itemMappers'
 
 const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Historial', 'Plano']
 
@@ -22,11 +22,6 @@ const eventIconStyles = {
 
 const sourceCardStyles = {
   brand: 'bg-brand-50/50 dark:bg-brand-900/20 border-brand-100 dark:border-brand-900/50',
-}
-
-function formatDocumentSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function ItemDocuments({ item, limit }: { item: ApiItem; limit?: number }) {
@@ -61,6 +56,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const linkDialogOpenRef = useRef(linkDialogOpen)
+  const statusMenuRef = useRef<HTMLDivElement>(null)
   const itemId = item?.id
 
   useEffect(() => {
@@ -100,6 +96,15 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [linkDialogOpen, linking])
 
+  useEffect(() => {
+    if (!showStatusSelector) return
+    const handlePointerDown = (event: PointerEvent) => {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(event.target as Node)) setShowStatusSelector(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [showStatusSelector])
+
   if (!item) return null
   const displayItem = mapApiItemToDisplay(item)
   const nextEvents = item.nextEvents.map((event) => ({
@@ -107,6 +112,8 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     calendarDate: formatApiDate(event.date),
   }))
   const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
+  const activeStatus = statuses.find((status) => status.name === 'Activo')
+  const isDecommissioned = item.statusId === decommissionedStatus?.id
 
   const changeStatus = async (statusId: number) => {
     setStatusError(null)
@@ -125,7 +132,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     return res.data.map((document) => ({
       value: String(document.id),
       label: document.name,
-      hint: `v${document.currentVersion?.version ?? 1} · ${document.item ? `${document.item.code} · ${document.item.name}` : 'Sin activo'}`,
+      hint: `v${document.currentVersion?.version ?? 1} · ${document.items.length > 0 ? document.items.map((linked) => `${linked.code} · ${linked.name}`).join(', ') : 'Sin activo'}`,
     }))
   }
 
@@ -134,7 +141,8 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     setLinkError(null)
     setLinking(true)
     try {
-      await updateDocument(Number(option.value), { itemId: item.id })
+      const document = await fetchDocument(Number(option.value))
+      await updateDocument(document.id, { itemIds: [...new Set([...document.items.map((linked) => linked.id), item.id])] })
       setLinkDialogOpen(false)
       await onDocumentsChanged()
     } catch {
@@ -145,7 +153,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`item-dialog-title-${item.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
@@ -173,14 +181,22 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
               <div className="md:col-span-2 grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                       <div className="text-xs text-slate-500">Estado</div>
-                      <div className="relative mt-1 inline-block">
-                        <button type="button" onClick={() => setShowStatusSelector((current) => !current)} aria-label="Cambiar estado" className="block">
+                      <div ref={statusMenuRef} className="relative mt-1 inline-block">
+                        <button type="button" onClick={() => setShowStatusSelector((current) => !current)} aria-label="Cambiar estado" aria-haspopup="listbox" aria-expanded={showStatusSelector} className="flex items-center gap-1.5 cursor-pointer">
                           <StatusChip label={displayItem.status} chipClass={displayItem.statusChipClass} pulseDot={displayItem.pulseDot} />
+                          <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${showStatusSelector ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
                         </button>
                         {showStatusSelector && (
-                          <select value={item.statusId} onChange={(event) => void changeStatus(Number(event.target.value))} disabled={changingStatus || statuses.length === 0} aria-label="Seleccionar estado" className="absolute left-0 top-full z-10 mt-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs disabled:opacity-40">
-                            {statuses.map((status) => <option key={status.id} value={status.id}>{status.name}</option>)}
-                          </select>
+                          <ul role="listbox" aria-label="Seleccionar estado" className="absolute left-0 top-full z-10 mt-1 min-w-44 overflow-hidden rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg fade-in">
+                            {statuses.map((status) => (
+                              <li key={status.id}>
+                                <button type="button" role="option" aria-selected={status.id === item.statusId} onClick={() => { setShowStatusSelector(false); void changeStatus(status.id) }} disabled={changingStatus} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
+                                  <span className="flex-1">{status.name}</span>
+                                  {status.id === item.statusId && <span className="text-brand-600" aria-hidden="true">✓</span>}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
                         )}
                       </div>
                     </div>
@@ -265,7 +281,11 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
 
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
-            <button type="button" onClick={() => decommissionedStatus && void changeStatus(decommissionedStatus.id)} disabled={changingStatus || !decommissionedStatus || item.statusId === decommissionedStatus.id} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
+            {isDecommissioned ? (
+              <button type="button" onClick={() => activeStatus && void changeStatus(activeStatus.id)} disabled={changingStatus || !activeStatus} className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">Reactivar</button>
+            ) : (
+              <button type="button" onClick={() => decommissionedStatus && void changeStatus(decommissionedStatus.id)} disabled={changingStatus || !decommissionedStatus} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
+            )}
             {statusError && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{statusError}</div>}
           </div>
           <div className="flex items-center gap-2">
@@ -275,21 +295,21 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
         </div>
       </div>
       {linkDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !linking && setLinkDialogOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !linking && setLinkDialogOpen(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="link-document-dialog-title" className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h3 id="link-document-dialog-title" className="font-semibold">Vincular documento</h3>
               <button type="button" aria-label="Cerrar" onClick={() => setLinkDialogOpen(false)} disabled={linking} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">×</button>
             </div>
             <div className="p-4">
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Busca el documento y asígnalo a {item.code}. Si ya está asociado a otro activo, se reasignará.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Busca el documento y añádelo a los activos asociados de {item.code}. Un documento puede estar vinculado a varios activos a la vez.</p>
               <SearchablePicker value={null} selectedLabel={null} placeholder="Buscar documento por nombre…" ariaLabel="Buscar documento" allowClear={false} disabled={linking} onSearch={searchDocuments} onSelect={(option) => void linkDocument(option)} emptyText="No hay documentos con ese nombre" />
               {linkError && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{linkError}</p>}
             </div>
           </div>
         </div>
       )}
-      {createDialogOpen && <DocumentModal document={null} initialItemId={item.id} initialItemLabel={`${item.code} · ${item.name}`} onClose={() => setCreateDialogOpen(false)} onChanged={onDocumentsChanged} />}
+      {createDialogOpen && <DocumentModal document={null} initialItemIds={[{ id: item.id, label: `${item.code} · ${item.name}` }]} onClose={() => setCreateDialogOpen(false)} onChanged={onDocumentsChanged} />}
     </div>
   )
 }

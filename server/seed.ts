@@ -178,7 +178,6 @@ async function main(): Promise<void> {
     code: string
     name: string
     serialNumber: string
-    serialLabel: string
     installDate: string
     typeName: string
     statusName: string
@@ -186,14 +185,14 @@ async function main(): Promise<void> {
     responsibleEmail: string
     initials: string
   }> = [
-    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', serialLabel: 'SN: HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
-    { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', serialLabel: 'SN: AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', locationCode: 'PIN-SC-02', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
-    { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', serialLabel: 'SN: WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-LB-03', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
-    { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', serialLabel: 'Lote: EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', locationCode: 'PIN-NB-P3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
-    { code: 'SRV-03', name: 'Servidor Dell PowerEdge R750', serialNumber: 'DELL-R750-2023-003', serialLabel: 'SN: DELL-R750-2023-003', installDate: '15/06/2023', typeName: 'Servidor', statusName: 'Alerta', locationCode: 'CPD-R3-24', responsibleEmail: 'pmartin@docucore.local', initials: 'SV' },
-    { code: 'VH-014', name: 'Furgoneta Renault Master', serialNumber: '4521 LKM', serialLabel: 'Mat: 4521 LKM', installDate: '10/01/2021', typeName: 'Vehículo', statusName: 'Vencido', locationCode: 'PIN-EX-04', responsibleEmail: 'jr@docucore.local', initials: 'VH' },
-    { code: 'BH-04', name: 'Bomba hidráulica', serialNumber: 'BH-2026-004', serialLabel: 'SN: BH-2026-004', installDate: '15/07/2026', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'BH' },
-    { code: 'BSC-11', name: 'Báscula industrial', serialNumber: 'BSC-2025-011', serialLabel: 'SN: BSC-2025-011', installDate: '10/09/2025', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-NA-01A', responsibleEmail: 'ltorres@docucore.local', initials: 'BA' },
+    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
+    { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', locationCode: 'PIN-SC-02', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
+    { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-LB-03', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
+    { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', locationCode: 'PIN-NB-P3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
+    { code: 'SRV-03', name: 'Servidor Dell PowerEdge R750', serialNumber: 'DELL-R750-2023-003', installDate: '15/06/2023', typeName: 'Servidor', statusName: 'Alerta', locationCode: 'CPD-R3-24', responsibleEmail: 'pmartin@docucore.local', initials: 'SV' },
+    { code: 'VH-014', name: 'Furgoneta Renault Master', serialNumber: '4521 LKM', installDate: '10/01/2021', typeName: 'Vehículo', statusName: 'Vencido', locationCode: 'PIN-EX-04', responsibleEmail: 'jr@docucore.local', initials: 'VH' },
+    { code: 'BH-04', name: 'Bomba hidráulica', serialNumber: 'BH-2026-004', installDate: '15/07/2026', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'BH' },
+    { code: 'BSC-11', name: 'Báscula industrial', serialNumber: 'BSC-2025-011', installDate: '10/09/2025', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-NA-01A', responsibleEmail: 'ltorres@docucore.local', initials: 'BA' },
   ]
   for (const it of itemsData) {
     await prisma.item.create({
@@ -201,7 +200,6 @@ async function main(): Promise<void> {
         code: it.code,
         name: it.name,
         serialNumber: it.serialNumber,
-        serialLabel: it.serialLabel,
         installDate: isoFromEu(it.installDate),
         initials: it.initials,
         type: { connect: { name: it.typeName } },
@@ -232,7 +230,6 @@ async function main(): Promise<void> {
           code: `AST-${label}`,
           name: `Activo industrial ${label}`,
           serialNumber: `AST-SN-${label}`,
-          serialLabel: `SN: AST-SN-${label}`,
           installDate: new Date(Date.UTC(2025, sequence % 12, (sequence % 28) + 1)),
           typeId: machineType.id,
           statusId: activeStatus.id,
@@ -281,7 +278,7 @@ async function main(): Promise<void> {
         createdAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         updatedAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         project: { connect: { code: PROJECT_CODE } },
-        item: { connect: { code: document.itemCode } },
+        items: { create: [{ item: { connect: { code: document.itemCode } } }] },
       },
     })
     if (document.previous) {

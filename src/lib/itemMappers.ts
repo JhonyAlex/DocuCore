@@ -64,6 +64,14 @@ export function formatApiDate(iso: string): string {
   return `${dd}/${mm}/${yyyy}`
 }
 
+// Formato de tamaño de documento compartido por la lista y la ficha de activo:
+// B, KB o MB con una cifra, como muestra el HTML de referencia ("840 KB", "2.4 MB").
+export function formatDocumentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function formatRelativeDays(daysUntil: number): string {
   if (daysUntil < 0) return `Atrasado · ${Math.abs(daysUntil)}d`
   if (daysUntil === 0) return 'Hoy'
@@ -101,6 +109,7 @@ export function mapApiLocationItemToAsset(item: ApiLocationItem): LocationAsset 
 export function mapApiItemToDisplay(api: ApiItem): Item {
   const typeName = api.type?.name ?? ''
   const statusName = api.status?.name ?? ''
+  const serialPrefix = typeName === 'Extintor' ? 'Lote' : typeName === 'Vehículo' ? 'Mat' : 'SN'
   const avatarToken = avatarStatusOverride.has(statusName)
     ? statusColorToken[statusName]
     : typeColorToken[typeName]
@@ -110,7 +119,7 @@ export function mapApiItemToDisplay(api: ApiItem): Item {
     id: api.id,
     code: api.code,
     name: api.name,
-    serialLabel: api.serialLabel,
+    serialLabel: `${serialPrefix}: ${api.serialNumber}`,
     serialNumber: api.serialNumber,
     installDate: formatApiDate(api.installDate),
     type: typeName as Item['type'],
