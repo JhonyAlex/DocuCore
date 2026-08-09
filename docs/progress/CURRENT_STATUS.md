@@ -2,6 +2,28 @@
 
 ## Fecha: 2026-08-09
 
+## UX-01 — Modales anclados arriba y menú de estado directo: FUNCIONAL
+
+- Todos los modales (`ItemModal`, `ItemFormModal`, `DocumentModal`, `LocationFormModal`, diálogo «Vincular documento») quedan anclados al borde superior (`items-start` + `overflow-y-auto` en el contenedor): al cambiar de pestaña o de tamaño el modal ya no se recentra; el borde superior permanece fijo.
+- El campo «Estado» de la ficha del activo abre inmediatamente el menú de opciones (listbox con check en el estado actual, `fade-in`, cierre por click fuera y al seleccionar) con un chevron ▾ que rota como indicación; se elimina el `<select>` que obligaba a un segundo control.
+- Matriz: lint ✅, typecheck ✅, 66 unit/API ✅, 33 E2E ✅ (test nuevo: modal con el mismo `y` al cambiar de pestaña y cambio de estado desde el menú), build ✅. Regresión visual 24/30: `item-modal` (2,5740 % / 13,6169 % / 1,6885 %) — desfase crecido por el anclaje arriba y el chevron (cambio pedido por el usuario; el HTML de referencia centra el modal); sin elevación de umbral ni cambios de baseline.
+
+## DOC-02 — Documentos multi-activo y gestión: FUNCIONAL
+
+- Relación N-N `DocumentItem` (`@@id([documentId, itemId])`, `onDelete: Cascade` en ambas FKs) sustituye a `Document.itemId` (1-N); la migración `20260810000000_document_item_join` copia las relaciones existentes a la tabla intermedia y elimina la columna (pre-release autorizado; `prisma migrate diff` sin drift).
+- `POST/PATCH /api/documents` aceptan `itemIds` (array; en FormData multipart viaja como JSON string); el PATCH reemplaza el conjunto completo en transacción, valida que todos los activos pertenezcan al proyecto y audita `Activos X → Y`. `GET /api/documents` filtra por activo (`itemId`, incluye `itemId=null` = sin activos) y busca por código/nombre de activo a través de la join. `GET /api/items` expone `documents`/`documentCount` por la join sin cambiar el shape; los próximos eventos derivados de vencimientos documentales no cambian.
+- «Gestionar documento»: campo único **«Activos asociados»** con nuevo `SearchableMultiPicker` (chips con «×», búsqueda con debounce 250 ms y check en opciones), precargado con los del documento; «Vincular documento» desde la ficha del activo **añade** vínculo (ya no reasigna).
+- **Un único control de versión**: el campo «Nueva versión» del grid desaparece; «Subir nueva versión» (label con input oculto `aria-label="Nueva versión"`) sube la versión al elegir el fichero con las fechas actuales del formulario.
+- La fila completa de la tabla de Documentos abre «Gestionar documento»; la columna pasa a «Activos asociados» (`COD · Nombre`). Tamaño de archivo con helper único `formatDocumentSize` (B/KB/MB como el HTML: «840 KB», «2.4 MB») en lista y ficha — nunca «0 MB».
+- Matriz: lint ✅, typecheck ✅, 66 unit/API ✅ (7 casos nuevos de `itemIds`), 32 E2E ✅ (test nuevo: documento con 2 activos, apertura por fila, desvinculación parcial), build ✅. Regresión visual 24/30, exit code 1: `locations` 3/3 en verde; `documents` (1,9719 % / 1,4077 % / 0,7283 %) e `item-modal` (3) fuera de umbral — el desfase de `documents` creció por el header «Activos asociados» y el formato KB/MB (cambio pedido por el usuario); sin elevación de umbral ni cambios de baseline.
+
+## ITEM-04 — Duplicación y reversión de baja: FUNCIONAL (pendiente de validación manual)
+
+- El menú de tres puntos de cada fila ofrece **Duplicar** y abre el formulario con nombre, instalación, ubicación, tipo, estado, iniciales, proyecto y responsable del origen. Código y número de serie quedan vacíos; documentos, eventos e historial no se copian porque son relaciones del activo original.
+- `Item.serialNumber` es único en PostgreSQL. La migración `20260809190000_item_serial_unique_remove_label` elimina destructivamente `Item.serialLabel`; la tabla deriva `SN`, `Lote` o `Mat` desde tipo + serie, manteniendo la presentación canónica sin un segundo campo editable.
+- Un ítem `Fuera de servicio` muestra **Reactivar** y vuelve a `Activo`; la auditoría registra transiciones legibles como `Fuera de servicio → Activo`.
+- Validación: sin series duplicadas antes de migrar; migración local aplicada; Prisma sin drift; lint ✅, typecheck ✅, 59 unit/API ✅, build ✅ y 31 E2E ✅. Activos visual 3/3 bajo 0,5 %; la suite completa permanece 24/30 por los seis objetivos preexistentes de `documents`/`item-modal`.
+
 ## LOC-01 — Ubicaciones: EN REVISIÓN (no validado)
 
 - `Location` jerárquica real (`parentId` auto-referenciada), responsable por FK a `User` miembro del proyecto y `label` de presentación para la tabla de Activos (el texto largo del prototipo, p. ej. `Planta 1 · Sala compresores`, vive en `label`; el árbol muestra `name`). Sin filas ocultas duplicadas: todas las ubicaciones son administrables y visibles al expandir su rama. Migraciones `20260807100000_location_hierarchy_and_item_fk`, `20260807120000_location_hidden`, `20260807140000_location_label_not_hidden` y `20260808100000_location_label_no_default` (elimina el DEFAULT `''` residual de `label`; `prisma migrate diff` sin drift).
@@ -17,11 +39,11 @@
 
 ## Handoff vigente — 2026-08-09
 
-- Rama de entrega: `main`; el commit de relevo se obtiene con `git log -1 --oneline`.
-- Estado funcional: la implementación y la matriz automática de LOC-01 están completas, pero el módulo permanece **EN REVISIÓN** hasta la aceptación manual expresa del usuario.
+- Rama de entrega: `main`; el commit de relevo es `0823a8b` (LOC-01 publicado EN REVISIÓN).
+- Estado funcional: LOC-01 permanece **EN REVISIÓN** hasta la aceptación manual expresa del usuario. ITEM-04, DOC-02 y UX-01 están implementados, verificados (66 unit/API, 33 E2E) y documentados, pero **sin commitear** en el working tree.
 - Punto de entrada para otro agente: leer `AGENTS.md`, este archivo, `ROADMAP.md` y ejecutar `LOC-01_MANUAL_TEST.md`.
-- Próxima acción obligatoria: completar el checklist manual de Ubicaciones; no iniciar otro rediseño ni cambiar el HTML, los baselines o el umbral visual.
-- Riesgos/pending separados: los 6 fallos visuales de `documents`/`item-modal` pertenecen a DOC-01; el aviso del bundle >500 kB pertenece a PERF-01.
+- Próxima acción obligatoria: completar el checklist manual de Ubicaciones; no cambiar estados a VALIDADO sin confirmación expresa ni commitear sin petición.
+- Riesgos/pending separados: los 6 fallos visuales de `documents` (DOC-02: header «Activos asociados» y formato KB/MB) e `item-modal` (UX-01: modal anclado arriba y chevron de estado) son desfases pedidos por el usuario contra el HTML de referencia; el aviso del bundle >500 kB pertenece a PERF-01; el warning DEP0205 de Node 26 en las suites pertenece a QA-01.
 
 ## Estado verificado histórico (auditoría 2026-08-06)
 
@@ -39,7 +61,7 @@
 | pnpm | 9.15.9, coincide con `packageManager` |
 | Docker | 29.5.3 |
 | Docker Compose | 5.1.4 |
-| Migraciones | 7 aplicadas, 0 pendientes |
+| Migraciones | 10 aplicadas, 0 pendientes |
 | Seed | Reproducible y verificado |
 | API | Healthcheck `{"status":"ok"}` y `/api/items` real con `nextEvents` derivados |
 | Frontend | Imagen Docker reconstruida y servicio de producción saludable en `:3001` |
@@ -50,7 +72,7 @@
 |---|---|---|
 | Panel general | VISUAL MOCK | Ruta, tema y fidelidad validados; KPIs, periodo, exportación y accesos son demostrativos. |
 | Proyectos | VISUAL MOCK | Ruta y tarjetas validadas; alta/apertura no tienen persistencia. |
-| Activos e ítems | VALIDADO | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. |
+| Activos e ítems | VALIDADO (base) + ITEM-04 FUNCIONAL | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. Duplicación, serie única/derivada y reactivación automatizadas; ITEM-04 pendiente de aceptación manual. |
 | Documentos | FUNCIONAL | PostgreSQL, versiones inmutables, subida multipart, edición/relación, descarga y almacenamiento local persistente; E2E Documento-Activo verde. La regresión visual sigue pendiente. |
 | Calendario | VISUAL MOCK | Calendario y fidelidad validados; vistas/eventos no persisten. |
 | Planos | PARCIAL | Marcadores arrastrables en memoria; guardar, deshacer/rehacer, capas y versiones no persisten. |

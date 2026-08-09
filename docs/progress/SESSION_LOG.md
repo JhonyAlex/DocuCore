@@ -1,5 +1,20 @@
 # SESSION_LOG — Fase 4
 
+## 2026-08-09 — UX-01: modales anclados arriba y menú de estado directo
+
+- Todos los contenedores de modales (`ItemModal`, `ItemFormModal`, `DocumentModal`, `LocationFormModal` y el diálogo «Vincular documento») pasan de `items-center` a `items-start` (+ `overflow-y-auto`): el modal queda anclado al borde superior y ya no «baila» al cambiar de pestaña o de tamaño; el borde superior permanece fijo.
+- El campo «Estado» de la ficha del activo abre **inmediatamente** un menú con las opciones (listbox con check en el estado actual, animación `fade-in`, cierre por click fuera y al seleccionar), con un chevron ▾ que rota como indicación de que es interactivo; desaparece el `<select>` intermedio que exigía un segundo control.
+- E2E nuevo: el modal mantiene el mismo `y` al cambiar de pestaña (<64 px del top) y el menú de estado cambia y restaura el estado desde la ficha.
+- Matriz: lint ✅, typecheck ✅, 66 unit/API ✅, 33 E2E ✅, build ✅. Visual 24/30: `item-modal` (2,5740 % / 13,6169 % / 1,6885 %) creció por el anclaje arriba y el chevron (cambio pedido por el usuario; el HTML de referencia centra el modal); sin elevación de umbral ni baselines.
+
+## 2026-08-09 — DOC-02: documentos multi-activo y gestión documental
+
+- Se sustituyó `Document.itemId` (1-N) por la tabla intermedia `DocumentItem` (N-N, `@@id([documentId, itemId])`, Cascade en ambas FKs). Migración `20260810000000_document_item_join`: copia las relaciones existentes y elimina la columna (pre-release autorizado). `prisma migrate diff` sin drift.
+- `POST/PATCH /api/documents` aceptan `itemIds` (array; JSON string en multipart); el PATCH reemplaza el conjunto completo validando que todos los activos pertenezcan al proyecto, con auditoría `Activos X → Y`. El filtro por activo (`itemId`, `itemId=null`) y la búsqueda por código/nombre atraviesan la join. `GET /api/items` expone `documents`/`documentCount` por la join; los eventos derivados de vencimientos no cambian.
+- UI: nuevo `SearchableMultiPicker` (chips con «×», debounce 250 ms, check en opciones) para el campo único «Activos asociados» de «Gestionar documento»; «Vincular documento» desde la ficha añade vínculo sin reasignar; «Subir nueva versión» es un único control (label con input oculto) que sube al elegir fichero; la fila completa de Documentos abre el documento; columna «Activos asociados»; tamaño con helper único `formatDocumentSize` (B/KB/MB) en lista y ficha — nunca «0 MB».
+- ITEM-04 (duplicado): el duplicado nace con el estado por defecto de «Nuevo ítem» (Activo) en lugar de heredar el ciclo de vida del origen; código y serie quedan vacíos (únicos). E2E reescrito con origen «Fuera de servicio» (CP-02) que afirma el estado Activo del duplicado.
+- Matriz final: lint ✅, typecheck ✅, 66 unit/API ✅ (7 casos nuevos de `itemIds`), 32 E2E ✅ (test nuevo multi-activo: 2 activos, apertura por fila, desvinculación parcial), build ✅. Regresión visual 24/30: `locations` 3/3 en verde; `documents` (1,9719 % / 1,4077 % / 0,7283 %) e `item-modal` (3) en desfase — el de `documents` creció por el header «Activos asociados» y el formato KB/MB (cambio pedido por el usuario); sin elevación de umbral ni baselines.
+
 ## 2026-08-06
 
 - Se añadió Vitest con pruebas para los tokens CSS del mapeador de ítems y la validación HTTP real de Express/Zod.
@@ -103,3 +118,11 @@ La anotación original de 25 fallos correspondía a una ejecución intermedia y 
 - Se añade `LOC-01_MANUAL_TEST.md` como checklist editable de aceptación. LOC-01 permanece EN REVISIÓN hasta confirmación expresa del usuario; cualquier cambio a VALIDADO debe ser un commit documental posterior.
 - Para retomar: leer `AGENTS.md`, `CURRENT_STATUS.md`, `ROADMAP.md` y el checklist manual. Próximo paso: ejecutar la validación manual; después decidir DOC-01 visual, CAL-01 o ITEM-02.
 - `.zcode/` queda ignorado por ser metadato local de agentes y no forma parte del producto ni del handoff versionado.
+
+## 2026-08-09 — ITEM-04 duplicación, serie normalizada y reversión de baja
+
+- Se implementa **Duplicar** en el menú de acciones de la tabla: precarga las propiedades editables del origen, vacía código/serie y crea una identidad independiente sin copiar documentos, eventos ni auditoría.
+- Migración destructiva autorizada `20260809190000_item_serial_unique_remove_label`: elimina `Item.serialLabel` y crea el índice único `Item_serialNumber_key`. La etiqueta visible se deriva del tipo (`SN`, `Lote`, `Mat`) y conserva la tabla canónica sin duplicar información.
+- La ficha sustituye **Dar de baja** por **Reactivar** cuando el estado es `Fuera de servicio`; el backend audita nombre de estado anterior y nuevo.
+- Evidencia: 0 series duplicadas antes de migrar; Docker aplica 9/9 migraciones y queda saludable; Prisma sin drift; lint, typecheck, build, 59/59 unit/API y 31/31 E2E en verde. Visual: Activos 3/3 bajo 0,5 %; suite completa 24/30 por `documents`/`item-modal`, sin cambiar HTML, baseline ni umbral.
+- ITEM-04 queda **FUNCIONAL**, pendiente de validación manual del usuario antes de declararlo VALIDADO.

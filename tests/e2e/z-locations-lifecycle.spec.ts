@@ -178,7 +178,6 @@ test.describe('Locations lifecycle', () => {
         code: 'ACT-E2E',
         name: 'Activo de rama',
         serialNumber: 'ACT-E2E',
-        serialLabel: 'SN: ACT-E2E',
         installDate: '2026-07-15',
         typeId: types[0].id,
         statusId: statuses[0].id,
@@ -216,7 +215,6 @@ test.describe('Locations lifecycle', () => {
     const base = {
       name: 'Activo de relaciones E2E',
       serialNumber: 'QA-REL-SN',
-      serialLabel: 'SN: QA-REL-SN',
       installDate: '2026-07-15',
       typeId: types[0].id,
       statusId: statuses[0].id,
@@ -277,7 +275,6 @@ test.describe('Locations lifecycle', () => {
     await dialog.locator('#item-code').fill('SIDE-E2E')
     await dialog.locator('#item-name').fill('Activo sidebar E2E')
     await dialog.locator('#item-serial-number').fill('SIDE-SN')
-    await dialog.locator('#item-serial-label').fill('SN: SIDE-SN')
     await dialog.locator('#item-install-date').fill('2026-07-15')
     await dialog.locator('#item-location').selectOption({ index: 1 })
     await dialog.locator('#item-type').selectOption({ index: 1 })

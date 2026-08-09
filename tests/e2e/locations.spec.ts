@@ -167,7 +167,6 @@ test.describe('Locations', () => {
     await dialog.locator('#item-code').fill('LOC-E2E-1')
     await dialog.locator('#item-name').fill('Activo con ubicación E2E')
     await dialog.locator('#item-serial-number').fill('LOC-SN-1')
-    await dialog.locator('#item-serial-label').fill('SN: LOC-SN-1')
     await dialog.locator('#item-install-date').fill('2026-07-15')
     await locationSelect.selectOption({ label: 'Planta 1 · Laboratorio' })
     await dialog.locator('#item-type').selectOption({ label: 'Instrumento' })

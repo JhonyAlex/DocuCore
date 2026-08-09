@@ -148,14 +148,37 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ README, Dokploy, changelog y documentación operativa
 - ✅ Regresión visual: 30 de 30 pares bajo el umbral explícito de 0.5% (máximo: Activos 1440 × 1000 oscuro, 0.3238%)
 
-**DOC-01 — Documentos funcionales**: FUNCIONAL, pendiente de regresión visual
+**DOC-01 — Documentos funcionales**: FUNCIONAL
 
 - ✅ `Document` + `DocumentVersion`, migración nueva, seed canónico y versión actual por número más alto
 - ✅ Almacenamiento local seguro configurable, volumen Docker de documentos y directorio E2E aislado
 - ✅ API multipart con versiones, metadatos/relación, descargas y auditoría
 - ✅ Vista Documentos + ficha de activo conectadas a relaciones reales
 - ✅ E2E de subida, versiones, descarga por bytes, persistencia y actualización/retiro de evento derivado
-- ⏳ Regresión visual pendiente: no se ha elevado el umbral de 0,5% ni modificado baselines
+- ⏳ Regresión visual pendiente: `documents` (3 objetivos) mantiene el desfase contra el HTML de referencia; no se ha elevado el umbral de 0,5% ni modificado baselines
+
+**DOC-02 — Documentos multi-activo y gestión**: FUNCIONAL
+
+- ✅ Relación N-N `DocumentItem` (`@@id([documentId, itemId])`, `onDelete: Cascade` en ambas FKs) en lugar de `Document.itemId` (1-N); migración `20260810000000_document_item_join` conserva las relaciones existentes y elimina la columna (autorizado por la regla pre-release; `prisma migrate diff` limpio)
+- ✅ API: `POST/PATCH /api/documents` aceptan `itemIds` (array; en multipart viaja como JSON string); el PATCH reemplaza el conjunto completo y valida que **todos** los activos pertenezcan al proyecto; el filtro `GET /api/documents?itemId=` (incluye `itemId=null` = sin activos) y la búsqueda por código/nombre de activo funcionan a través de la join; auditoría con detalle `Activos X → Y`
+- ✅ `GET /api/items` expone `documents`/`documentCount` a través de la join (mismo shape `ApiItemDocument`); los próximos eventos derivados de vencimientos documentales no cambian
+- ✅ «Gestionar documento»: campo único **«Activos asociados»** con `SearchableMultiPicker` (chips con «×», búsqueda con debounce y check en opciones), precargado con los del documento; «Vincular documento» desde la ficha del activo **añade** vínculo sin reasignar
+- ✅ **Un único control de versión**: desaparece el campo «Nueva versión» del grid; el botón «Subir nueva versión» (label con input oculto) sube la versión al elegir el fichero, con las fechas actuales del formulario
+- ✅ La fila completa de la tabla de Documentos abre «Gestionar documento» (columna «Activos asociados» con `COD · Nombre`); el tamaño de archivo usa el helper unificado `formatDocumentSize` (B/KB/MB, como el HTML: «840 KB», «2.4 MB») en la lista y en la ficha del activo — nunca «0 MB»
+- ✅ Validación: lint ✅, typecheck ✅, 66 unit/API ✅ y 32 E2E ✅ (incluye test nuevo: documento con 2 activos, apertura por fila y desvinculación parcial). Visual: `documents` 1440×1000 oscuro 1,9719 %, claro 1,4077 %, 1920×1080 oscuro 0,7283 % — desfase esperado por el header «Activos asociados» y el formato KB/MB, pedido expresamente por el usuario; sin elevación de umbral ni cambios de baseline
+
+**ITEM-04 — Duplicación y reversión de baja**: FUNCIONAL (pendiente de validación manual)
+
+- ✅ Menú de acciones de cada fila con **Duplicar**: precarga solo los campos del modal de «Nuevo ítem» (nombre, instalación, ubicación, tipo, responsable, iniciales, proyecto); código y nº de serie quedan vacíos (únicos, con 409 ante conflicto); el duplicado **nace con el estado por defecto** (Activo, primero de la lista) y no hereda el ciclo de vida del origen (p. ej. una baja); no copia documentos, eventos ni historial
+- ✅ `Item.serialNumber` único en PostgreSQL; `serialLabel` eliminada (migración `20260809190000_item_serial_unique_remove_label`); la presentación `SN`/`Lote`/`Mat` se deriva de tipo + serie
+- ✅ Un ítem `Fuera de servicio` muestra **Reactivar** (vuelve a `Activo`) con auditoría `Fuera de servicio → Activo`
+- ✅ Validación: lint/typecheck/66 unit/33 E2E en verde; visual de Activos 3/3; pendiente de aceptación manual
+
+**UX-01 — Modales anclados y menú de estado directo**: FUNCIONAL
+
+- ✅ Todos los modales (`ItemModal`, `ItemFormModal`, `DocumentModal`, `LocationFormModal`, diálogo «Vincular documento») anclados al borde superior (`items-start` + `overflow-y-auto`): el modal cambia de tamaño al navegar entre pestañas sin «bailar»; el borde superior permanece fijo
+- ✅ El campo «Estado» de la ficha del activo abre **inmediatamente** el menú de opciones (listbox con check en el estado actual, `fade-in`, cierre por click fuera y al seleccionar) con chevron ▾ rotatorio como indicación; sin controles intermedios
+- ✅ Validación: lint/typecheck/66 unit/33 E2E en verde (E2E nuevo: el modal mantiene el mismo `y` al cambiar de pestaña y cambia/restaura estado desde el menú); visual: `item-modal` (2,5740 % / 13,6169 % / 1,6885 %) en desfase por el anclaje y el chevron (cambio pedido por el usuario; el HTML de referencia centra el modal)
 
 **LOC-01 — Ubicaciones funcionales**: EN REVISIÓN (correcciones de integridad aplicadas; pendiente de validación final del usuario)
 
@@ -176,7 +199,7 @@ docker compose up    # Levantar todo (DB + app)
 | Panel general (dashboard) | Implementada (mock) | Visual (3 objetivos) |
 | Proyectos | Implementada (mock) | Visual (3 objetivos) |
 | Activos e ítems | Implementada (PostgreSQL) | Visual + E2E |
-| Documentos | Implementada (PostgreSQL + almacenamiento local) | E2E; visual pendiente |
+| Documentos | Implementada (PostgreSQL + almacenamiento local, multi-activo) | E2E; visual pendiente |
 | Calendario | Implementada (mock) | Visual (3 objetivos) |
 | Planos | Implementada (mock) | Visual (3 objetivos) |
 | Ubicaciones | Implementada (PostgreSQL, jerarquía + CRUD) | Visual (3 objetivos) + E2E |
@@ -191,7 +214,7 @@ docker compose up    # Levantar todo (DB + app)
 | Navegación | Implementado |
 | Datos demostrativos | Implementado (mock) |
 | CRUD Activos → PostgreSQL | Implementado y verificado E2E |
-| Documentos → PostgreSQL + archivos | Implementado y verificado E2E |
+| Documentos → PostgreSQL + archivos (N-N multi-activo) | Implementado y verificado E2E |
 | Ubicaciones → PostgreSQL (jerarquía + CRUD + asignación) | Implementado y verificado E2E |
 | Docker | Producción validada (app + PostgreSQL) |
 
@@ -199,17 +222,19 @@ docker compose up    # Levantar todo (DB + app)
 
 Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; evaluar code splitting en una mejora posterior.
 
-Regresión visual: `pnpm test:visual` registra 24/30 con exit code 1; `locations` está 3/3 en verde (máx. 0,069236%). `documents` e `item-modal` mantienen el desfase preexistente de DOC-01 contra el HTML de referencia (contenidos documentales distintos); es trabajo pendiente de ese módulo, no de LOC-01. No se ha elevado el umbral de 0,5% ni modificado baselines.
+Regresión visual: `pnpm test:visual` registra 24/30 con exit code 1; `locations` está 3/3 en verde (máx. 0,069236%). `documents` (3 objetivos: 1,9719 % / 1,4077 % / 0,7283 %) e `item-modal` (3 objetivos: 2,5740 % / 13,6169 % / 1,6885 %) fallan contra el HTML de referencia: el desfase de `documents` creció con DOC-02 (header «Activos asociados» y formato de tamaño B/KB/MB, pedidos expresamente por el usuario) y el de `item-modal` con UX-01 (modal anclado arriba en lugar de centrado, y chevron en el campo Estado — ambos pedidos por el usuario). No se ha elevado el umbral de 0,5% ni modificado baselines.
 
 ## Último commit estable
 
-La etapa LOC-01 se publica en `main` con el estado **EN REVISIÓN**. Para identificar el commit exacto de relevo, ejecutar `git log -1 --oneline`; no cambiar el estado a VALIDADO sin confirmación expresa del usuario.
+La etapa LOC-01 se publica en `main` con el estado **EN REVISIÓN** (HEAD: `0823a8b`). El trabajo posterior —ITEM-04 (duplicado), DOC-02 (multi-activo) y UX-01 (modales/estado)— está implementado, verificado y documentado en el working tree **sin commitear** (no commitear sin petición expresa del usuario). No cambiar ningún estado a VALIDADO sin confirmación expresa del usuario.
 
 ## Próximo paso exacto
 
 1. Ejecutar con el usuario `docs/progress/LOC-01_MANUAL_TEST.md` y registrar el resultado observado.
 2. Solo si el usuario acepta la prueba, cambiar LOC-01 de `EN REVISIÓN` a `VALIDADO` en `AGENTS.md`, `CURRENT_STATUS.md`, `ROADMAP.md` y `SESSION_LOG.md` mediante un commit documental separado.
-3. Después, priorizar la regresión visual pendiente de DOC-01 o continuar con `CAL-01` / `ITEM-02`; los vencimientos documentales ya alimentan los próximos eventos de `ITEM-03`.
+3. Validar manualmente ITEM-04 (duplicar un activo de baja y comprobar que nace Activo con código/serie nuevos) y, si el usuario lo desea, probar DOC-02 (asociar un documento a dos activos) y UX-01 (cambiar estado desde la ficha).
+4. Decidir con el usuario el destino del desfase visual de `documents`/`item-modal` (cambios pedidos por el usuario; no se eleva el umbral ni se tocan baselines sin su autorización).
+5. Pendientes de roadmap: `CAL-01`, `HIST-01`, `CONF-01`, `DASH-01`, `PROJ-01`, `SHELL-01`, `PLAN-01`, `PERF-01` (bundle >500 kB) y `QA-01` (warning DEP0205 de Node 26 en las suites).
 
 ## Archivos protegidos
 

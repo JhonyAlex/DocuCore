@@ -35,7 +35,7 @@ pnpm db:seed
 
 ## Documentos
 
-`Document` es el registro lógico y `DocumentVersion` conserva cada fichero de forma inmutable. La versión con el número más alto es la actual: de ella se calculan el estado (`Vigente`, `Por vencer` o `Vencido`) y el vencimiento que alimenta los próximos eventos del activo. Los documentos sin vencimiento no generan eventos.
+`Document` es el registro lógico y `DocumentVersion` conserva cada fichero de forma inmutable. La versión con el número más alto es la actual: de ella se calculan el estado (`Vigente`, `Por vencer` o `Vencido`) y el vencimiento que alimenta los próximos eventos del activo. Los documentos sin vencimiento no generan eventos. Un documento puede estar asociado a **varios activos** (relación N-N `DocumentItem`); la ficha de cada activo refleja los documentos compartidos y sus eventos derivados.
 
 La API expone listado paginado y filtrable, KPIs, detalle con historial, subida, nueva versión, edición de metadatos/relación, descarga actual o histórica y eliminación bajo `/api/documents`. Las subidas son `multipart/form-data`, aceptan PDF, XLSX, XLS y TXT, y se limitan a 10 MB. Los nombres internos se generan con UUID; nunca se usa el nombre proporcionado para construir una ruta.
 
