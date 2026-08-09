@@ -191,7 +191,8 @@ test.describe('DocuCore application', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })).toHaveCount(0)
 
-    const createButton = page.locator('section').getByRole('button', { name: 'Nuevo activo', exact: true })
+    // UX-03: el alta de activos es único desde la cabecera (Topbar).
+    const createButton = page.getByRole('button', { name: 'Nuevo activo', exact: true })
     await createButton.focus()
     await createButton.click()
     const formDialog = page.getByRole('dialog', { name: 'Nuevo activo' })

@@ -8,7 +8,8 @@ import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import type { AssetFormValues } from '@/components/AssetFormModal'
-import { changeAssetStatus, createAsset, deleteAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, purgeAsset, restoreAsset, updateAsset, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type AssetListParams } from '@/lib/api'
+import type { LocationFormValues } from '@/components/LocationFormModal'
+import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
@@ -32,6 +33,7 @@ export default function AssetsView() {
   const [types, setTypes] = useState<ApiAssetType[]>([])
   const [statuses, setStatuses] = useState<ApiStatus[]>([])
   const [locations, setLocations] = useState<ApiLocation[]>([])
+  const [users, setUsers] = useState<ApiUserRef[]>([])
   const [optionsError, setOptionsError] = useState(false)
   const [formMode, setFormMode] = useState<'create' | 'edit' | 'duplicate' | null>(null)
   const [page, setPage] = useState(1)
@@ -101,12 +103,13 @@ export default function AssetsView() {
 
   useEffect(() => {
     let active = true
-    Promise.all([fetchAssetTypes(), fetchStatuses(), fetchLocations()])
-      .then(([nextTypes, nextStatuses, nextLocations]) => {
+    Promise.all([fetchAssetTypes(), fetchStatuses(), fetchLocations(), fetchUsers()])
+      .then(([nextTypes, nextStatuses, nextLocations, nextUsers]) => {
         if (!active) return
         setTypes(nextTypes)
         setStatuses(nextStatuses)
         setLocations(nextLocations.locations)
+        setUsers(nextUsers)
       })
       .catch(() => {
         if (active) setOptionsError(true)
@@ -157,6 +160,26 @@ export default function AssetsView() {
       setFormMode(null)
     } catch (writeError) {
       throw new Error(toUserError(writeError))
+    }
+  }
+
+  const toLocationUserError = (writeError: unknown) => toUserWriteError(writeError, {
+    conflict: 'Ya existe una ubicación con ese código.',
+    notFound: 'La ubicación ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
+    validation: 'Revisa los campos obligatorios e inténtalo de nuevo.',
+    fallback: 'No se pudo guardar la ubicación. Inténtalo de nuevo.',
+  })
+
+  // UX-03: alta rápida de ubicación desde el formulario de activo. Crea la ubicación
+  // en el proyecto del formulario y refresca el catálogo para que quede seleccionada.
+  const createLocationFromAssetForm = async (locationValues: LocationFormValues): Promise<ApiLocation> => {
+    try {
+      const created = await createLocation({ ...locationValues, projectId: formAsset?.projectId ?? projectId })
+      const nextLocations = await fetchLocations()
+      setLocations(nextLocations.locations)
+      return created
+    } catch (writeError) {
+      throw new Error(toLocationUserError(writeError))
     }
   }
 
@@ -271,16 +294,10 @@ export default function AssetsView() {
             {!trashMode && trashCount > 0 && <span className="rounded-full bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 text-xs font-medium">{trashCount}</span>}
           </button>
           {!trashMode && (
-            <>
-              <button className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm flex items-center gap-1.5">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                Exportar CSV
-              </button>
-              <button type="button" onClick={() => setFormMode('create')} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" /></svg>
-                Nuevo activo
-              </button>
-            </>
+            <button className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm flex items-center gap-1.5">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              Exportar CSV
+            </button>
           )}
         </div>
       </div>
@@ -332,7 +349,7 @@ export default function AssetsView() {
         onRetry={() => void loadAssets()}
       />
       <AssetModal asset={selectedAsset} statuses={statuses} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={(asset) => void handleDelete(asset)} onDocumentsChanged={loadAssets} />
-      {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
+      {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
       <ConfirmDialog
         open={purgeTarget !== null}
         title="Eliminar definitivamente"

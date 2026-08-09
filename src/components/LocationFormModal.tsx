@@ -16,6 +16,10 @@ interface LocationFormModalProps {
   users: ApiUserRef[]
   projectId: number
   optionsError: boolean
+  // UX-03: alta rápida desde el formulario de activo — valores iniciales opcionales
+  // (solo aplican en modo create; sin ellos se conserva el comportamiento actual).
+  initialParentId?: number | null
+  initialResponsibleId?: number
   onClose: () => void
   onSubmit: (values: LocationFormValues) => Promise<void>
 }
@@ -42,6 +46,8 @@ export default function LocationFormModal({
   locations,
   users,
   optionsError,
+  initialParentId,
+  initialResponsibleId,
   onClose,
   onSubmit,
 }: LocationFormModalProps) {
@@ -49,8 +55,8 @@ export default function LocationFormModal({
     name: location?.name ?? '',
     code: location?.code ?? '',
     surface: location?.surface ?? '',
-    parentId: location?.parentId ?? null,
-    responsibleId: location?.responsibleId ?? users[0]?.id ?? 0,
+    parentId: initialParentId !== undefined ? initialParentId : (location?.parentId ?? null),
+    responsibleId: initialResponsibleId ?? location?.responsibleId ?? users[0]?.id ?? 0,
   })
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
