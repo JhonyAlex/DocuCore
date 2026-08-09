@@ -59,7 +59,6 @@ describe('items API validation', () => {
         code: 'QA-BAD-DATE',
         name: 'Fecha inválida QA',
         serialNumber: 'QA-BAD',
-        serialLabel: 'SN: QA-BAD',
         installDate: '2026-02-30',
         typeId: 1,
         statusId: 1,

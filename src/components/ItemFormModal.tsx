@@ -5,7 +5,6 @@ export interface ItemFormValues {
   code: string
   name: string
   serialNumber: string
-  serialLabel: string
   installDate: string
   typeId: number
   statusId: number
@@ -16,7 +15,7 @@ export interface ItemFormValues {
 }
 
 interface ItemFormModalProps {
-  mode: 'create' | 'edit'
+  mode: 'create' | 'edit' | 'duplicate'
   item: ApiItem | null
   types: ApiItemType[]
   statuses: ApiStatus[]
@@ -36,15 +35,17 @@ function dateForInput(value: string): string {
   return day && month && year ? `${year}-${month}-${day}` : ''
 }
 
-function initialValues(item: ApiItem | null, typeId: number, statusId: number, projectId: number, responsibleId: number): ItemFormValues {
+function initialValues(item: ApiItem | null, mode: ItemFormModalProps['mode'], typeId: number, statusId: number, projectId: number, responsibleId: number): ItemFormValues {
+  const needsNewIdentity = mode === 'duplicate'
   return {
-    code: item?.code ?? '',
+    code: needsNewIdentity ? '' : item?.code ?? '',
     name: item?.name ?? '',
-    serialNumber: item?.serialNumber ?? '',
-    serialLabel: item?.serialLabel ?? '',
+    serialNumber: needsNewIdentity ? '' : item?.serialNumber ?? '',
     installDate: item ? dateForInput(item.installDate) : '',
     typeId: item?.typeId ?? typeId,
-    statusId: item?.statusId ?? statusId,
+    // Al duplicar no se hereda el ciclo de vida del origen: el duplicado nace con el
+    // estado por defecto de un ítem nuevo (el primero de la lista), como en crear.
+    statusId: mode === 'duplicate' ? statusId : item?.statusId ?? statusId,
     locationId: item?.locationId ?? 0,
     projectId: item?.projectId ?? projectId,
     responsibleId: item?.responsibleId ?? responsibleId,
@@ -70,7 +71,7 @@ export default function ItemFormModal({
   onClose,
   onSubmit,
 }: ItemFormModalProps) {
-  const [values, setValues] = useState(() => initialValues(item, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
+  const [values, setValues] = useState(() => initialValues(item, mode, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const codeInputRef = useRef<HTMLInputElement>(null)
@@ -103,7 +104,7 @@ export default function ItemFormModal({
   }, [item?.id, mode])
 
   useEffect(() => {
-    setValues(initialValues(item, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
+    setValues(initialValues(item, mode, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
     setError(null)
   }, [item, mode, projectId, responsibleId, statuses, types])
 
@@ -125,12 +126,12 @@ export default function ItemFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
       <div role="dialog" aria-modal="true" aria-labelledby="item-form-title" className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
-            <div className="text-xs font-mono text-slate-500">{mode === 'create' ? 'NUEVO ÍTEM' : item?.code}</div>
-            <h3 id="item-form-title" className="font-semibold text-lg">{mode === 'create' ? 'Nuevo ítem' : 'Editar ítem'}</h3>
+            <div className="text-xs font-mono text-slate-500">{mode === 'create' ? 'NUEVO ÍTEM' : mode === 'duplicate' ? `DUPLICAR ${item?.code ?? ''}` : item?.code}</div>
+            <h3 id="item-form-title" className="font-semibold text-lg">{mode === 'create' ? 'Nuevo ítem' : mode === 'duplicate' ? 'Duplicar ítem' : 'Editar ítem'}</h3>
           </div>
           <button type="button" onClick={onClose} disabled={saving} aria-label="Cerrar formulario" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -140,6 +141,7 @@ export default function ItemFormModal({
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="p-5 overflow-y-auto scrollbar-thin">
             {(error || optionsError) && <div role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50/70 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error ?? 'No se pudieron cargar las opciones necesarias. Cierra el formulario e inténtalo de nuevo.'}</div>}
+            {mode === 'duplicate' && <div className="mb-4 rounded-lg border border-brand-100 bg-brand-50/70 px-3 py-2 text-sm text-brand-700 dark:border-brand-900/50 dark:bg-brand-900/20 dark:text-brand-300">Se han copiado las propiedades de {item?.code}. Introduce un código y un número de serie nuevos para identificar el duplicado.</div>}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <FieldLabel htmlFor="item-code">Código</FieldLabel>
@@ -152,10 +154,6 @@ export default function ItemFormModal({
               <div>
                 <FieldLabel htmlFor="item-serial-number">Nº de serie</FieldLabel>
                 <input id="item-serial-number" value={values.serialNumber} onChange={(event) => updateValue('serialNumber', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
-              </div>
-              <div>
-                <FieldLabel htmlFor="item-serial-label">Etiqueta de serie</FieldLabel>
-                <input id="item-serial-label" value={values.serialLabel} onChange={(event) => updateValue('serialLabel', event.target.value)} required placeholder="SN: ..." className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
               </div>
               <div>
                 <FieldLabel htmlFor="item-install-date">Instalación</FieldLabel>
@@ -198,7 +196,7 @@ export default function ItemFormModal({
           </div>
           <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
             <button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Cancelar</button>
-            <button type="submit" disabled={saving || !optionsReady || optionsError} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">{saving ? 'Guardando…' : mode === 'create' ? 'Crear ítem' : 'Guardar cambios'}</button>
+            <button type="submit" disabled={saving || !optionsReady || optionsError} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">{saving ? 'Guardando…' : mode === 'edit' ? 'Guardar cambios' : mode === 'duplicate' ? 'Crear duplicado' : 'Crear ítem'}</button>
           </div>
         </form>
       </div>

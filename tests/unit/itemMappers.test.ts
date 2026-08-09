@@ -8,7 +8,6 @@ function apiItem(overrides: Partial<ApiItem>): ApiItem {
     code: 'CNC-05',
     name: 'Torno CNC Haas ST-20',
     serialNumber: 'HA20-2024-8821',
-    serialLabel: 'SN: HA20-2024-8821',
     installDate: '2024-02-04T00:00:00.000Z',
     typeId: 1,
     statusId: 1,
@@ -45,6 +44,7 @@ describe('mapApiItemToDisplay', () => {
       responsibleColor: 'bg-emerald-500',
       location: 'Planta 1 · Nave A',
       installDate: '04/02/2024',
+      serialLabel: 'SN: HA20-2024-8821',
       nextEvent: {
         id: 'event:1',
         label: 'Mant. preventivo',
@@ -54,6 +54,11 @@ describe('mapApiItemToDisplay', () => {
         sourceLabel: 'Recurrente cada 3 meses',
       },
     })
+  })
+
+  it('derives the serial presentation from the item type without storing a separate label', () => {
+    expect(mapApiItemToDisplay(apiItem({ type: { id: 2, name: 'Extintor' }, serialNumber: 'EXT-2026-01' })).serialLabel).toBe('Lote: EXT-2026-01')
+    expect(mapApiItemToDisplay(apiItem({ type: { id: 3, name: 'Vehículo' }, serialNumber: '1234 ABC' })).serialLabel).toBe('Mat: 1234 ABC')
   })
 
   it('uses the status color for initials and pulse rendering when an item is under review', () => {

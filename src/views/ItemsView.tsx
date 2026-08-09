@@ -24,7 +24,7 @@ export default function ItemsView() {
   const [statuses, setStatuses] = useState<ApiStatus[]>([])
   const [locations, setLocations] = useState<ApiLocation[]>([])
   const [optionsError, setOptionsError] = useState(false)
-  const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
+  const [formMode, setFormMode] = useState<'create' | 'edit' | 'duplicate' | null>(null)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -99,7 +99,7 @@ export default function ItemsView() {
   }
 
   const toUserError = (writeError: unknown) => toUserWriteError(writeError, {
-    conflict: 'Ya existe un ítem con ese código.',
+    conflict: 'Ya existe un ítem con ese código o número de serie.',
     notFound: 'El ítem ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
     validation: 'Revisa los campos obligatorios e inténtalo de nuevo.',
     fallback: 'No se pudo guardar el ítem. Inténtalo de nuevo.',
@@ -112,7 +112,8 @@ export default function ItemsView() {
         const updated = await updateItem(selectedItem.id, values)
         setSelectedItem(updated)
       } else {
-        await createItem(values)
+        const created = await createItem(values)
+        if (formMode === 'duplicate') setSelectedItem(created)
       }
       await loadItems()
       reloadSession()
@@ -136,7 +137,7 @@ export default function ItemsView() {
   const pagination: Pagination = { page, totalPages, total, limit: LIMIT }
   const displayedItems: Item[] = items.map(mapApiItemToDisplay)
   const projectId = session?.project.id ?? 0
-  const formItem = formMode === 'edit' ? selectedItem : null
+  const formItem = formMode === 'edit' || formMode === 'duplicate' ? selectedItem : null
   const responsibleId = formItem?.responsibleId ?? session?.user.id ?? 0
   const responsibleName = formItem?.responsible?.name ?? session?.user.name ?? ''
 
@@ -166,6 +167,10 @@ export default function ItemsView() {
         error={error}
         pagination={pagination}
         onRowClick={(item) => setSelectedItem(items.find((apiItem) => apiItem.id === item.id) ?? null)}
+        onDuplicate={(item) => {
+          setSelectedItem(items.find((apiItem) => apiItem.id === item.id) ?? null)
+          setFormMode('duplicate')
+        }}
         onPageChange={setPage}
         onRetry={() => void loadItems()}
       />

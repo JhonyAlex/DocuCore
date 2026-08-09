@@ -1,3 +1,5 @@
+import { useEffect, useState, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { Item, Pagination } from '@/types'
 import StatusChip from '@/components/StatusChip'
 
@@ -13,11 +15,18 @@ interface ItemsTableProps {
   error: string | null
   pagination: Pagination
   onRowClick: (item: Item) => void
+  onDuplicate: (item: Item) => void
   onPageChange: (page: number) => void
   onRetry: () => void
 }
 
 type PageToken = number | 'ellipsis'
+
+interface ActionsMenuState {
+  item: Item
+  top: number
+  left: number
+}
 
 function pageWindow(current: number, total: number): PageToken[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -31,11 +40,50 @@ function pageWindow(current: number, total: number): PageToken[] {
   return pages
 }
 
-export default function ItemsTable({ items, loading, error, pagination, onRowClick, onPageChange, onRetry }: ItemsTableProps) {
+export default function ItemsTable({ items, loading, error, pagination, onRowClick, onDuplicate, onPageChange, onRetry }: ItemsTableProps) {
+  const [actionsMenu, setActionsMenu] = useState<ActionsMenuState | null>(null)
   const { page, totalPages, total, limit } = pagination
   const start = total === 0 ? 0 : (page - 1) * limit + 1
   const end = Math.min(page * limit, total)
   const pages = pageWindow(page, totalPages)
+
+  useEffect(() => {
+    if (!actionsMenu) return
+
+    const closeMenu = () => setActionsMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu()
+    }
+
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+    }
+  }, [actionsMenu])
+
+  const toggleActionsMenu = (event: MouseEvent<HTMLButtonElement>, item: Item) => {
+    if (actionsMenu?.item.id === item.id) {
+      setActionsMenu(null)
+      return
+    }
+
+    const buttonRect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 144
+    const viewportPadding = 8
+    setActionsMenu({
+      item,
+      top: buttonRect.bottom + 4,
+      left: Math.min(
+        window.innerWidth - menuWidth - viewportPadding,
+        Math.max(viewportPadding, buttonRect.right - menuWidth),
+      ),
+    })
+  }
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -137,7 +185,7 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+                    <button type="button" aria-label={`Acciones de ${item.code}`} aria-controls="item-actions-menu" aria-expanded={actionsMenu?.item.id === item.id} onClick={(event) => toggleActionsMenu(event, item)} className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
                       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" /></svg>
                     </button>
                   </td>
@@ -162,6 +210,15 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
           <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
         </div>
       </div>
+      {actionsMenu && createPortal(
+        <>
+          <button type="button" tabIndex={-1} aria-label="Cerrar menú de acciones" onClick={() => setActionsMenu(null)} className="fixed inset-0 z-[60] cursor-default" />
+          <div id="item-actions-menu" role="menu" className="fixed z-[70] w-36 rounded-lg border border-slate-200 bg-white p-1 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900" style={{ top: actionsMenu.top, left: actionsMenu.left }}>
+            <button type="button" role="menuitem" onClick={() => { const item = actionsMenu.item; setActionsMenu(null); onDuplicate(item) }} className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">Duplicar</button>
+          </div>
+        </>,
+        document.body,
+      )}
     </div>
   )
 }

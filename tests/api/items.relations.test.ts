@@ -28,8 +28,7 @@ function itemPayload(overrides: Record<string, unknown> = {}): Record<string, un
   return {
     code: `QA-REL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     name: 'Ítem de relaciones QA',
-    serialNumber: 'SN-REL-QA',
-    serialLabel: 'SN: REL-QA',
+    serialNumber: `SN-REL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     installDate: '2026-07-15',
     typeId: 1,
     statusId: 1,
