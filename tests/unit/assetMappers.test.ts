@@ -143,6 +143,7 @@ function locationAsset(overrides: Partial<ApiLocationAsset>): ApiLocationAsset {
 describe('mapApiLocationAssetToDisplay', () => {
   it('uses the type color for the avatar, matching the reference location list', () => {
     expect(mapApiLocationAssetToDisplay(locationAsset({}))).toEqual({
+      id: 1,
       code: 'CNC-05',
       name: 'Torno CNC Haas ST-20',
       installedDate: '04/02/2024',

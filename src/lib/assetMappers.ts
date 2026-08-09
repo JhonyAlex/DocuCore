@@ -96,6 +96,7 @@ export function mapApiAssetEventToDisplay(event: ApiAssetEvent): AssetNextEvent 
 // referencia muestra BSC-11 "En revisión" con avatar índigo de Instrumento).
 export function mapApiLocationAssetToDisplay(asset: ApiLocationAsset): LocationAsset {
   return {
+    id: asset.id,
     code: asset.code,
     name: asset.name,
     installedDate: formatApiDate(asset.installDate),

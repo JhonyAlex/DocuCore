@@ -3,18 +3,26 @@ import { useNavigate } from 'react-router-dom'
 import {
   createLocation,
   deleteLocation,
+  fetchAssetTypes,
   fetchLocation,
   fetchLocations,
+  fetchStatuses,
   fetchUsers,
   updateLocation,
+  type ApiAssetType,
   type ApiLocation,
   type ApiLocationDetail,
   type ApiLocationsResponse,
+  type ApiStatus,
   type ApiUserRef,
 } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiLocationAssetToDisplay } from '@/lib/assetMappers'
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
+import AssetModal from '@/components/AssetModal'
+import AssetFormModal from '@/components/AssetFormModal'
+import { useAssetFicha } from '@/hooks/useAssetFicha'
+import { useSession } from '@/contexts/SessionContext'
 
 interface TreeNode {
   location: ApiLocation
@@ -71,6 +79,7 @@ const pinIcon = (className: string) => <svg className={className} viewBox="0 0 2
 
 export default function LocationsView() {
   const navigate = useNavigate()
+  const { reload: reloadSession } = useSession()
   const [catalog, setCatalog] = useState<ApiLocationsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -79,6 +88,10 @@ export default function LocationsView() {
   const [openBranches, setOpenBranches] = useState<Set<number>>(new Set())
   const [search, setSearch] = useState('')
   const [users, setUsers] = useState<ApiUserRef[]>([])
+  // LOC-02: opciones de la ficha del activo y de su formulario de edición.
+  const [types, setTypes] = useState<ApiAssetType[]>([])
+  const [statuses, setStatuses] = useState<ApiStatus[]>([])
+  const [optionsError, setOptionsError] = useState(false)
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -109,6 +122,23 @@ export default function LocationsView() {
   useEffect(() => {
     void loadCatalog()
   }, [loadCatalog])
+
+  // LOC-02: tipos y estados para la ficha y el formulario de edición del activo.
+  useEffect(() => {
+    let active = true
+    Promise.all([fetchAssetTypes(), fetchStatuses()])
+      .then(([nextTypes, nextStatuses]) => {
+        if (!active) return
+        setTypes(nextTypes)
+        setStatuses(nextStatuses)
+      })
+      .catch(() => {
+        if (active) setOptionsError(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const tree = useMemo(() => (catalog ? buildTree(catalog.locations) : []), [catalog])
 
@@ -220,6 +250,30 @@ export default function LocationsView() {
       }))
     } finally {
       setDeleting(false)
+    }
+  }
+
+  // LOC-02: cualquier cambio hecho en la ficha del activo (estado, edición,
+  // eliminación, documentos) refresca el detalle, el árbol y el sidebar.
+  const handleAssetChanged = useCallback(async () => {
+    setDetailVersion((version) => version + 1)
+    await loadCatalog()
+    reloadSession()
+  }, [loadCatalog, reloadSession])
+
+  const ficha = useAssetFicha({ onAssetChanged: handleAssetChanged })
+
+  // LOC-02: alta rápida de ubicación desde el formulario de activo — crea en el
+  // proyecto de la vista y refresca el catálogo sin skeleton (la selección del
+  // formulario ya apunta a la nueva).
+  const createLocationFromAssetForm = async (locationValues: LocationFormValues): Promise<ApiLocation> => {
+    try {
+      const created = await createLocation({ ...locationValues, projectId: catalog?.project.id ?? 0 })
+      const nextCatalog = await fetchLocations()
+      setCatalog(nextCatalog)
+      return created
+    } catch (writeError) {
+      throw new Error(toUserError(writeError))
     }
   }
 
@@ -389,7 +443,12 @@ export default function LocationsView() {
               </div>
               <div className="space-y-2">
                 {previewAssets.map((asset) => (
-                  <div key={asset.code} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                  <button
+                    key={asset.id}
+                    type="button"
+                    onClick={() => ficha.open(asset.id)}
+                    className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer text-left"
+                  >
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
                       <div>
@@ -398,7 +457,7 @@ export default function LocationsView() {
                       </div>
                     </div>
                     <span className={`chip ${asset.statusChipClass}`}>{asset.statusLabel}</span>
-                  </div>
+                  </button>
                 ))}
                 {previewAssets.length === 0 && (
                   <div className="text-sm text-slate-500 dark:text-slate-400">Sin activos en esta ubicación.</div>
@@ -419,6 +478,36 @@ export default function LocationsView() {
           optionsError={users.length === 0}
           onClose={() => setFormMode(null)}
           onSubmit={saveLocation}
+        />
+      )}
+
+      {/* LOC-02: ficha del activo desde el detalle de la ubicación, con las
+          mismas acciones que en Activos (estado, editar, eliminar, documentos). */}
+      <AssetModal
+        asset={ficha.asset}
+        statuses={statuses}
+        onClose={ficha.close}
+        onEdit={ficha.onEdit}
+        onChangeStatus={ficha.changeStatus}
+        onDelete={(asset) => void ficha.remove(asset)}
+        onDocumentsChanged={ficha.documentsChanged}
+      />
+      {ficha.formMode && ficha.asset && catalog && (
+        <AssetFormModal
+          mode="edit"
+          asset={ficha.asset}
+          types={types}
+          statuses={statuses}
+          locations={catalog.locations}
+          projectName={catalog.project.name}
+          responsibleName={ficha.asset.responsible?.name ?? ''}
+          projectId={catalog.project.id}
+          responsibleId={ficha.asset.responsibleId}
+          users={users}
+          onCreateLocation={createLocationFromAssetForm}
+          optionsError={optionsError}
+          onClose={ficha.closeForm}
+          onSubmit={ficha.save}
         />
       )}
     </section>

@@ -186,4 +186,124 @@ test.describe('Locations', () => {
 
     expect(consoleIssues).toEqual([])
   })
+
+  test('creates a location from the asset form and selects it (UX-03)', async ({ page, consoleIssues }) => {
+    await page.goto('/assets')
+    await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
+
+    // El alta de activos se abre desde el botón único de la cabecera.
+    await page.getByRole('button', { name: 'Nuevo activo', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Nuevo activo' })
+    await expect(dialog).toBeVisible()
+
+    // UX-03: el campo de ubicación ofrece crear una ubicación nueva sin salir del formulario.
+    const locationSelect = dialog.locator('#asset-location')
+    await expect(locationSelect.locator('option', { hasText: 'Crear nueva ubicación' })).toHaveCount(1)
+    await locationSelect.selectOption('__new__')
+    const locationForm = page.getByRole('dialog', { name: 'Nueva ubicación' })
+    await expect(locationForm).toBeVisible()
+
+    await locationForm.locator('#location-name').fill('Sala UX-03')
+    await locationForm.locator('#location-code').fill('UX-03-SALA')
+    await locationForm.locator('#location-surface').fill('40 m²')
+    // Responsable precargado con el del formulario de activo; sin padre al no haber selección previa.
+    await expect(locationForm.locator('#location-responsible')).not.toHaveValue('')
+    await expect(locationForm.locator('#location-parent')).toHaveValue('')
+
+    const locationResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/locations'))
+    await locationForm.getByRole('button', { name: 'Crear ubicación', exact: true }).click()
+    expect((await locationResponse).status()).toBe(201)
+
+    // El alta se cierra, la ubicación queda seleccionada y el formulario de activo sigue abierto.
+    await expect(locationForm).toHaveCount(0)
+    await expect(dialog).toBeVisible()
+    await expect(locationSelect).not.toHaveValue('')
+
+    await dialog.locator('#asset-code').fill('UX03-ASSET-1')
+    await dialog.locator('#asset-name').fill('Activo creado con ubicación UX-03')
+    await dialog.locator('#asset-serial-number').fill('UX03-SN-1')
+    await dialog.locator('#asset-install-date').fill('2026-07-15')
+    await dialog.locator('#asset-type').selectOption({ label: 'Instrumento' })
+    await dialog.locator('#asset-status').selectOption({ label: 'Activo' })
+    await dialog.locator('#asset-initials').fill('UX')
+
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/assets'))
+    await dialog.getByRole('button', { name: 'Crear activo', exact: true }).click()
+    expect((await createResponse).status()).toBe(201)
+    const created = await (await createResponse).json()
+    expect(created.location.label).toBe('Sala UX-03')
+
+    // Limpieza: el activo pasa a la papelera y se purga (la FK Restrict de la
+    // ubicación cuenta los activos en papelera), y luego se borra la ubicación.
+    const deleteAssetResponse = await page.request.delete(`/api/assets/${created.id}`)
+    expect(deleteAssetResponse.status()).toBe(204)
+    const purgeAssetResponse = await page.request.post(`/api/assets/${created.id}/purge`)
+    expect(purgeAssetResponse.status()).toBe(204)
+    const locationsBody = await (await page.request.get('/api/locations')).json() as { locations: LocationRow[] }
+    const createdLocation = locationsBody.locations.find((location) => location.code === 'UX-03-SALA')
+    expect(createdLocation).toBeDefined()
+    const deleteLocationResponse = await page.request.delete(`/api/locations/${createdLocation!.id}`)
+    expect(deleteLocationResponse.status()).toBe(204)
+
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('opens the asset ficha from the location detail without leaving the view (LOC-02)', async ({ page, consoleIssues }) => {
+    await goToLocations(page)
+    await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+    await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
+
+    // El activo del detalle abre la misma ficha que en Activos.
+    await page.getByRole('button', { name: /CNC-05 · Torno CNC Haas ST-20/ }).click()
+    const modal = page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })
+    await expect(modal).toBeVisible()
+    await expect(modal.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toBeVisible()
+    // Paridad con Activos: próximo evento derivado de las relaciones.
+    await expect(modal.getByText('Mant. preventivo', { exact: true })).toBeVisible()
+
+    // Cerrar con Escape vuelve a Ubicaciones, sin navegar.
+    await page.keyboard.press('Escape')
+    await expect(modal).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Ubicaciones', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
+
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('edits an asset from the ficha and refreshes the location detail (LOC-02)', async ({ page, consoleIssues }) => {
+    const newName = `Bomba hidráulica ${Date.now().toString().slice(-6)}`
+    await goToLocations(page)
+    await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+    await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
+
+    // BH-04 es uno de los activos del preview del detalle de Nave A.
+    await page.getByRole('button', { name: /BH-04 · Bomba hidráulica/ }).click()
+    const modal = page.getByRole('dialog', { name: 'Bomba hidráulica' })
+    await expect(modal).toBeVisible()
+
+    await modal.getByRole('button', { name: 'Editar', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Editar activo' })
+    await expect(form).toBeVisible()
+    await form.locator('#asset-name').fill(newName)
+    const updateResponse = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().includes('/api/assets/'))
+    await form.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    expect((await updateResponse).status()).toBe(200)
+    await expect(form).toHaveCount(0)
+    // La ficha muestra el nombre guardado.
+    await expect(modal.getByRole('heading', { name: newName, exact: true })).toBeVisible()
+
+    // Al cerrar, el detalle de la ubicación refleja el cambio (refresco).
+    await page.keyboard.press('Escape')
+    await expect(modal).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
+    await expect(page.getByText(`BH-04 · ${newName}`, { exact: true })).toBeVisible()
+
+    // Restauración del nombre canónico para el resto de la suite.
+    const assetsBody = await (await page.request.get('/api/assets?search=BH-04&limit=100')).json() as { data: Array<{ id: number; code: string }> }
+    const bh04 = assetsBody.data.find((asset) => asset.code === 'BH-04')
+    expect(bh04).toBeDefined()
+    expect((await page.request.put(`/api/assets/${bh04!.id}`, { data: { name: 'Bomba hidráulica' } })).status()).toBe(200)
+
+    expect(consoleIssues).toEqual([])
+  })
 })

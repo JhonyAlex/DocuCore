@@ -111,6 +111,7 @@ export interface FloorPlanMarker {
 }
 
 export interface LocationAsset {
+  id: number
   code: string
   name: string
   installedDate: string
