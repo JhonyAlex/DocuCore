@@ -1,6 +1,28 @@
 # CURRENT_STATUS — DocuCore
 
+## Fecha: 2026-08-10
+
+## LOC-02 — Ficha de activo accesible desde Ubicaciones: FUNCIONAL
+
+- Los activos del detalle de una ubicación (preview de los 3 primeros) son **clicables** y abren la misma ficha (`AssetModal`) que en Activos, sin salir de la vista: ver ficha, próximo evento, cambiar estado, **Editar** (formulario encima), eliminar (papelera) y gestionar documentos. El HTML de referencia no tiene esta interactividad (fila plana); pedida por el usuario, se conserva el diseño en reposo (la fila solo gana hover/cursor).
+- `useAssetFicha` (`src/hooks/useAssetFicha.ts`) nuevo: control de ficha + formulario de edición para vistas que muestran activos sin lista propia. Carga el activo completo con `fetchAsset` (la ficha exige `nextEvents`/documentos, que el `ApiLocationAsset` del detalle no trae), guarda de secuencia contra respuestas desordenadas, cierre que invalida fetches pendientes (un refetch de documentos no reabre la ficha tras cerrar) y refresco posterior vía `onAssetChanged` — en Ubicaciones: `detailVersion + 1` (detalle), `loadCatalog` (árbol) y `reloadSession` (sidebar).
+- `LocationAsset`/`mapApiLocationAssetToDisplay` exponen ahora `id` (se descartaba); `LocationsView` carga `types`/`statuses` (mismo patrón que `AssetsView`) y el alta rápida de ubicación desde el formulario de activo funciona también aquí (crea con el proyecto de la vista y refresca el catálogo con `fetchLocations` sin skeleton).
+- Matriz: lint ✅, typecheck ✅, 98 unit/API ✅ (mapper con `id`), 46 E2E ✅ (2 nuevos: ficha de CNC-05 desde Nave A y vuelta sin navegar; edición de BH-04 desde la ficha con refresco del detalle y restauración del nombre), build ✅. Visual: `locations` 3/3 en verde (0,2140 % / 0,1885 % / 0,1486 %); la subida frente al histórico 0,069236 % es variación ambiental de la máquina — verificado con stash: métricas idénticas sin los archivos de LOC-02/UX-04.
+
+## UX-04 — Sugerencias de valores en el formulario de activo: FUNCIONAL
+
+- Al crear o editar un activo, los campos **Código**, **Nombre** e **Iniciales** muestran un desplegable con los valores actuales de otros activos; cada fila incluye el valor de los otros dos campos como contexto (p. ej. al escribir en Código: `CNC-05` con hint `Torno CNC Haas ST-20 · CN`). La selección (clic, o ↑/↓ + Enter) rellena el campo; el campo sigue siendo de texto libre (las sugerencias son opcionales, nunca bloquean un valor nuevo).
+- API nueva `GET /api/assets/suggestions?field=code|name|initials&q=&excludeId=` (registrada antes de `/:id`): valores `distinct` del campo pedido (máx. 20, orden ascendente), excluye la papelera y, con `excludeId`, el activo que se está editando; cada fila devuelve `code`/`name`/`initials` para los hints. 400 con `field` inválido.
+- `SuggestInput` compartido (`src/components/SuggestInput.tsx`): input de texto libre con listbox en portal (`PortalListbox`), debounce 250 ms con guarda de secuencia, navegación por teclado y cierre con Escape (el primer Escape cierra solo el listbox; el segundo, el modal) o al perder el foco (nunca intercepta clics en otros campos ni en guardar). El listbox solo se renderiza **con opciones**: un panel «Sin resultados» flotante tapaba el formulario y podía interceptar el clic en «Crear activo» (E2E flaky del ciclo CRUD de Activos — snapshot con el listbox abierto sobre el botón; corregido y suite 46/46 estable). El mapeo API→fila vive en `src/lib/assetSuggestions.ts` (`buildAssetSuggestionSearch`/`mapAssetSuggestion`) para no engordar `AssetFormModal`.
+- Matriz: lint ✅, typecheck ✅, 98 unit/API ✅ (4 unit de mapeo + 4 API de integración), 46 E2E ✅ (4 nuevos de sugerencias), build ✅. Visual: el modal cerrado no cambia y el desplegable solo aparece con interacción — sin desfase nuevo por UX-04 (verificado con stash: `items` 1920×1080 oscuro mide 0,5783 % idéntico sin los archivos de UX-04; el paso de ✅ 0,4374 % a desfase corresponde al header de UX-03).
+
 ## Fecha: 2026-08-09
+
+## UX-03 — Alta de activos: crear ubicación desde el formulario y botón único: FUNCIONAL
+
+- **Botón único de alta**: el botón «Nuevo activo» de la vista Activos desaparece; la cabecera (Topbar, `AssetCreateContext`) es el único punto de alta y funciona desde cualquier vista. El header de Activos queda con «Papelera» y «Exportar CSV».
+- **Crear ubicación desde el formulario de activo**: el campo «Ubicación» añade la opción «＋ Crear nueva ubicación…» (al final del select, value `__new__`) que abre `LocationFormModal` en modo create encima del formulario sin perder la selección previa. Responsable precargado con el del formulario de activo y padre con la ubicación seleccionada (`initialResponsibleId`/`initialParentId` opcionales en `LocationFormModal`, solo modo create). Al crear: la vista refresca el catálogo de ubicaciones, la nueva queda seleccionada y el formulario de activo continúa abierto; el activo se guarda con `locationId` de la nueva ubicación (mismo proyecto, validación del server intacta).
+- Matriz: lint ✅, typecheck ✅, 90 unit/API ✅, 40 E2E ✅ (test nuevo de ciclo completo + test de foco adaptado al botón de cabecera), build ✅. Visual: el header de `items` cambia (sin botón «Nuevo activo» — cambio pedido por el usuario); sin elevación de umbral ni cambios de baseline.
 
 ## ITEM-06 — Renombrado unificado «Activo»: FUNCIONAL
 
@@ -59,13 +81,13 @@
 - `LocationsView`: selección y edición de hojas y padres, borrado con confirmación y mensaje, «Ver plano» deshabilitado sin plano (PLAN-01), estados vacíos.
 - Matriz: lint ✅, typecheck ✅, 76 unit/API ✅, 36 E2E ✅, build ✅, `prisma migrate diff` sin drift ✅. Regresión visual `pnpm test:visual` → 20/30, exit code 1: `locations` 3/3 en verde (máx. 0,069236%); los desfases restantes son los pedidos por el usuario (ver abajo). Sin cambios en umbrales ni baselines.
 
-## Handoff vigente — 2026-08-09
+## Handoff vigente — 2026-08-10
 
-- Rama de entrega: `main`; el commit de relevo es `0823a8b` (LOC-01 publicado EN REVISIÓN). El trabajo posterior —ITEM-04, DOC-02, UX-01, ITEM-05, ITEM-06 y UX-02— está implementado, verificado y documentado en el working tree **sin commitear** (no commitear sin petición expresa).
-- Estado funcional: LOC-01 permanece **EN REVISIÓN** hasta la aceptación manual expresa del usuario. ITEM-05, ITEM-06 y UX-02 quedan **FUNCIONAL** (pendientes de validación manual del usuario: papelera, renombrado «Activos» y modales).
+- Rama de entrega: `main`; el commit de relevo es `0823a8b` (LOC-01 publicado EN REVISIÓN). El trabajo posterior —ITEM-04, DOC-02, UX-01, ITEM-05, ITEM-06, UX-02, UX-03, UX-04 y LOC-02— está implementado, verificado y documentado en el working tree **sin commitear** (no commitear sin petición expresa).
+- Estado funcional: LOC-01 permanece **EN REVISIÓN** hasta la aceptación manual expresa del usuario. ITEM-05, ITEM-06, UX-02, UX-03, UX-04 y LOC-02 quedan **FUNCIONAL** (pendientes de validación manual del usuario).
 - Punto de entrada para otro agente: leer `AGENTS.md`, este archivo, `ROADMAP.md` y ejecutar `LOC-01_MANUAL_TEST.md`.
-- Próxima acción obligatoria: completar el checklist manual de Ubicaciones y validar manualmente ITEM-05 (eliminar → papelera → restaurar/eliminar definitivo), ITEM-06 (todo «Activos») y UX-02 (pestaña Resumen y desplegable de «Activos asociados» completo); no cambiar estados a VALIDADO sin confirmación expresa ni commitear sin petición.
-- Riesgos/pending separados: 10 objetivos visuales fuera de umbral, todos por cambios pedidos por el usuario — `documents` (2,1167 % / 1,5392 % / 0,8288 %), `item-modal` (2,6212 % / 13,7055 % / 1,8212 %), `items` (0,6413 % / 0,5421 %; 1920×1080 oscuro ✅) y `config` (1,2809 % / 0,9477 %; 1920×1080 oscuro ✅). El aviso del bundle >500 kB pertenece a PERF-01; el warning DEP0205 de Node 26 en las suites pertenece a QA-01.
+- Próxima acción obligatoria: completar el checklist manual de Ubicaciones y validar manualmente ITEM-05 (eliminar → papelera → restaurar/eliminar definitivo), ITEM-06 (todo «Activos»), UX-02 (pestaña Resumen y desplegable de «Activos asociados» completo), UX-03 (crear activo eligiendo ubicación y creando una nueva desde el formulario; alta solo desde la cabecera), UX-04 (sugerencias de Código/Nombre/Iniciales con contexto y relleno al seleccionar) y LOC-02 (tocar un activo del detalle de una ubicación abre su ficha y permite editarlo); no cambiar estados a VALIDADO sin confirmación expresa ni commitear sin petición.
+- Riesgos/pending separados: 11 objetivos visuales fuera de umbral, todos por cambios pedidos por el usuario — `documents` (2,4638 % / 1,6337 % / 1,5681 %), `item-modal` (2,6212 % / 13,7055 % / 1,8212 %), `items` (0,6413 % / 0,5421 % / 0,5783 %; el 1920×1080 oscuro pasó de ✅ 0,4374 % a desfase en la ejecución del 2026-08-10, verificado como preexistente de UX-03 con stash) y `config` (1,2809 % / 0,9477 %; 1920×1080 oscuro ✅). El aviso del bundle >500 kB pertenece a PERF-01; el warning DEP0205 de Node 26 en las suites pertenece a QA-01.
 
 ## Estado verificado histórico (auditoría 2026-08-06)
 
@@ -94,11 +116,11 @@
 |---|---|---|
 | Panel general | VISUAL MOCK | Ruta, tema y fidelidad validados; KPIs, periodo, exportación y accesos son demostrativos. |
 | Proyectos | VISUAL MOCK | Ruta y tarjetas validadas; alta/apertura no tienen persistencia. |
-| Activos | VALIDADO (base) + ITEM-04/05/06 FUNCIONAL | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. Duplicación, serie única/derivada, reactivación, papelera (30 días con restaurar/purgar) y renombrado «Activo» automatizados; pendientes de aceptación manual. |
+| Activos | VALIDADO (base) + ITEM-04/05/06 FUNCIONAL + UX-04 FUNCIONAL | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. Duplicación, serie única/derivada, reactivación, papelera (30 días con restaurar/purgar), renombrado «Activo» y sugerencias de valores en el formulario automatizados; pendientes de aceptación manual. |
 | Documentos | FUNCIONAL | PostgreSQL, versiones inmutables, subida multipart, edición/relación multi-activo, descarga y almacenamiento local persistente; E2E Documento-Activo verde. La regresión visual sigue pendiente. |
 | Calendario | VISUAL MOCK | Calendario y fidelidad validados; vistas/eventos no persisten. |
 | Planos | PARCIAL | Marcadores arrastrables en memoria; guardar, deshacer/rehacer, capas y versiones no persisten. |
-| Ubicaciones | EN REVISIÓN | Jerarquía real (`parentId` + `label` de presentación, sin duplicados ocultos); CRUD con auditoría, selección de hojas y padres, borrado protegido (cualquier hija o activos en subrama), «Ver plano» condicionado a PLAN-01, estados vacíos y reset manual. Relaciones de activos validadas contra el proyecto, `label` sincronizado al renombrar y almacenamiento documental endurecido. Regresión visual de la vista en verde; módulo pendiente de validación final (no marcado VALIDADO). |
+| Ubicaciones | EN REVISIÓN | Jerarquía real (`parentId` + `label` de presentación, sin duplicados ocultos); CRUD con auditoría, selección de hojas y padres, borrado protegido (cualquier hija o activos en subrama), «Ver plano» condicionado a PLAN-01, estados vacíos y reset manual. Relaciones de activos validadas contra el proyecto, `label` sincronizado al renombrar y almacenamiento documental endurecido. LOC-02: los activos del detalle abren la misma ficha que en Activos (editar, estado, eliminar, documentos) sin salir de la vista. Regresión visual de la vista en verde; módulo pendiente de validación final (no marcado VALIDADO). |
 | Historial | VISUAL MOCK | Tabla estática; no consulta `AuditLog`. |
 | Configuración | VISUAL MOCK | Presentación validada; controles sin persistencia. |
 
@@ -127,7 +149,7 @@ El shell es parcial: navegación, rutas directas, recarga, tema y “Nuevo activ
 | `pnpm test:visual` | ✅ 30/30 | 70,3 s |
 | `pnpm db:seed` final | ✅ | 1,4 s |
 
-Matriz vigente (2026-08-09): lint ✅, typecheck ✅, 76 unit/API ✅ (9 archivos), build ✅, 36 E2E ✅, `prisma migrate diff` sin drift ✅. Regresión visual 20/30 con los desfases pedidos por el usuario (ver Handoff vigente); la mayor diferencia en verde es Activos 1920 × 1080 oscuro: 0,4374 %.
+Matriz vigente (2026-08-10): lint ✅, typecheck ✅, 98 unit/API ✅ (12 archivos), build ✅, 46 E2E ✅, `prisma migrate diff` sin drift ✅. Regresión visual 19/30 con los desfases pedidos por el usuario (11 objetivos; ver Handoff vigente); la mayor diferencia en verde es Activos 1920 × 1080 oscuro: 0,4374 % antes de la ejecución del 2026-08-10 (ahora `items` 1920 oscuro 0,5783 %, preexistente de UX-03).
 
 ## Limitaciones y avisos conocidos
 
