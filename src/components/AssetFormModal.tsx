@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus } from '@/lib/api'
+import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus, ApiUserRef } from '@/lib/api'
+import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
+import SuggestInput from '@/components/SuggestInput'
+import { buildAssetSuggestionSearch } from '@/lib/assetSuggestions'
+
+// UX-03: valor especial del select de ubicación que abre el alta rápida de ubicación.
+const NEW_LOCATION_OPTION = '__new__'
 
 export interface AssetFormValues {
   code: string
@@ -24,6 +30,9 @@ interface AssetFormModalProps {
   responsibleName: string
   projectId: number
   responsibleId: number
+  // UX-03: alta rápida de ubicación desde el formulario de activo.
+  users: ApiUserRef[]
+  onCreateLocation: (values: LocationFormValues) => Promise<ApiLocation>
   optionsError: boolean
   onClose: () => void
   onSubmit: (values: AssetFormValues) => Promise<void>
@@ -67,6 +76,8 @@ export default function AssetFormModal({
   responsibleName,
   projectId,
   responsibleId,
+  users,
+  onCreateLocation,
   optionsError,
   onClose,
   onSubmit,
@@ -74,6 +85,7 @@ export default function AssetFormModal({
   const [values, setValues] = useState(() => initialValues(asset, mode, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [showLocationForm, setShowLocationForm] = useState(false)
   const codeInputRef = useRef<HTMLInputElement>(null)
   const onCloseRef = useRef(onClose)
   const savingRef = useRef(saving)
@@ -112,6 +124,22 @@ export default function AssetFormModal({
     setValues((current) => ({ ...current, [key]: value }))
   }
 
+  // UX-03: la opción «Crear nueva ubicación…» abre el alta rápida sin cambiar la
+  // selección actual; el select conserva el valor previo mientras el modal está abierto.
+  const handleLocationChange = (value: string) => {
+    if (value === NEW_LOCATION_OPTION) {
+      setShowLocationForm(true)
+      return
+    }
+    updateValue('locationId', Number(value))
+  }
+
+  const handleCreateLocation = async (locationValues: LocationFormValues) => {
+    const created = await onCreateLocation(locationValues)
+    updateValue('locationId', created.id)
+    setShowLocationForm(false)
+  }
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError(null)
@@ -145,11 +173,11 @@ export default function AssetFormModal({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <FieldLabel htmlFor="asset-code">Código</FieldLabel>
-                <input ref={codeInputRef} id="asset-code" value={values.code} onChange={(event) => updateValue('code', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
+                <SuggestInput id="asset-code" inputRef={codeInputRef} value={values.code} onChange={(value) => updateValue('code', value)} onSearch={buildAssetSuggestionSearch('code', mode === 'edit' ? asset?.id : undefined)} required />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-name">Nombre</FieldLabel>
-                <input id="asset-name" value={values.name} onChange={(event) => updateValue('name', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
+                <SuggestInput id="asset-name" value={values.name} onChange={(value) => updateValue('name', value)} onSearch={buildAssetSuggestionSearch('name', mode === 'edit' ? asset?.id : undefined)} required />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-serial-number">Nº de serie</FieldLabel>
@@ -161,9 +189,10 @@ export default function AssetFormModal({
               </div>
               <div>
                 <FieldLabel htmlFor="asset-location">Ubicación</FieldLabel>
-                <select id="asset-location" value={values.locationId || ''} onChange={(event) => updateValue('locationId', Number(event.target.value))} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
+                <select id="asset-location" value={values.locationId || ''} onChange={(event) => handleLocationChange(event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
                   <option value="">Selecciona una ubicación</option>
                   {locations.map((location) => <option key={location.id} value={location.id}>{location.label}</option>)}
+                  <option value={NEW_LOCATION_OPTION}>＋ Crear nueva ubicación…</option>
                 </select>
               </div>
               <div>
@@ -182,7 +211,7 @@ export default function AssetFormModal({
               </div>
               <div>
                 <FieldLabel htmlFor="asset-initials">Iniciales</FieldLabel>
-                <input id="asset-initials" value={values.initials} onChange={(event) => updateValue('initials', event.target.value)} required maxLength={4} className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-brand-500" />
+                <SuggestInput id="asset-initials" value={values.initials} onChange={(value) => updateValue('initials', value)} onSearch={buildAssetSuggestionSearch('initials', mode === 'edit' ? asset?.id : undefined)} required maxLength={4} />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-project">Proyecto</FieldLabel>
@@ -200,6 +229,21 @@ export default function AssetFormModal({
           </div>
         </form>
       </div>
+      {showLocationForm && (
+        <LocationFormModal
+          mode="create"
+          location={null}
+          locations={locations}
+          users={users}
+          projectId={values.projectId}
+          optionsError={users.length === 0}
+          // La nueva ubicación cuelga de la seleccionada y hereda el responsable del formulario.
+          initialParentId={values.locationId || null}
+          initialResponsibleId={responsibleId}
+          onClose={() => setShowLocationForm(false)}
+          onSubmit={handleCreateLocation}
+        />
+      )}
     </div>
   )
 }

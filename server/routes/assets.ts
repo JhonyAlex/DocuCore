@@ -193,6 +193,38 @@ router.get(
   }),
 )
 
+// UX-04: valores actuales de un campo de activo (Código, Nombre, Iniciales)
+// para las sugerencias del formulario. Devuelve filas con los tres campos para
+// mostrar el valor de los otros dos como contexto junto a cada sugerencia.
+const SUGGESTION_FIELDS = ['code', 'name', 'initials'] as const
+type SuggestionField = (typeof SUGGESTION_FIELDS)[number]
+
+router.get(
+  '/suggestions',
+  asyncHandler(async (req, res) => {
+    const q = req.query
+    const field = typeof q.field === 'string' && (SUGGESTION_FIELDS as readonly string[]).includes(q.field) ? (q.field as SuggestionField) : null
+    if (field === null) {
+      res.status(400).json({ error: 'Invalid field' })
+      return
+    }
+    const search = typeof q.q === 'string' ? q.q : ''
+    const excludeId = toNumberId(typeof q.excludeId === 'string' ? q.excludeId : undefined)
+    const values = await prisma.asset.findMany({
+      where: {
+        deletedAt: null,
+        id: excludeId === null ? undefined : { not: excludeId },
+        [field]: { not: '', contains: search, mode: 'insensitive' },
+      },
+      distinct: [field],
+      select: { code: true, name: true, initials: true },
+      orderBy: { [field]: 'asc' },
+      take: 20,
+    })
+    res.json({ values })
+  }),
+)
+
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {

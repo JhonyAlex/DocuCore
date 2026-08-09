@@ -213,6 +213,19 @@ export interface AssetListParams {
   trashed?: boolean
 }
 
+// UX-04: sugerencias de valores actuales para el formulario de activo.
+export type ApiAssetSuggestionField = 'code' | 'name' | 'initials'
+
+export interface ApiAssetSuggestionRow {
+  code: string | null
+  name: string | null
+  initials: string | null
+}
+
+export interface ApiAssetSuggestionsResponse {
+  values: ApiAssetSuggestionRow[]
+}
+
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -250,6 +263,16 @@ export function fetchAssets(params: AssetListParams): Promise<ApiAssetListRespon
   if (params.locationId) q.set('locationId', String(params.locationId))
   if (params.trashed) q.set('trashed', 'true')
   return request<ApiAssetListResponse>(`/assets?${q.toString()}`)
+}
+
+// UX-04: valores actuales de un campo de activo, excluyendo la papelera y, si
+// se indica, un activo concreto (el que se está editando).
+export function fetchAssetSuggestions(field: ApiAssetSuggestionField, query: string, excludeId?: number): Promise<ApiAssetSuggestionsResponse> {
+  const q = new URLSearchParams()
+  q.set('field', field)
+  if (query.trim() !== '') q.set('q', query)
+  if (excludeId !== undefined) q.set('excludeId', String(excludeId))
+  return request<ApiAssetSuggestionsResponse>(`/assets/suggestions?${q.toString()}`)
 }
 
 export function fetchAsset(id: number): Promise<ApiAsset> {
