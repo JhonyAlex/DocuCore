@@ -22,7 +22,7 @@ afterAll(async () => {
   })
 })
 
-describe('items API validation', () => {
+describe('assets API validation', () => {
   it('keeps health available without requiring a database query', async () => {
     const response = await fetch(`${baseUrl}/api/health`)
 
@@ -30,8 +30,8 @@ describe('items API validation', () => {
     await expect(response.json()).resolves.toEqual({ status: 'ok' })
   })
 
-  it('rejects malformed item payloads through the real router and Zod error middleware', async () => {
-    const response = await fetch(`${baseUrl}/api/items`, {
+  it('rejects malformed asset payloads through the real router and Zod error middleware', async () => {
+    const response = await fetch(`${baseUrl}/api/assets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code: '', statusId: 0 }),
@@ -44,15 +44,15 @@ describe('items API validation', () => {
     })
   })
 
-  it('rejects an invalid item id before accessing Prisma', async () => {
-    const response = await fetch(`${baseUrl}/api/items/not-a-number`)
+  it('rejects an invalid asset id before accessing Prisma', async () => {
+    const response = await fetch(`${baseUrl}/api/assets/not-a-number`)
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({ error: 'Invalid id' })
   })
 
   it('rejects an invalid calendar date instead of returning an internal error', async () => {
-    const response = await fetch(`${baseUrl}/api/items`, {
+    const response = await fetch(`${baseUrl}/api/assets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -77,7 +77,7 @@ describe('items API validation', () => {
   })
 
   it('rejects manually supplied upcoming-event fields', async () => {
-    const response = await fetch(`${baseUrl}/api/items`, {
+    const response = await fetch(`${baseUrl}/api/assets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ nextEventLabel: 'Dato manual no permitido' }),

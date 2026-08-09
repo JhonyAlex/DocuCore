@@ -16,7 +16,7 @@ router.get(
       select: { id: true, code: true, name: true },
     })
     const [assetCount, user] = await Promise.all([
-      prisma.item.count({ where: { projectId: project.id } }),
+      prisma.asset.count({ where: { projectId: project.id, deletedAt: null } }),
       prisma.user.findUniqueOrThrow({
         where: { id: ACTOR_USER_ID },
         select: { id: true, name: true, role: true, initials: true, color: true },
@@ -27,9 +27,9 @@ router.get(
 )
 
 router.get(
-  '/item-types',
+  '/asset-types',
   asyncHandler(async (_req, res) => {
-    const types = await prisma.itemType.findMany({
+    const types = await prisma.assetType.findMany({
       orderBy: { id: 'asc' },
       select: { id: true, name: true },
     })

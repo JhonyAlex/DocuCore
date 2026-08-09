@@ -150,38 +150,38 @@ test.describe('Locations', () => {
     expect((await page.request.delete(`/api/locations/${custom.id}`)).status()).toBe(204)
   })
 
-  test('assigns a location to an item from the item form', async ({ page, consoleIssues }) => {
-    await page.goto('/items')
+  test('assigns a location to an asset from the asset form', async ({ page, consoleIssues }) => {
+    await page.goto('/assets')
     await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
 
-    await page.getByRole('button', { name: 'Nuevo ítem', exact: true }).last().click()
-    const dialog = page.getByRole('dialog', { name: 'Nuevo ítem' })
+    await page.getByRole('button', { name: 'Nuevo activo', exact: true }).last().click()
+    const dialog = page.getByRole('dialog', { name: 'Nuevo activo' })
     await expect(dialog).toBeVisible()
 
     // El selector de ubicación carga las ubicaciones reales desde el API.
-    const locationSelect = dialog.locator('#item-location')
+    const locationSelect = dialog.locator('#asset-location')
     await expect(locationSelect).toBeVisible()
     await expect(locationSelect.locator('option', { hasText: 'Planta 1 · Nave A' })).toHaveCount(1)
     await expect(locationSelect.locator('option', { hasText: 'Planta 1 · Laboratorio' })).toHaveCount(1)
 
-    await dialog.locator('#item-code').fill('LOC-E2E-1')
-    await dialog.locator('#item-name').fill('Activo con ubicación E2E')
-    await dialog.locator('#item-serial-number').fill('LOC-SN-1')
-    await dialog.locator('#item-install-date').fill('2026-07-15')
+    await dialog.locator('#asset-code').fill('LOC-E2E-1')
+    await dialog.locator('#asset-name').fill('Activo con ubicación E2E')
+    await dialog.locator('#asset-serial-number').fill('LOC-SN-1')
+    await dialog.locator('#asset-install-date').fill('2026-07-15')
     await locationSelect.selectOption({ label: 'Planta 1 · Laboratorio' })
-    await dialog.locator('#item-type').selectOption({ label: 'Instrumento' })
-    await dialog.locator('#item-status').selectOption({ label: 'Activo' })
-    await dialog.locator('#item-initials').fill('LE')
+    await dialog.locator('#asset-type').selectOption({ label: 'Instrumento' })
+    await dialog.locator('#asset-status').selectOption({ label: 'Activo' })
+    await dialog.locator('#asset-initials').fill('LE')
 
-    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/items'))
-    await dialog.getByRole('button', { name: 'Crear ítem', exact: true }).click()
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/assets'))
+    await dialog.getByRole('button', { name: 'Crear activo', exact: true }).click()
     expect((await createResponse).status()).toBe(201)
     const created = await (await createResponse).json()
     expect(created.locationId).toBeGreaterThan(0)
     expect(created.location.label).toBe('Planta 1 · Laboratorio')
 
-    // Limpieza: el conteo de ítems se valida en otros tests de la suite.
-    const deleteResponse = await page.request.delete(`/api/items/${created.id}`)
+    // Limpieza: el conteo de activos se valida en otros tests de la suite.
+    const deleteResponse = await page.request.delete(`/api/assets/${created.id}`)
     expect(deleteResponse.status()).toBe(204)
 
     expect(consoleIssues).toEqual([])

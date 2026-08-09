@@ -13,7 +13,7 @@ import {
   type ApiUserRef,
 } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
-import { mapApiLocationItemToAsset } from '@/lib/itemMappers'
+import { mapApiLocationAssetToDisplay } from '@/lib/assetMappers'
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
 
 interface TreeNode {
@@ -35,7 +35,7 @@ function buildTree(locations: ApiLocation[]): TreeNode[] {
   }
 
   const countAll = (location: ApiLocation): number =>
-    location.itemCount + (byParent.get(location.id) ?? []).reduce((sum, child) => sum + countAll(child), 0)
+    location.assetCount + (byParent.get(location.id) ?? []).reduce((sum, child) => sum + countAll(child), 0)
 
   const toNode = (location: ApiLocation): TreeNode => ({
     location,
@@ -115,7 +115,7 @@ export default function LocationsView() {
   // Selección inicial: primera hoja con activos, replicando el HTML de referencia.
   useEffect(() => {
     if (!catalog || selectedId !== null) return
-    const firstWithAssets = flattenTree(tree).find((node) => node.location.itemCount > 0)
+    const firstWithAssets = flattenTree(tree).find((node) => node.location.assetCount > 0)
     if (firstWithAssets) setSelectedId(firstWithAssets.location.id)
   }, [catalog, tree, selectedId])
 
@@ -274,7 +274,7 @@ export default function LocationsView() {
     : detail && catalog
       ? catalog.project.name
       : ''
-  const previewAssets = (detail?.items ?? []).slice(0, PREVIEW_ASSET_COUNT).map(mapApiLocationItemToAsset)
+  const previewAssets = (detail?.assets ?? []).slice(0, PREVIEW_ASSET_COUNT).map(mapApiLocationAssetToDisplay)
   const hasLocations = (catalog?.locations.length ?? 0) > 0
 
   return (
@@ -362,7 +362,7 @@ export default function LocationsView() {
                 </div>
                 <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                   <div className="text-xs text-slate-500">Activos</div>
-                  <div className="text-sm font-medium mt-0.5">{detail.itemCount}</div>
+                  <div className="text-sm font-medium mt-0.5">{detail.assetCount}</div>
                 </div>
                 <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                   <div className="text-xs text-slate-500">Superficie</div>

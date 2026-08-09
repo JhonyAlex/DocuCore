@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 export type DerivedEventUrgency = 'amber' | 'red' | 'slate'
 export type DerivedEventSource = 'event' | 'document' | 'dynamic-field'
 
-export interface DerivedItemEvent {
+export interface DerivedAssetEvent {
   id: string
   title: string
   date: string
@@ -33,7 +33,7 @@ interface DateFieldDefinition {
   fieldName: string
 }
 
-export interface ItemEventRelations {
+export interface AssetEventRelations {
   events: RelatedEvent[]
   documents: RelatedDocument[]
   dynamicFields: Prisma.JsonValue | null
@@ -82,7 +82,7 @@ function toDerivedEvent(
   source: DerivedEventSource,
   sourceLabel: string,
   now: Date,
-): DerivedItemEvent {
+): DerivedAssetEvent {
   const daysUntil = Math.round((utcDay(date) - utcDay(now)) / DAY_MS)
   return {
     id,
@@ -100,8 +100,8 @@ function dynamicFieldValues(value: Prisma.JsonValue | null): Record<string, unkn
   return value
 }
 
-export function deriveItemEvents(relations: ItemEventRelations, now = new Date()): DerivedItemEvent[] {
-  const derived: DerivedItemEvent[] = relations.events.map((event) =>
+export function deriveAssetEvents(relations: AssetEventRelations, now = new Date()): DerivedAssetEvent[] {
+  const derived: DerivedAssetEvent[] = relations.events.map((event) =>
     toDerivedEvent(`event:${event.id}`, event.title, event.date, 'event', event.type, now),
   )
 

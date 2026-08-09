@@ -7,7 +7,7 @@ const isoDateSchema = z.string()
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
   }, 'Invalid calendar date')
 
-export const createItemSchema = z.object({
+export const createAssetSchema = z.object({
   code: z.string().min(1),
   name: z.string().min(1),
   serialNumber: z.string().min(1),
@@ -21,7 +21,7 @@ export const createItemSchema = z.object({
   dynamicFields: z.record(z.unknown()).optional(),
 }).strict()
 
-export const updateItemSchema = createItemSchema.partial()
+export const updateAssetSchema = createAssetSchema.partial()
 
 export const changeStatusSchema = z.object({
   statusId: z.number().int().positive(),
@@ -44,8 +44,8 @@ const nullableOptionalPositiveId = z.preprocess((value) => value === 'null' || v
 const optionalDateSchema = z.preprocess((value) => value === '' || value === undefined ? undefined : value, isoDateSchema.optional())
 const nullableOptionalDateSchema = z.preprocess((value) => value === '' ? null : value, isoDateSchema.nullable().optional())
 
-// itemIds viaja como string JSON en FormData (multipart) y como array en JSON.
-function parseItemIds(value: unknown): unknown {
+// assetIds viaja como string JSON en FormData (multipart) y como array en JSON.
+function parseAssetIds(value: unknown): unknown {
   if (value === undefined || value === '') return undefined
   if (typeof value === 'string') {
     try {
@@ -58,10 +58,10 @@ function parseItemIds(value: unknown): unknown {
   return value
 }
 
-const optionalItemIds = z.preprocess(parseItemIds, z.array(z.number().int().positive()).max(20).optional())
-const nullableOptionalItemIds = z.preprocess((value) => {
+const optionalAssetIds = z.preprocess(parseAssetIds, z.array(z.number().int().positive()).max(20).optional())
+const nullableOptionalAssetIds = z.preprocess((value) => {
   if (value === null || value === '') return null
-  const parsed = parseItemIds(value)
+  const parsed = parseAssetIds(value)
   if (Array.isArray(parsed) && parsed.length === 0) return null
   return parsed
 }, z.array(z.number().int().positive()).max(20).nullable().optional())
@@ -70,7 +70,7 @@ export const createDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160),
   type: z.string().trim().min(1).max(80),
   projectId: z.preprocess((value) => Number(value), z.number().int().positive()),
-  itemIds: optionalItemIds,
+  assetIds: optionalAssetIds,
   issueDate: isoDateSchema,
   expiryDate: optionalDateSchema,
 }).strict()
@@ -79,7 +79,7 @@ export const updateDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   type: z.string().trim().min(1).max(80).optional(),
   projectId: z.preprocess((value) => value === undefined ? undefined : Number(value), z.number().int().positive().optional()),
-  itemIds: nullableOptionalItemIds,
+  assetIds: nullableOptionalAssetIds,
   issueDate: optionalDateSchema,
   expiryDate: nullableOptionalDateSchema,
 }).strict()
@@ -89,13 +89,13 @@ export const documentListQuerySchema = z.object({
   type: z.string().trim().min(1).optional(),
   status: z.enum(['Vigente', 'Por vencer', 'Vencido']).optional(),
   projectId: optionalPositiveId,
-  itemId: nullableOptionalPositiveId,
+  assetId: nullableOptionalPositiveId,
   page: z.preprocess((value) => value === undefined ? 1 : Number(value), z.number().int().positive()),
   limit: z.preprocess((value) => value === undefined ? 10 : Number(value), z.number().int().positive().max(100)),
 }).strict()
 
-export type CreateItemInput = z.infer<typeof createItemSchema>
-export type UpdateItemInput = z.infer<typeof updateItemSchema>
+export type CreateAssetInput = z.infer<typeof createAssetSchema>
+export type UpdateAssetInput = z.infer<typeof updateAssetSchema>
 export type ChangeStatusInput = z.infer<typeof changeStatusSchema>
 export type CreateLocationInput = z.infer<typeof createLocationSchema>
 export type UpdateLocationInput = z.infer<typeof updateLocationSchema>

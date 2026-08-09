@@ -1,6 +1,6 @@
 const API_BASE = '/api'
 
-export interface ApiItemType {
+export interface ApiAssetType {
   id: number
   name: string
 }
@@ -38,7 +38,7 @@ export interface ApiSession {
   user: ApiSessionUser
 }
 
-export interface ApiItemEvent {
+export interface ApiAssetEvent {
   id: string
   title: string
   date: string
@@ -48,7 +48,7 @@ export interface ApiItemEvent {
   sourceLabel: string
 }
 
-export interface ItemWriteInput {
+export interface AssetWriteInput {
   code: string
   name: string
   serialNumber: string
@@ -69,7 +69,7 @@ export interface ApiLocationRef {
   label: string
 }
 
-export interface ApiItem {
+export interface ApiAsset {
   id: number
   code: string
   name: string
@@ -81,9 +81,10 @@ export interface ApiItem {
   projectId: number
   responsibleId: number
   initials: string
-  nextEvents: ApiItemEvent[]
+  deletedAt?: string | null
+  nextEvents: ApiAssetEvent[]
   documentCount: number
-  documents?: ApiItemDocument[]
+  documents?: ApiAssetDocument[]
   eventCount: number
   type?: { id: number; name: string }
   status?: { id: number; name: string; pulseDot: string | null }
@@ -102,7 +103,7 @@ export interface ApiLocation {
   parentId: number | null
   projectId: number
   responsible: ApiUserRef
-  itemCount: number
+  assetCount: number
   childCount: number
   hasFloorPlan: boolean
 }
@@ -112,7 +113,7 @@ export interface ApiLocationsResponse {
   locations: ApiLocation[]
 }
 
-export interface ApiLocationItem {
+export interface ApiLocationAsset {
   id: number
   code: string
   name: string
@@ -124,7 +125,7 @@ export interface ApiLocationItem {
 
 export interface ApiLocationDetail extends ApiLocation {
   ancestors: Array<{ id: number; name: string }>
-  items: ApiLocationItem[]
+  assets: ApiLocationAsset[]
 }
 
 export interface LocationWriteInput {
@@ -136,7 +137,7 @@ export interface LocationWriteInput {
   projectId: number
 }
 
-export interface ApiItemDocument {
+export interface ApiAssetDocument {
   id: number
   name: string
   type: string
@@ -158,7 +159,7 @@ export interface ApiDocument {
   id: number
   name: string
   type: string
-  items: Array<{ id: number; code: string; name: string }>
+  assets: Array<{ id: number; code: string; name: string }>
   projectId: number
   project: { id: number; code: string; name: string }
   currentVersion: ApiDocumentVersion | null
@@ -183,32 +184,33 @@ export interface DocumentListParams {
   type?: string
   status?: ApiDocument['status']
   projectId?: number
-  itemId?: number
+  assetId?: number
 }
 
 export interface DocumentMetadataInput {
   name: string
   type: string
   projectId: number
-  itemIds?: number[]
+  assetIds?: number[]
   issueDate: string
   expiryDate?: string | null
 }
 
-export interface ApiItemListResponse {
-  data: ApiItem[]
+export interface ApiAssetListResponse {
+  data: ApiAsset[]
   total: number
   page: number
   totalPages: number
 }
 
-export interface ItemListParams {
+export interface AssetListParams {
   page?: number
   limit?: number
   search?: string
   typeId?: number
   statusId?: number
   locationId?: number
+  trashed?: boolean
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -231,14 +233,14 @@ function documentFormData(input: DocumentMetadataInput, file: File): FormData {
   body.set('name', input.name)
   body.set('type', input.type)
   body.set('projectId', String(input.projectId))
-  if (input.itemIds?.length) body.set('itemIds', JSON.stringify(input.itemIds))
+  if (input.assetIds?.length) body.set('assetIds', JSON.stringify(input.assetIds))
   body.set('issueDate', input.issueDate)
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
   body.set('file', file)
   return body
 }
 
-export function fetchItems(params: ItemListParams): Promise<ApiItemListResponse> {
+export function fetchAssets(params: AssetListParams): Promise<ApiAssetListResponse> {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))
   if (params.limit) q.set('limit', String(params.limit))
@@ -246,34 +248,44 @@ export function fetchItems(params: ItemListParams): Promise<ApiItemListResponse>
   if (params.typeId) q.set('typeId', String(params.typeId))
   if (params.statusId) q.set('statusId', String(params.statusId))
   if (params.locationId) q.set('locationId', String(params.locationId))
-  return request<ApiItemListResponse>(`/items?${q.toString()}`)
+  if (params.trashed) q.set('trashed', 'true')
+  return request<ApiAssetListResponse>(`/assets?${q.toString()}`)
 }
 
-export function fetchItem(id: number): Promise<ApiItem> {
-  return request<ApiItem>(`/items/${id}`)
+export function fetchAsset(id: number): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${id}`)
 }
 
-export function createItem(data: ItemWriteInput): Promise<ApiItem> {
-  return request<ApiItem>('/items', { method: 'POST', body: JSON.stringify(data) })
+export function createAsset(data: AssetWriteInput): Promise<ApiAsset> {
+  return request<ApiAsset>('/assets', { method: 'POST', body: JSON.stringify(data) })
 }
 
-export function updateItem(id: number, data: Partial<ItemWriteInput>): Promise<ApiItem> {
-  return request<ApiItem>(`/items/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+export function updateAsset(id: number, data: Partial<AssetWriteInput>): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
-export function changeItemStatus(id: number, statusId: number): Promise<ApiItem> {
-  return request<ApiItem>(`/items/${id}/status`, {
+export function changeAssetStatus(id: number, statusId: number): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ statusId }),
   })
 }
 
-export function deleteItem(id: number): Promise<void> {
-  return request<void>(`/items/${id}`, { method: 'DELETE' })
+// ITEM-05: el DELETE mueve el activo a la papelera (recuperable 30 días).
+export function deleteAsset(id: number): Promise<void> {
+  return request<void>(`/assets/${id}`, { method: 'DELETE' })
 }
 
-export function fetchItemTypes(): Promise<ApiItemType[]> {
-  return request<ApiItemType[]>('/item-types')
+export function restoreAsset(id: number): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${id}/restore`, { method: 'POST' })
+}
+
+export function purgeAsset(id: number): Promise<void> {
+  return request<void>(`/assets/${id}/purge`, { method: 'POST' })
+}
+
+export function fetchAssetTypes(): Promise<ApiAssetType[]> {
+  return request<ApiAssetType[]>('/asset-types')
 }
 
 export function fetchStatuses(): Promise<ApiStatus[]> {
@@ -334,8 +346,12 @@ export function createDocumentVersion(id: number, input: Pick<DocumentMetadataIn
   return request(`/documents/${id}/versions`, { method: 'POST', body })
 }
 
-export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'itemIds' | 'issueDate' | 'expiryDate'>>): Promise<ApiDocument> {
+export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'assetIds' | 'issueDate' | 'expiryDate'>>): Promise<ApiDocument> {
   return request(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function deleteDocument(id: number): Promise<void> {
+  return request(`/documents/${id}`, { method: 'DELETE' })
 }
 
 export async function downloadDocument(id: number, version?: number): Promise<void> {

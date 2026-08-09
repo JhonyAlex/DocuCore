@@ -26,8 +26,8 @@ export const navItems: NavItem[] = [
     ),
   },
   {
-    to: '/items',
-    label: 'Activos e ítems',
+    to: '/assets',
+    label: 'Activos',
     group: 'Gestión',
     icon: (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -113,7 +113,7 @@ export const navItems: NavItem[] = [
 export const routeLabels: Record<string, string> = {
   '/dashboard': 'Panel general',
   '/projects': 'Proyectos',
-  '/items': 'Activos e ítems',
+  '/assets': 'Activos',
   '/docs': 'Documentos',
   '/calendar': 'Calendario',
   '/plans': 'Planos',

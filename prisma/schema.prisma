@@ -30,10 +30,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  itemsOwned  Item[]          @relation("ItemResponsible")
-  memberships ProjectMember[]
-  auditLogs   AuditLog[]
-  locationsResponsible Location[] @relation("LocationResponsible")
+  assetsOwned          Asset[]         @relation("AssetResponsible")
+  memberships          ProjectMember[]
+  auditLogs            AuditLog[]
+  locationsResponsible Location[]      @relation("LocationResponsible")
 }
 
 model Project {
@@ -50,7 +50,7 @@ model Project {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  items      Item[]
+  assets     Asset[]
   members    ProjectMember[]
   documents  Document[]
   events     Event[]
@@ -71,60 +71,64 @@ model ProjectMember {
   @@index([userId])
 }
 
-model ItemType {
+model AssetType {
   id        Int      @id @default(autoincrement())
   name      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  items            Item[]
+  assets           Asset[]
   fieldDefinitions DynamicFieldDefinition[]
 }
 
 model DynamicFieldDefinition {
-  id         Int       @id @default(autoincrement())
-  itemTypeId Int
-  fieldName  String
-  fieldType  FieldType @default(TEXT)
-  required   Boolean   @default(false)
-  options    String[]
-  createdAt  DateTime  @default(now())
+  id          Int       @id @default(autoincrement())
+  assetTypeId Int
+  fieldName   String
+  fieldType   FieldType @default(TEXT)
+  required    Boolean   @default(false)
+  options     String[]
+  createdAt   DateTime  @default(now())
 
-  itemType ItemType @relation(fields: [itemTypeId], references: [id], onDelete: Cascade)
+  assetType AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
 
-  @@index([itemTypeId])
+  @@index([assetTypeId])
 }
 
-model Item {
-  id               Int       @id @default(autoincrement())
-  code             String    @unique
-  name             String
-  serialNumber     String    @unique
-  installDate      DateTime
-  typeId           Int
-  statusId         Int
-  locationId       Int
-  projectId        Int
-  responsibleId    Int
-  initials         String
-  dynamicFields    Json?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+model Asset {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  serialNumber  String    @unique
+  installDate   DateTime
+  typeId        Int
+  statusId      Int
+  locationId    Int
+  projectId     Int
+  responsibleId Int
+  initials      String
+  dynamicFields Json?
+  // ITEM-05: papelera — deletedAt != null significa que el activo está
+  // eliminado (recuperable 30 días); la purga lo borra físicamente.
+  deletedAt     DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  type        ItemType  @relation(fields: [typeId], references: [id])
-  status      Status    @relation(fields: [statusId], references: [id])
-  location    Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  responsible User      @relation("ItemResponsible", fields: [responsibleId], references: [id])
-  documentItems DocumentItem[]
-  events      Event[]
-  markers     FloorPlanMarker[]
+  type           AssetType        @relation(fields: [typeId], references: [id])
+  status         Status           @relation(fields: [statusId], references: [id])
+  location       Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible    User             @relation("AssetResponsible", fields: [responsibleId], references: [id])
+  documentAssets DocumentItem[]
+  events         Event[]
+  markers        FloorPlanMarker[]
 
   @@index([typeId])
   @@index([statusId])
   @@index([locationId])
   @@index([projectId])
   @@index([responsibleId])
+  @@index([deletedAt])
 }
 
 model Status {
@@ -133,19 +137,19 @@ model Status {
   pulseDot  String?
   createdAt DateTime @default(now())
 
-  items Item[]
+  assets Asset[]
 }
 
 model Document {
-  id        Int      @id @default(autoincrement())
-  name      String
+  id         Int      @id @default(autoincrement())
+  name       String
   eventTitle String?
-  type      String
-  projectId Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  type       String
+  projectId  Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  items    DocumentItem[]
+  assets   DocumentItem[]
   project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions DocumentVersion[]
 
@@ -155,13 +159,13 @@ model Document {
 // DOC-02: un documento puede estar asociado a varios activos (N-N).
 model DocumentItem {
   documentId Int
-  itemId     Int
+  assetId    Int
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  item     Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  asset    Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
-  @@id([documentId, itemId])
-  @@index([itemId])
+  @@id([documentId, assetId])
+  @@index([assetId])
 }
 
 model DocumentVersion {
@@ -189,15 +193,15 @@ model Event {
   date        DateTime
   type        String
   projectId   Int
-  itemId      Int?
+  assetId     Int?
   completedAt DateTime?
   createdAt   DateTime  @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  item    Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  asset   Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
-  @@index([itemId])
+  @@index([assetId])
 }
 
 model Location {
@@ -216,7 +220,7 @@ model Location {
   children    Location[] @relation("LocationTree")
   responsible User       @relation("LocationResponsible", fields: [responsibleId], references: [id])
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  items       Item[]
+  assets      Asset[]
   floorPlan   FloorPlan?
 
   @@index([parentId])
@@ -239,7 +243,7 @@ model FloorPlan {
 model FloorPlanMarker {
   id          Int      @id @default(autoincrement())
   floorPlanId Int
-  itemId      Int?
+  assetId     Int?
   left        Float
   top         Float
   code        String
@@ -250,10 +254,10 @@ model FloorPlanMarker {
   createdAt   DateTime @default(now())
 
   floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  item       Item?     @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  asset     Asset?    @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@index([floorPlanId])
-  @@index([itemId])
+  @@index([assetId])
 }
 
 model AuditLog {

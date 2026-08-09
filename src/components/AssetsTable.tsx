@@ -1,7 +1,6 @@
-import { useEffect, useState, type MouseEvent } from 'react'
-import { createPortal } from 'react-dom'
-import type { Item, Pagination } from '@/types'
+import type { Asset, Pagination } from '@/types'
 import StatusChip from '@/components/StatusChip'
+import RowActionsMenu, { type RowActionsMenuItem } from '@/components/RowActionsMenu'
 
 const urgencyClass: Record<string, string> = {
   amber: 'text-amber-600',
@@ -9,24 +8,25 @@ const urgencyClass: Record<string, string> = {
   slate: 'text-slate-600',
 }
 
-interface ItemsTableProps {
-  items: Item[]
+interface AssetsTableProps {
+  assets: Asset[]
   loading: boolean
   error: string | null
   pagination: Pagination
-  onRowClick: (item: Item) => void
-  onDuplicate: (item: Item) => void
+  trashMode?: boolean
+  selectedIds: Set<number>
+  onToggleSelect: (id: number) => void
+  onToggleSelectPage: (ids: number[]) => void
+  onRowClick: (asset: Asset) => void
+  onDuplicate: (asset: Asset) => void
+  onDelete: (asset: Asset) => void
+  onRestore: (asset: Asset) => void
+  onPurge: (asset: Asset) => void
   onPageChange: (page: number) => void
   onRetry: () => void
 }
 
 type PageToken = number | 'ellipsis'
-
-interface ActionsMenuState {
-  item: Item
-  top: number
-  left: number
-}
 
 function pageWindow(current: number, total: number): PageToken[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -40,50 +40,27 @@ function pageWindow(current: number, total: number): PageToken[] {
   return pages
 }
 
-export default function ItemsTable({ items, loading, error, pagination, onRowClick, onDuplicate, onPageChange, onRetry }: ItemsTableProps) {
-  const [actionsMenu, setActionsMenu] = useState<ActionsMenuState | null>(null)
+function menuItemsFor(asset: Asset, trashMode: boolean, handlers: Pick<AssetsTableProps, 'onDuplicate' | 'onDelete' | 'onRestore' | 'onPurge'>): RowActionsMenuItem[] {
+  if (trashMode) {
+    return [
+      { label: 'Restaurar', onSelect: () => handlers.onRestore(asset), variant: 'success' },
+      { label: 'Eliminar definitivamente', onSelect: () => handlers.onPurge(asset), variant: 'danger' },
+    ]
+  }
+  return [
+    { label: 'Duplicar', onSelect: () => handlers.onDuplicate(asset) },
+    { label: 'Eliminar', onSelect: () => handlers.onDelete(asset), variant: 'danger' },
+  ]
+}
+
+export default function AssetsTable({ assets, loading, error, pagination, trashMode = false, selectedIds, onToggleSelect, onToggleSelectPage, onRowClick, onDuplicate, onDelete, onRestore, onPurge, onPageChange, onRetry }: AssetsTableProps) {
   const { page, totalPages, total, limit } = pagination
   const start = total === 0 ? 0 : (page - 1) * limit + 1
   const end = Math.min(page * limit, total)
   const pages = pageWindow(page, totalPages)
-
-  useEffect(() => {
-    if (!actionsMenu) return
-
-    const closeMenu = () => setActionsMenu(null)
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMenu()
-    }
-
-    document.addEventListener('keydown', closeOnEscape)
-    window.addEventListener('resize', closeMenu)
-    window.addEventListener('scroll', closeMenu, true)
-
-    return () => {
-      document.removeEventListener('keydown', closeOnEscape)
-      window.removeEventListener('resize', closeMenu)
-      window.removeEventListener('scroll', closeMenu, true)
-    }
-  }, [actionsMenu])
-
-  const toggleActionsMenu = (event: MouseEvent<HTMLButtonElement>, item: Item) => {
-    if (actionsMenu?.item.id === item.id) {
-      setActionsMenu(null)
-      return
-    }
-
-    const buttonRect = event.currentTarget.getBoundingClientRect()
-    const menuWidth = 144
-    const viewportPadding = 8
-    setActionsMenu({
-      item,
-      top: buttonRect.bottom + 4,
-      left: Math.min(
-        window.innerWidth - menuWidth - viewportPadding,
-        Math.max(viewportPadding, buttonRect.right - menuWidth),
-      ),
-    })
-  }
+  const assetIds = assets.map((a) => a.id)
+  const allSelected = assetIds.length > 0 && assetIds.every((id) => selectedIds.has(id))
+  const someSelected = assetIds.some((id) => selectedIds.has(id)) && !allSelected
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -91,13 +68,15 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
             <tr>
-              <th className="text-left px-4 py-3 font-medium"><input type="checkbox" className="rounded" /></th>
+              <th className="text-left px-4 py-3 font-medium">
+                <input type="checkbox" className="rounded" checked={allSelected} ref={(el) => { if (el) el.indeterminate = someSelected }} onChange={() => onToggleSelectPage(assetIds)} aria-label="Seleccionar todos los activos de la página" />
+              </th>
               <th className="text-left px-4 py-3 font-medium">Código</th>
               <th className="text-left px-4 py-3 font-medium">Nombre</th>
               <th className="text-left px-4 py-3 font-medium">Tipo</th>
               <th className="text-left px-4 py-3 font-medium">Ubicación</th>
               <th className="text-left px-4 py-3 font-medium">Estado</th>
-              <th className="text-left px-4 py-3 font-medium">Próximo evento</th>
+              <th className="text-left px-4 py-3 font-medium">{trashMode ? 'Eliminación' : 'Próximo evento'}</th>
               <th className="text-left px-4 py-3 font-medium">Responsable</th>
               <th className="text-right px-4 py-3 font-medium">Acciones</th>
             </tr>
@@ -145,49 +124,57 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
                 </td>
               </tr>
             )}
-            {!loading && !error && items.length === 0 && (
+            {!loading && !error && assets.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">No se encontraron ítems</td>
+                <td colSpan={9} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">{trashMode ? 'La papelera está vacía' : 'No se encontraron activos'}</td>
               </tr>
             )}
             {!loading &&
               !error &&
-              items.map((item) => (
-                <tr key={item.id} onClick={() => onRowClick(item)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer">
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="rounded" /></td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.code}</td>
+              assets.map((asset) => (
+                <tr key={asset.id} onClick={() => !trashMode && onRowClick(asset)} className={`${trashMode ? '' : 'hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer'}`}>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" className="rounded" checked={selectedIds.has(asset.id)} onChange={() => onToggleSelect(asset.id)} aria-label={`Seleccionar ${asset.code}`} />
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{asset.code}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg ${item.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{item.initials}</div>
+                      <div className={`w-8 h-8 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
                       <div>
-                        <div className="font-medium">{item.name}</div>
-                        <div className="text-xs text-slate-500">{item.serialLabel}</div>
+                        <div className="font-medium">{asset.name}</div>
+                        <div className="text-xs text-slate-500">{asset.serialLabel}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3"><span className={`chip ${item.typeChipClass}`}>{item.type}</span></td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{item.location}</td>
-                  <td className="px-4 py-3"><StatusChip label={item.status} chipClass={item.statusChipClass} pulseDot={item.pulseDot} /></td>
+                  <td className="px-4 py-3"><span className={`chip ${asset.typeChipClass}`}>{asset.type}</span></td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{asset.location}</td>
+                  <td className="px-4 py-3"><StatusChip label={asset.status} chipClass={asset.statusChipClass} pulseDot={asset.pulseDot} /></td>
                   <td className="px-4 py-3">
-                    {item.nextEvent ? (
-                      <>
-                        <div className="text-xs">{item.nextEvent.label}</div>
-                        <div className={`text-xs ${urgencyClass[item.nextEvent.urgency]}`}>{item.nextEvent.date}</div>
-                      </>
+                    {trashMode ? (
+                      asset.deletedLabel ? (
+                        <div className="text-xs text-red-600 dark:text-red-400">{asset.deletedLabel}</div>
+                      ) : (
+                        <div className="text-xs text-slate-400">—</div>
+                      )
                     ) : (
-                      <div className="text-xs text-slate-400">Sin eventos programados</div>
+                      asset.nextEvent ? (
+                        <>
+                          <div className="text-xs">{asset.nextEvent.label}</div>
+                          <div className={`text-xs ${urgencyClass[asset.nextEvent.urgency]}`}>{asset.nextEvent.date}</div>
+                        </>
+                      ) : (
+                        <div className="text-xs text-slate-400">Sin eventos programados</div>
+                      )
                     )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className={`w-6 h-6 rounded-full ${item.responsibleColor} text-white text-xs font-medium flex items-center justify-center`}>{item.responsibleInitials}</div>
-                      <span className="text-xs">{item.responsible}</span>
+                      <div className={`w-6 h-6 rounded-full ${asset.responsibleColor} text-white text-xs font-medium flex items-center justify-center`}>{asset.responsibleInitials}</div>
+                      <span className="text-xs">{asset.responsible}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" aria-label={`Acciones de ${item.code}`} aria-controls="item-actions-menu" aria-expanded={actionsMenu?.item.id === item.id} onClick={(event) => toggleActionsMenu(event, item)} className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" /></svg>
-                    </button>
+                    <RowActionsMenu items={menuItemsFor(asset, trashMode, { onDuplicate, onDelete, onRestore, onPurge })} ariaLabel={`Acciones de ${asset.code}`} />
                   </td>
                 </tr>
               ))}
@@ -210,15 +197,6 @@ export default function ItemsTable({ items, loading, error, pagination, onRowCli
           <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
         </div>
       </div>
-      {actionsMenu && createPortal(
-        <>
-          <button type="button" tabIndex={-1} aria-label="Cerrar menú de acciones" onClick={() => setActionsMenu(null)} className="fixed inset-0 z-[60] cursor-default" />
-          <div id="item-actions-menu" role="menu" className="fixed z-[70] w-36 rounded-lg border border-slate-200 bg-white p-1 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900" style={{ top: actionsMenu.top, left: actionsMenu.left }}>
-            <button type="button" role="menuitem" onClick={() => { const item = actionsMenu.item; setActionsMenu(null); onDuplicate(item) }} className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">Duplicar</button>
-          </div>
-        </>,
-        document.body,
-      )}
     </div>
   )
 }

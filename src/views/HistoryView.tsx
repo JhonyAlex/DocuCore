@@ -6,7 +6,7 @@ export default function HistoryView() {
       <div className="flex items-end justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Historial y auditoría</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Trazabilidad completa de cambios en ítems, documentos y eventos</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Trazabilidad completa de cambios en activos, documentos y eventos</p>
         </div>
         <div className="flex items-center gap-2">
           <select className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">

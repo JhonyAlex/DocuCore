@@ -12,7 +12,8 @@ const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
 const locationInclude = {
   responsible: { select: { id: true, name: true, initials: true, color: true } },
   floorPlan: { select: { id: true } },
-  _count: { select: { items: true, children: true } },
+  // ITEM-05: el árbol cuenta solo activos vivos, igual que el detalle.
+  _count: { select: { assets: { where: { deletedAt: null } }, children: true } },
 } satisfies Prisma.LocationInclude
 
 type LocationWithRelations = Prisma.LocationGetPayload<{ include: typeof locationInclude }>
@@ -25,7 +26,7 @@ function serializeLocation(location: LocationWithRelations) {
     updatedAt: location.updatedAt.toISOString(),
     responsible,
     hasFloorPlan: floorPlan !== null,
-    itemCount: _count.items,
+    assetCount: _count.assets,
     childCount: _count.children,
   }
 }
@@ -130,8 +131,8 @@ router.get(
       nextId = ancestor.parentId
     }
 
-    const items = await prisma.item.findMany({
-      where: { locationId: id },
+    const assets = await prisma.asset.findMany({
+      where: { locationId: id, deletedAt: null },
       orderBy: { id: 'asc' },
       select: {
         id: true,
@@ -147,13 +148,13 @@ router.get(
     // El detalle comparte el conteo de subrama del árbol (activos directos e
     // hijos), de modo que árbol y detalle muestran siempre el mismo número.
     const subtreeIds = await collectSubtreeIds(id)
-    const subtreeItems = await prisma.item.count({ where: { locationId: { in: subtreeIds } } })
+    const subtreeAssets = await prisma.asset.count({ where: { locationId: { in: subtreeIds }, deletedAt: null } })
 
     res.json({
       ...serializeLocation(location),
-      itemCount: subtreeItems,
+      assetCount: subtreeAssets,
       ancestors,
-      items: items.map((item) => ({ ...item, installDate: item.installDate.toISOString() })),
+      assets: assets.map((asset) => ({ ...asset, installDate: asset.installDate.toISOString() })),
     })
   }),
 )
@@ -273,11 +274,13 @@ router.delete(
       return
     }
     const subtreeIds = await collectSubtreeIds(id)
-    const [subtreeItems, anyChildren] = await Promise.all([
-      prisma.item.count({ where: { locationId: { in: subtreeIds } } }),
+    // Cuenta todos los activos de la subrama (incluida la papelera): la FK con
+    // Restrict impide borrar la ubicación mientras exista el activo físico.
+    const [subtreeAssets, anyChildren] = await Promise.all([
+      prisma.asset.count({ where: { locationId: { in: subtreeIds } } }),
       prisma.location.count({ where: { parentId: id } }),
     ])
-    if (subtreeItems > 0) {
+    if (subtreeAssets > 0) {
       res.status(409).json({ error: 'Conflict', message: 'No se puede eliminar: la ubicación tiene activos asignados.' })
       return
     }

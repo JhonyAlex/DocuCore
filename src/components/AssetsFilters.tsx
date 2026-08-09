@@ -1,19 +1,19 @@
 import { useState, type ChangeEvent } from 'react'
-import type { ItemFilters } from '@/types'
-import type { ApiItemType, ApiLocation, ApiStatus } from '@/lib/api'
+import type { AssetFilters } from '@/types'
+import type { ApiAssetType, ApiLocation, ApiStatus } from '@/lib/api'
 
-interface ItemsFiltersProps {
-  filters: ItemFilters
-  types: ApiItemType[]
+interface AssetsFiltersProps {
+  filters: AssetFilters
+  types: ApiAssetType[]
   statuses: ApiStatus[]
   locations: ApiLocation[]
-  onFilterChange: (next: ItemFilters) => void
+  onFilterChange: (next: AssetFilters) => void
 }
 
-export default function ItemsFilters({ filters, types, statuses, locations, onFilterChange }: ItemsFiltersProps) {
+export default function AssetsFilters({ filters, types, statuses, locations, onFilterChange }: AssetsFiltersProps) {
   const [showReferenceChips, setShowReferenceChips] = useState(true)
 
-  const applyFilters = (next: ItemFilters) => {
+  const applyFilters = (next: AssetFilters) => {
     setShowReferenceChips(false)
     onFilterChange(next)
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { deriveItemEvents, type ItemEventRelations } from '../../server/lib/itemEvents'
+import { deriveAssetEvents, type AssetEventRelations } from '../../server/lib/assetEvents'
 
-function relations(overrides: Partial<ItemEventRelations> = {}): ItemEventRelations {
+function relations(overrides: Partial<AssetEventRelations> = {}): AssetEventRelations {
   return {
     events: [],
     documents: [],
@@ -13,9 +13,9 @@ function relations(overrides: Partial<ItemEventRelations> = {}): ItemEventRelati
 
 const now = new Date('2026-08-06T18:00:00.000Z')
 
-describe('deriveItemEvents', () => {
+describe('deriveAssetEvents', () => {
   it('derives, sorts and classifies events from explicit relations', () => {
-    const result = deriveItemEvents(relations({
+    const result = deriveAssetEvents(relations({
       events: [
         { id: 2, title: 'Revisión futura', date: new Date('2026-09-15T10:00:00.000Z'), type: 'Mantenimiento' },
         { id: 1, title: 'Revisión vencida', date: new Date('2026-08-03T10:00:00.000Z'), type: 'Inspección' },
@@ -28,8 +28,8 @@ describe('deriveItemEvents', () => {
     ])
   })
 
-  it('uses a related document expiry as an item event', () => {
-    const result = deriveItemEvents(relations({
+  it('uses a related document expiry as an asset event', () => {
+    const result = deriveAssetEvents(relations({
       documents: [{ id: 4, name: 'Certificado de calibración', eventTitle: null, versions: [{ expiryDate: new Date('2026-08-10T00:00:00.000Z') }], type: 'Calibración' }],
     }), now)
 
@@ -47,7 +47,7 @@ describe('deriveItemEvents', () => {
   })
 
   it('derives dates from dynamic DATE definitions and ignores unrelated or invalid values', () => {
-    const result = deriveItemEvents(relations({
+    const result = deriveAssetEvents(relations({
       dynamicFields: {
         'Próxima calibración': '2026-08-06',
         Observaciones: 'Sin fecha',
@@ -72,8 +72,8 @@ describe('deriveItemEvents', () => {
     ])
   })
 
-  it('returns no invented event when the item has no valid dated relation', () => {
-    expect(deriveItemEvents(relations({
+  it('returns no invented event when the asset has no valid dated relation', () => {
+    expect(deriveAssetEvents(relations({
       documents: [{ id: 1, name: 'Manual', eventTitle: null, versions: [{ expiryDate: null }], type: 'Manual' }],
     }), now)).toEqual([])
   })

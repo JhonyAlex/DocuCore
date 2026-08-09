@@ -2,14 +2,18 @@ import { Router } from 'express'
 import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { deriveItemEvents } from '../lib/itemEvents'
-import { createItemSchema, updateItemSchema, changeStatusSchema } from '../lib/validate'
+import { deriveAssetEvents } from '../lib/assetEvents'
+import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
 
 const router: Router = Router()
 
 const ACTOR_USER_ID = 1
 
-const itemInclude = {
+// ITEM-05: un activo en la papelera se puede recuperar hasta 30 días después
+// de su eliminación; pasada esa ventana, la purga lo borra físicamente.
+const TRASH_RETENTION_DAYS = 30
+
+const assetInclude = {
   type: {
     select: {
       id: true,
@@ -27,7 +31,7 @@ const itemInclude = {
     where: { completedAt: null },
     select: { id: true, title: true, date: true, type: true },
   },
-  documentItems: {
+  documentAssets: {
     orderBy: { document: { updatedAt: 'desc' } },
     include: {
       document: {
@@ -45,19 +49,19 @@ const itemInclude = {
       },
     },
   },
-} satisfies Prisma.ItemInclude
+} satisfies Prisma.AssetInclude
 
-type ItemWithRelations = Prisma.ItemGetPayload<{ include: typeof itemInclude }>
+type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
 
 function derivedEventClock(): Date {
   const configured = process.env.DOCUCORE_NOW ? new Date(process.env.DOCUCORE_NOW) : null
   return configured && !Number.isNaN(configured.getTime()) ? configured : new Date()
 }
 
-function withDerivedEvents(item: ItemWithRelations) {
-  const documents = item.documentItems.map((link) => link.document)
-  const nextEvents = deriveItemEvents({ ...item, documents }, derivedEventClock())
-  const { events: _events, documentItems: _documentItems, type, ...base } = item
+function withDerivedEvents(asset: AssetWithRelations) {
+  const documents = asset.documentAssets.map((link) => link.document)
+  const nextEvents = deriveAssetEvents({ ...asset, documents }, derivedEventClock())
+  const { events: _events, documentAssets: _documentAssets, type, ...base } = asset
   return {
     ...base,
     type: { id: type.id, name: type.name },
@@ -83,12 +87,12 @@ function toNumberId(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-// Ubicación y responsable deben pertenecer al proyecto del ítem. En POST se
+// Ubicación y responsable deben pertenecer al proyecto del activo. En POST se
 // validan los cuatro ids recibidos; en PUT se valida el estado final
 // (existentes + cambios), de modo que modificar solo una relación nunca deja
 // las demás incoherentes con el proyecto.
-async function assertItemRelationsValid(projectId: number, locationId: number, responsibleId: number): Promise<void> {
-  const invalid = new Error('Location and responsible must belong to the item project')
+async function assertAssetRelationsValid(projectId: number, locationId: number, responsibleId: number): Promise<void> {
+  const invalid = new Error('Location and responsible must belong to the asset project')
   ;(invalid as Error & { status?: number }).status = 400
   const [location, responsible] = await Promise.all([
     prisma.location.findUnique({ where: { id: locationId }, select: { projectId: true } }),
@@ -120,6 +124,29 @@ async function collectLocationSubtree(rootId: number): Promise<number[]> {
   return ids
 }
 
+// ITEM-05: purga perezosa de la papelera — borra físicamente los activos cuyo
+// `deletedAt` supera la ventana de retención, con auditoría por activo.
+async function purgeExpiredTrashedAssets(now = derivedEventClock()): Promise<void> {
+  const cutoff = new Date(now.getTime() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+  const expired = await prisma.asset.findMany({
+    where: { deletedAt: { not: null, lt: cutoff } },
+    select: { id: true, code: true, name: true },
+  })
+  if (expired.length === 0) return
+  await prisma.$transaction([
+    prisma.asset.deleteMany({ where: { id: { in: expired.map((asset) => asset.id) } } }),
+    ...expired.map((asset) => prisma.auditLog.create({
+      data: {
+        userId: ACTOR_USER_ID,
+        action: 'Eliminación definitiva',
+        entityId: asset.code,
+        detail: `Activo "${asset.name}" purgado (más de ${TRASH_RETENTION_DAYS} días en papelera)`,
+        timestamp: now,
+      },
+    })),
+  ])
+}
+
 router.get(
   '/',
   asyncHandler(async (req, res) => {
@@ -130,11 +157,15 @@ router.get(
     const typeId = toNumberId(typeof q.typeId === 'string' ? q.typeId : undefined)
     const statusId = toNumberId(typeof q.statusId === 'string' ? q.statusId : undefined)
     const locationId = toNumberId(typeof q.locationId === 'string' ? q.locationId : undefined)
+    const trashed = q.trashed === 'true'
 
     const page = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1
     const limit = Number.isFinite(limitParam) && limitParam >= 1 ? Math.min(100, Math.floor(limitParam)) : 10
 
-    const where: Prisma.ItemWhereInput = {}
+    // Al consultar la papelera se purgan primero los activos vencidos.
+    if (trashed) await purgeExpiredTrashedAssets()
+
+    const where: Prisma.AssetWhereInput = { deletedAt: trashed ? { not: null } : null }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -147,14 +178,14 @@ router.get(
     if (locationId !== null) where.locationId = { in: await collectLocationSubtree(locationId) }
 
     const [rows, total] = await prisma.$transaction([
-      prisma.item.findMany({
+      prisma.asset.findMany({
         where,
-        include: itemInclude,
+        include: assetInclude,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { id: 'asc' },
+        orderBy: trashed ? { deletedAt: 'desc' } : { id: 'asc' },
       }),
-      prisma.item.count({ where }),
+      prisma.asset.count({ where }),
     ])
 
     const totalPages = total === 0 ? 1 : Math.ceil(total / limit)
@@ -170,22 +201,22 @@ router.get(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const item = await prisma.item.findUnique({ where: { id }, include: itemInclude })
-    if (!item) {
+    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, include: assetInclude })
+    if (!asset) {
       res.status(404).json({ error: 'Not found' })
       return
     }
-    res.json(withDerivedEvents(item))
+    res.json(withDerivedEvents(asset))
   }),
 )
 
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    const parsed = createItemSchema.parse(req.body)
+    const parsed = createAssetSchema.parse(req.body)
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
-    await assertItemRelationsValid(projectId, locationId, responsibleId)
-    const data: Prisma.ItemCreateInput = {
+    await assertAssetRelationsValid(projectId, locationId, responsibleId)
+    const data: Prisma.AssetCreateInput = {
       ...rest,
       installDate: new Date(installDate),
       type: { connect: { id: typeId } },
@@ -196,13 +227,13 @@ router.post(
       dynamicFields: dynamicFields ? (dynamicFields as Prisma.InputJsonValue) : undefined,
     }
     const [created] = await prisma.$transaction([
-      prisma.item.create({ data, include: itemInclude }),
+      prisma.asset.create({ data, include: assetInclude }),
       prisma.auditLog.create({
         data: {
           userId: ACTOR_USER_ID,
           action: 'Creación',
           entityId: parsed.code,
-          detail: `Nuevo ítem "${parsed.name}" creado`,
+          detail: `Nuevo activo "${parsed.name}" creado`,
           timestamp: new Date(),
         },
       }),
@@ -219,10 +250,10 @@ router.put(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const parsed = updateItemSchema.parse(req.body)
+    const parsed = updateAssetSchema.parse(req.body)
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
-    const existing = await prisma.item.findUnique({
-      where: { id },
+    const existing = await prisma.asset.findFirst({
+      where: { id, deletedAt: null },
       select: { projectId: true, locationId: true, responsibleId: true },
     })
     if (!existing) {
@@ -231,12 +262,12 @@ router.put(
     }
     // El PUT es parcial: se valida el estado final combinando lo recibido con
     // lo existente, para que las relaciones no tocadas sigan siendo válidas.
-    await assertItemRelationsValid(
+    await assertAssetRelationsValid(
       projectId ?? existing.projectId,
       locationId ?? existing.locationId,
       responsibleId ?? existing.responsibleId,
     )
-    const data: Prisma.ItemUpdateInput = {
+    const data: Prisma.AssetUpdateInput = {
       ...rest,
       installDate: installDate ? new Date(installDate) : undefined,
       type: typeId ? { connect: { id: typeId } } : undefined,
@@ -247,13 +278,13 @@ router.put(
       dynamicFields: dynamicFields ? (dynamicFields as Prisma.InputJsonValue) : undefined,
     }
     const [updated] = await prisma.$transaction([
-      prisma.item.update({ where: { id }, data, include: itemInclude }),
+      prisma.asset.update({ where: { id }, data, include: assetInclude }),
       prisma.auditLog.create({
         data: {
           userId: ACTOR_USER_ID,
           action: 'Actualización',
           entityId: String(id),
-          detail: 'Ítem actualizado',
+          detail: 'Activo actualizado',
           timestamp: new Date(),
         },
       }),
@@ -262,6 +293,8 @@ router.put(
   }),
 )
 
+// ITEM-05: el DELETE mueve el activo a la papelera (recuperable 30 días); el
+// borrado físico queda reservado a la purga o a `POST /:id/purge`.
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -270,19 +303,92 @@ router.delete(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const item = await prisma.item.findUnique({ where: { id }, select: { id: true, code: true, name: true } })
-    if (!item) {
+    const asset = await prisma.asset.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, code: true, name: true },
+    })
+    if (!asset) {
       res.status(404).json({ error: 'Not found' })
       return
     }
     await prisma.$transaction([
-      prisma.item.delete({ where: { id } }),
+      prisma.asset.update({ where: { id }, data: { deletedAt: new Date() } }),
       prisma.auditLog.create({
         data: {
           userId: ACTOR_USER_ID,
           action: 'Eliminación',
-          entityId: item.code,
-          detail: `Ítem "${item.name}" eliminado`,
+          entityId: asset.code,
+          detail: `Activo "${asset.name}" movido a la papelera`,
+          timestamp: new Date(),
+        },
+      }),
+    ])
+    res.status(204).end()
+  }),
+)
+
+router.post(
+  '/:id/restore',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const asset = await prisma.asset.findFirst({
+      where: { id, deletedAt: { not: null } },
+      select: { id: true, code: true, name: true },
+    })
+    if (!asset) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    const [restored] = await prisma.$transaction([
+      prisma.asset.update({ where: { id }, data: { deletedAt: null }, include: assetInclude }),
+      prisma.auditLog.create({
+        data: {
+          userId: ACTOR_USER_ID,
+          action: 'Restauración',
+          entityId: asset.code,
+          detail: `Activo "${asset.name}" restaurado de la papelera`,
+          timestamp: new Date(),
+        },
+      }),
+    ])
+    res.json(withDerivedEvents(restored))
+  }),
+)
+
+// ITEM-05: borrado físico inmediato — solo válido para activos en papelera.
+router.post(
+  '/:id/purge',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const asset = await prisma.asset.findFirst({
+      where: { id, deletedAt: { not: null } },
+      select: { id: true, code: true, name: true },
+    })
+    if (!asset) {
+      const notTrashed = await prisma.asset.findUnique({ where: { id }, select: { id: true } })
+      if (notTrashed) {
+        res.status(409).json({ error: 'Asset is not in the trash' })
+        return
+      }
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await prisma.$transaction([
+      prisma.asset.delete({ where: { id } }),
+      prisma.auditLog.create({
+        data: {
+          userId: ACTOR_USER_ID,
+          action: 'Eliminación definitiva',
+          entityId: asset.code,
+          detail: `Activo "${asset.name}" eliminado definitivamente`,
           timestamp: new Date(),
         },
       }),
@@ -301,7 +407,10 @@ router.patch(
     }
     const parsed = changeStatusSchema.parse(req.body)
     const [existing, targetStatus] = await Promise.all([
-      prisma.item.findUnique({ where: { id }, select: { code: true, status: { select: { name: true } } } }),
+      prisma.asset.findFirst({
+        where: { id, deletedAt: null },
+        select: { code: true, status: { select: { name: true } } },
+      }),
       prisma.status.findUnique({ where: { id: parsed.statusId }, select: { name: true } }),
     ])
     if (!existing) {
@@ -313,10 +422,10 @@ router.patch(
       return
     }
     const [updated] = await prisma.$transaction([
-      prisma.item.update({
+      prisma.asset.update({
         where: { id },
         data: { status: { connect: { id: parsed.statusId } } },
-        include: itemInclude,
+        include: assetInclude,
       }),
       prisma.auditLog.create({
         data: {

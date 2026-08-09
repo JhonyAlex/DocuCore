@@ -9,20 +9,23 @@ type VisualTarget = {
   route: string
   referenceView: string
   heading: string
+  // ITEM-06: la app usa «Activos»; el HTML de referencia (protegido) mantiene
+  // «Activos e ítems», así que cada lado espera su propio heading.
+  referenceHeading?: string
   modal?: boolean
 }
 
 const targets: VisualTarget[] = [
   { name: 'dashboard', route: '/dashboard', referenceView: 'dashboard', heading: 'Panel general' },
   { name: 'projects', route: '/projects', referenceView: 'projects', heading: 'Proyectos' },
-  { name: 'items', route: '/items', referenceView: 'items', heading: 'Activos e ítems' },
+  { name: 'items', route: '/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems' },
   { name: 'documents', route: '/docs', referenceView: 'docs', heading: 'Documentos' },
   { name: 'calendar', route: '/calendar', referenceView: 'calendar', heading: 'Calendario' },
   { name: 'plans', route: '/plans', referenceView: 'plans', heading: 'Planos interactivos' },
   { name: 'locations', route: '/locations', referenceView: 'locations', heading: 'Ubicaciones' },
   { name: 'history', route: '/history', referenceView: 'history', heading: 'Historial y auditoría' },
   { name: 'config', route: '/config', referenceView: 'config', heading: 'Configuración' },
-  { name: 'item-modal', route: '/items', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true },
+  { name: 'item-modal', route: '/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true },
 ]
 
 const variants: Array<{ name: string; width: number; height: number; theme: Theme }> = [
@@ -43,7 +46,7 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
   await page.goto(target.route, { waitUntil: 'domcontentloaded' })
   // El shell carga la sesión (proyecto activo + usuario) de forma asíncrona.
   await expect(page.getByText('María Fernández', { exact: true }).first()).toBeVisible()
-  if (target.route === '/items') {
+  if (target.route === '/assets') {
     await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
   }
   if (target.route === '/locations') {
@@ -66,7 +69,7 @@ async function openReferenceTarget(page: Page, target: VisualTarget, theme: Them
   if (target.modal) {
     await page.locator('[data-item="1"]').first().click()
   }
-  await expect(page.getByRole('heading', { name: target.heading, exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: target.referenceHeading ?? target.heading, exact: true })).toBeVisible()
 }
 
 async function attachDiff(testInfo: TestInfo, name: string, result: Awaited<ReturnType<typeof compareImages>>): Promise<void> {

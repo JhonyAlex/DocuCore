@@ -48,12 +48,12 @@ test.describe('Locations lifecycle', () => {
     const storageFiles = await readdir(e2eEnv.DOCUMENT_STORAGE_PATH).catch(() => [])
     expect(storageFiles.filter((file) => !file.startsWith('.docucore'))).toEqual([])
 
-    const [itemsRes, docsRes, locsRes] = await Promise.all([
-      page.request.get('/api/items'),
+    const [assetsRes, docsRes, locsRes] = await Promise.all([
+      page.request.get('/api/assets'),
       page.request.get('/api/documents'),
       page.request.get('/api/locations'),
     ])
-    expect((await itemsRes.json() as { total: number }).total).toBe(0)
+    expect((await assetsRes.json() as { total: number }).total).toBe(0)
     expect((await docsRes.json() as { total: number }).total).toBe(0)
     expect((await locsRes.json() as { locations: unknown[] }).locations.length).toBe(0)
   })
@@ -73,8 +73,8 @@ test.describe('Locations lifecycle', () => {
       expect(result.code).not.toBe(0)
 
       // El reset de BD sí se completó (parcial) y el storage quedó intacto.
-      const itemsRes = await page.request.get('/api/items')
-      expect((await itemsRes.json() as { total: number }).total).toBe(0)
+      const assetsRes = await page.request.get('/api/assets')
+      expect((await assetsRes.json() as { total: number }).total).toBe(0)
       expect((await readdir(corruptDir))).toContain('f81f42c8-0000-4000-8000-000000000000.pdf')
     } finally {
       await rm(corruptDir, { recursive: true, force: true })
@@ -100,8 +100,8 @@ test.describe('Locations lifecycle', () => {
       expect(result.code).not.toBe(0)
 
       // Reset parcial: la BD quedó vacía pero la entrada gestionada sigue ahí.
-      const itemsRes = await page.request.get('/api/items')
-      expect((await itemsRes.json() as { total: number }).total).toBe(0)
+      const assetsRes = await page.request.get('/api/assets')
+      expect((await assetsRes.json() as { total: number }).total).toBe(0)
       expect((await readdir(blockedDir))).toContain(managedName)
     } finally {
       await rm(blockedDir, { recursive: true, force: true })
@@ -168,12 +168,12 @@ test.describe('Locations lifecycle', () => {
     const child = tree.find((l) => l.code === 'H-E2E')!
 
     const [typesRes, statusesRes] = await Promise.all([
-      page.request.get('/api/item-types'),
+      page.request.get('/api/asset-types'),
       page.request.get('/api/statuses'),
     ])
     const types = await typesRes.json() as Array<{ id: number; name: string }>
     const statuses = await statusesRes.json() as Array<{ id: number; name: string }>
-    const createItem = await page.request.post('/api/items', {
+    const createAsset = await page.request.post('/api/assets', {
       data: {
         code: 'ACT-E2E',
         name: 'Activo de rama',
@@ -187,19 +187,19 @@ test.describe('Locations lifecycle', () => {
         initials: 'AE',
       },
     })
-    expect(createItem.status()).toBe(201)
+    expect(createAsset.status()).toBe(201)
 
     // El filtro por la rama padre incluye los activos de toda su subrama.
-    const filtered = await page.request.get(`/api/items?locationId=${child.id}`)
+    const filtered = await page.request.get(`/api/assets?locationId=${child.id}`)
     expect((await filtered.json() as { total: number }).total).toBe(1)
   })
 
-  test('rejects items whose location or responsible belongs to another project', async ({ page }) => {
+  test('rejects assets whose location or responsible belongs to another project', async ({ page }) => {
     const tree = await locations(page)
     const child = tree.find((l) => l.code === 'H-E2E')!
 
     const [typesRes, statusesRes, usersRes] = await Promise.all([
-      page.request.get('/api/item-types'),
+      page.request.get('/api/asset-types'),
       page.request.get('/api/statuses'),
       page.request.get('/api/users'),
     ])
@@ -224,29 +224,29 @@ test.describe('Locations lifecycle', () => {
     }
 
     try {
-      // Positivo: ubicación y responsable del proyecto del ítem.
-      const ok = await page.request.post('/api/items', { data: { ...base, code: 'QA-OK', locationId: child.id } })
+      // Positivo: ubicación y responsable del proyecto del activo.
+      const ok = await page.request.post('/api/assets', { data: { ...base, code: 'QA-OK', locationId: child.id } })
       expect(ok.status()).toBe(201)
       const okId = ((await ok.json()) as { id: number }).id
 
       // Negativo: la ubicación pertenece a otro proyecto.
-      const crossLocation = await page.request.post('/api/items', { data: { ...base, code: 'QA-XLOC', locationId: project2Location.body.id } })
+      const crossLocation = await page.request.post('/api/assets', { data: { ...base, code: 'QA-XLOC', locationId: project2Location.body.id } })
       expect(crossLocation.status()).toBe(400)
 
-      // Negativo: el responsable no es miembro del proyecto del ítem.
-      const crossResponsible = await page.request.post('/api/items', { data: { ...base, code: 'QA-XRES', projectId: 2, responsibleId: project1OnlyUser.id } })
+      // Negativo: el responsable no es miembro del proyecto del activo.
+      const crossResponsible = await page.request.post('/api/assets', { data: { ...base, code: 'QA-XRES', projectId: 2, responsibleId: project1OnlyUser.id } })
       expect(crossResponsible.status()).toBe(400)
 
       // Negativo (PUT parcial): mover solo el proyecto deja las relaciones
       // existentes (ubicación y responsable) fuera del proyecto.
-      const partialProject = await page.request.put(`/api/items/${okId}`, { data: { projectId: 2 } })
+      const partialProject = await page.request.put(`/api/assets/${okId}`, { data: { projectId: 2 } })
       expect(partialProject.status()).toBe(400)
 
       // Positivo (PUT parcial coherente): cambiar solo el nombre no rompe nada.
-      const partialName = await page.request.put(`/api/items/${okId}`, { data: { name: 'Activo QA renombrado' } })
+      const partialName = await page.request.put(`/api/assets/${okId}`, { data: { name: 'Activo QA renombrado' } })
       expect(partialName.status()).toBe(200)
 
-      expect((await page.request.delete(`/api/items/${okId}`)).status()).toBe(204)
+      expect((await page.request.delete(`/api/assets/${okId}`)).status()).toBe(204)
     } finally {
       await page.request.delete(`/api/locations/${project2Location.body.id}`)
     }
@@ -266,22 +266,22 @@ test.describe('Locations lifecycle', () => {
   })
 
   test('updates the sidebar count when creating and deleting an asset', async ({ page }) => {
-    await page.goto('/items')
-    await expect(page.getByRole('heading', { name: 'Activos e ítems', exact: true })).toBeVisible()
+    await page.goto('/assets')
+    await expect(page.getByRole('heading', { name: 'Activos', exact: true })).toBeVisible()
     const before = await page.locator('aside').getByText(/activos$/).first().textContent()
 
-    await page.getByRole('button', { name: 'Nuevo ítem', exact: true }).last().click()
-    const dialog = page.getByRole('dialog', { name: 'Nuevo ítem' })
-    await dialog.locator('#item-code').fill('SIDE-E2E')
-    await dialog.locator('#item-name').fill('Activo sidebar E2E')
-    await dialog.locator('#item-serial-number').fill('SIDE-SN')
-    await dialog.locator('#item-install-date').fill('2026-07-15')
-    await dialog.locator('#item-location').selectOption({ index: 1 })
-    await dialog.locator('#item-type').selectOption({ index: 1 })
-    await dialog.locator('#item-status').selectOption({ index: 1 })
-    await dialog.locator('#item-initials').fill('SE')
-    const createResponse = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/items'))
-    await dialog.getByRole('button', { name: 'Crear ítem', exact: true }).click()
+    await page.getByRole('button', { name: 'Nuevo activo', exact: true }).last().click()
+    const dialog = page.getByRole('dialog', { name: 'Nuevo activo' })
+    await dialog.locator('#asset-code').fill('SIDE-E2E')
+    await dialog.locator('#asset-name').fill('Activo sidebar E2E')
+    await dialog.locator('#asset-serial-number').fill('SIDE-SN')
+    await dialog.locator('#asset-install-date').fill('2026-07-15')
+    await dialog.locator('#asset-location').selectOption({ index: 1 })
+    await dialog.locator('#asset-type').selectOption({ index: 1 })
+    await dialog.locator('#asset-status').selectOption({ index: 1 })
+    await dialog.locator('#asset-initials').fill('SE')
+    const createResponse = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/assets'))
+    await dialog.getByRole('button', { name: 'Crear activo', exact: true }).click()
     expect((await createResponse).status()).toBe(201)
 
     // El Sidebar se actualiza sin recargar la página (recarga asíncrona de la sesión).
@@ -294,9 +294,9 @@ test.describe('Locations lifecycle', () => {
     // Borrado por el mismo endpoint DELETE que la aplicación expone para
     // eliminar activos: al recargar, la sesión se vuelve a cargar y el conteo
     // del Sidebar desciende reflejando el estado real.
-    const item = await page.request.get('/api/items?search=SIDE-E2E')
-    const itemId = ((await item.json()).data[0].id) as number
-    expect((await page.request.delete(`/api/items/${itemId}`)).status()).toBe(204)
+    const asset = await page.request.get('/api/assets?search=SIDE-E2E')
+    const assetId = ((await asset.json()).data[0].id) as number
+    expect((await page.request.delete(`/api/assets/${assetId}`)).status()).toBe(204)
     const sessionResponse = page.waitForResponse((r) => r.url().includes('/api/session') && r.request().method() === 'GET')
     await page.reload()
     await sessionResponse

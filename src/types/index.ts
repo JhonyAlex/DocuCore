@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 
-export type ItemStatus = 'Activo' | 'En revisión' | 'Fuera de servicio' | 'Vencido' | 'Alerta'
-export type ItemType = 'Máquina' | 'Extintor' | 'Vehículo' | 'Servidor' | 'Instrumento'
+export type AssetStatus = 'Activo' | 'En revisión' | 'Fuera de servicio' | 'Vencido' | 'Alerta'
+export type AssetType = 'Máquina' | 'Extintor' | 'Vehículo' | 'Servidor' | 'Instrumento'
 export type ProjectStatus = 'Activo' | 'Archivo'
 export type DocStatus = 'Vencido' | 'Por vencer' | 'Vigente'
 export type DocType = 'Certificado' | 'Calibración' | 'Manual' | 'Acta' | 'Contrato'
 export type PulseColor = 'red' | 'amber' | 'green'
 
-export interface ItemFilters {
+export interface AssetFilters {
   search: string
   typeId: number | null
   statusId: number | null
@@ -43,7 +43,7 @@ export interface Project {
   isCreateCard?: boolean
 }
 
-export interface ItemNextEvent {
+export interface AssetNextEvent {
   id: string
   label: string
   date: string
@@ -52,16 +52,16 @@ export interface ItemNextEvent {
   sourceLabel: string
 }
 
-export interface Item {
+export interface Asset {
   id: number
   code: string
   name: string
   serialLabel: string
   serialNumber: string
   installDate: string
-  type: ItemType
+  type: AssetType
   typeChipClass: string
-  status: ItemStatus
+  status: AssetStatus
   statusChipClass: string
   pulseDot?: PulseColor
   location: string
@@ -70,7 +70,9 @@ export interface Item {
   responsible: string
   responsibleInitials: string
   responsibleColor: string
-  nextEvent: ItemNextEvent | null
+  nextEvent: AssetNextEvent | null
+  // ITEM-05: fecha de eliminación (solo presente para activos en papelera).
+  deletedLabel?: string
 }
 
 export interface DocumentRecord {
@@ -78,8 +80,8 @@ export interface DocumentRecord {
   name: string
   size: string
   uploadInfo: string
-  itemCode: string
-  itemName: string
+  assetCode: string
+  assetName: string
   type: DocType
   typeChipClass: string
   version: string

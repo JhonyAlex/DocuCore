@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from '@/layouts/AppLayout'
 import DashboardView from '@/views/DashboardView'
 import ProjectsView from '@/views/ProjectsView'
-import ItemsView from '@/views/ItemsView'
+import AssetsView from '@/views/AssetsView'
 import DocumentsView from '@/views/DocumentsView'
 import CalendarView from '@/views/CalendarView'
 import PlansView from '@/views/PlansView'
@@ -17,7 +17,8 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardView />} />
         <Route path="/projects" element={<ProjectsView />} />
-        <Route path="/items" element={<ItemsView />} />
+        <Route path="/assets" element={<AssetsView />} />
+        <Route path="/items" element={<Navigate to="/assets" replace />} />
         <Route path="/docs" element={<DocumentsView />} />
         <Route path="/calendar" element={<CalendarView />} />
         <Route path="/plans" element={<PlansView />} />

@@ -2,7 +2,7 @@
  * Reset para pruebas manuales desde cero.
  * Deja CERO activos, documentos, versiones, eventos, planos y ubicaciones, y
  * limpia de forma segura el almacenamiento de documentos. Conserva un proyecto
- * base, un administrador, los tipos de ítem y los estados necesarios.
+ * base, un administrador, los tipos de activo y los estados necesarios.
  * Ejecutar: pnpm db:reset:manual-test
  */
 import 'dotenv/config'
@@ -25,10 +25,10 @@ async function main(): Promise<void> {
       "DocumentVersion",
       "Document",
       "Event",
-      "Item",
+      "Asset",
       "DynamicFieldDefinition",
       "ProjectMember",
-      "ItemType",
+      "AssetType",
       "Status",
       "Project",
       "User"
@@ -60,8 +60,8 @@ async function main(): Promise<void> {
     ],
   })
 
-  console.log('  • Tipos de ítem (5)')
-  await prisma.itemType.createMany({
+  console.log('  • Tipos de activo (5)')
+  await prisma.assetType.createMany({
     data: [
       { name: 'Máquina' },
       { name: 'Extintor' },
@@ -89,13 +89,13 @@ async function main(): Promise<void> {
   console.log(`  • Storage: ${removed} fichero(s) eliminado(s).`)
 
   const counts = await Promise.all([
-    prisma.item.count(),
+    prisma.asset.count(),
     prisma.document.count(),
     prisma.documentVersion.count(),
     prisma.event.count(),
     prisma.location.count(),
   ])
-  console.log(`  • Conteos tras reset: items=${counts[0]} docs=${counts[1]} versiones=${counts[2]} eventos=${counts[3]} ubicaciones=${counts[4]}`)
+  console.log(`  • Conteos tras reset: assets=${counts[0]} docs=${counts[1]} versiones=${counts[2]} eventos=${counts[3]} ubicaciones=${counts[4]}`)
   console.log('✅ Reset manual-test completado.')
 }
 

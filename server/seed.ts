@@ -49,7 +49,7 @@ const locationsData: LocationSeed[] = [
 ]
 
 // Conteos objetivo del árbol (subrama): Nave A 42, Nave B 31, SC 8, LB 17,
-// Anexo 32, Almacén 12 (total 142). Los ítems canónicos fijan parte del conteo;
+// Anexo 32, Almacén 12 (total 142). Los activos canónicos fijan parte del conteo;
 // el resto se completa con relleno. BH-04 y BSC-11 quedan en Nave A.
 const generatedBuckets: Array<{ locationCode: string; count: number }> = [
   { locationCode: 'PIN-NA-01A', count: 39 }, // + CNC-05, BH-04, BSC-11 = 42
@@ -72,10 +72,10 @@ async function main(): Promise<void> {
       "DocumentVersion",
       "Document",
       "Event",
-      "Item",
+      "Asset",
       "DynamicFieldDefinition",
       "ProjectMember",
-      "ItemType",
+      "AssetType",
       "Status",
       "Project",
       "User"
@@ -132,8 +132,8 @@ async function main(): Promise<void> {
     ],
   })
 
-  console.log('  • Item types (5)')
-  await prisma.itemType.createMany({
+  console.log('  • Asset types (5)')
+  await prisma.assetType.createMany({
     data: [
       { name: 'Máquina' },
       { name: 'Extintor' },
@@ -169,12 +169,12 @@ async function main(): Promise<void> {
     })
   }
 
-  console.log('  • Items (142)')
+  console.log('  • Assets (142)')
   // Los seis canónicos conservan el orden (ids 1-6) y sus ubicaciones de ficha
   // para que la tabla de Activos coincida con el HTML de referencia. BH-04 y
   // BSC-11 se intercalan después para el detalle de Planta 1 · Nave A, por lo
   // que el relleno de Nave A comienza en id 9.
-  const itemsData: Array<{
+  const assetsData: Array<{
     code: string
     name: string
     serialNumber: string
@@ -194,25 +194,25 @@ async function main(): Promise<void> {
     { code: 'BH-04', name: 'Bomba hidráulica', serialNumber: 'BH-2026-004', installDate: '15/07/2026', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'BH' },
     { code: 'BSC-11', name: 'Báscula industrial', serialNumber: 'BSC-2025-011', installDate: '10/09/2025', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-NA-01A', responsibleEmail: 'ltorres@docucore.local', initials: 'BA' },
   ]
-  for (const it of itemsData) {
-    await prisma.item.create({
+  for (const asset of assetsData) {
+    await prisma.asset.create({
       data: {
-        code: it.code,
-        name: it.name,
-        serialNumber: it.serialNumber,
-        installDate: isoFromEu(it.installDate),
-        initials: it.initials,
-        type: { connect: { name: it.typeName } },
-        status: { connect: { name: it.statusName } },
-        location: { connect: { code: it.locationCode } },
+        code: asset.code,
+        name: asset.name,
+        serialNumber: asset.serialNumber,
+        installDate: isoFromEu(asset.installDate),
+        initials: asset.initials,
+        type: { connect: { name: asset.typeName } },
+        status: { connect: { name: asset.statusName } },
+        location: { connect: { code: asset.locationCode } },
         project: { connect: { code: PROJECT_CODE } },
-        responsible: { connect: { email: it.responsibleEmail } },
+        responsible: { connect: { email: asset.responsibleEmail } },
       },
     })
   }
 
   const [machineType, activeStatus, responsible] = await Promise.all([
-    prisma.itemType.findUniqueOrThrow({ where: { name: 'Máquina' }, select: { id: true } }),
+    prisma.assetType.findUniqueOrThrow({ where: { name: 'Máquina' }, select: { id: true } }),
     prisma.status.findUniqueOrThrow({ where: { name: 'Activo' }, select: { id: true } }),
     prisma.user.findUniqueOrThrow({ where: { email: 'jr@docucore.local' }, select: { id: true } }),
   ])
@@ -222,7 +222,7 @@ async function main(): Promise<void> {
   let sequence = 0
   for (const bucket of generatedBuckets) {
     const location = await prisma.location.findUniqueOrThrow({ where: { code: bucket.locationCode }, select: { id: true, projectId: true } })
-    await prisma.item.createMany({
+    await prisma.asset.createMany({
       data: Array.from({ length: bucket.count }, () => {
         sequence += 1
         const label = String(sequence).padStart(3, '0')
@@ -244,30 +244,30 @@ async function main(): Promise<void> {
 
   console.log('  • Related events (4) + document versions (207 logical documents)')
   const eventData = [
-    { itemCode: 'CNC-05', title: 'Mant. preventivo', date: '05/08/2026', type: 'Recurrente cada 3 meses' },
-    { itemCode: 'CP-02', title: 'Revisión urgente', date: '12/07/2026', type: 'Mantenimiento correctivo' },
-    { itemCode: 'EXT-A12', title: 'Revisión anual', date: '24/07/2026', type: 'Inspección reglamentaria' },
-    { itemCode: 'SRV-03', title: 'Revisión firmware', date: '12/08/2026', type: 'Mantenimiento de sistemas' },
+    { assetCode: 'CNC-05', title: 'Mant. preventivo', date: '05/08/2026', type: 'Recurrente cada 3 meses' },
+    { assetCode: 'CP-02', title: 'Revisión urgente', date: '12/07/2026', type: 'Mantenimiento correctivo' },
+    { assetCode: 'EXT-A12', title: 'Revisión anual', date: '24/07/2026', type: 'Inspección reglamentaria' },
+    { assetCode: 'SRV-03', title: 'Revisión firmware', date: '12/08/2026', type: 'Mantenimiento de sistemas' },
   ]
   for (const event of eventData) {
-    const item = await prisma.item.findUniqueOrThrow({ where: { code: event.itemCode }, select: { id: true, projectId: true } })
+    const asset = await prisma.asset.findUniqueOrThrow({ where: { code: event.assetCode }, select: { id: true, projectId: true } })
     await prisma.event.create({
       data: {
         title: event.title,
         date: isoFromEu(event.date),
         type: event.type,
-        projectId: item.projectId,
-        itemId: item.id,
+        projectId: asset.projectId,
+        assetId: asset.id,
       },
     })
   }
 
   const documentData = [
-    { itemCode: 'VH-014', name: 'Certificado ITV 2025', eventTitle: 'ITV', type: 'Certificado', issueDate: '14/07/2025', expiryDate: '13/07/2026', fileName: 'certificado-itv-2025.pdf', content: 'ITV 2025', sizeBytes: 2_400_000 },
-    { itemCode: 'MG-203', name: 'Certificado calibración WIKA', eventTitle: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', fileName: 'calibracion-wika.pdf', content: 'CALIBRACION WIKA', sizeBytes: 1_100_000 },
-    { itemCode: 'CNC-05', name: 'Manual técnico Haas ST-20', type: 'Manual', issueDate: '02/03/2024', expiryDate: null, fileName: 'manual-haas-st20.pdf', content: 'MANUAL HAAS ST-20', sizeBytes: 4_800_000, previous: { issueDate: '02/03/2023', expiryDate: null, fileName: 'manual-haas-st20-v2.pdf', content: 'MANUAL HAAS V2' } },
-    { itemCode: 'EXT-A12', name: 'Acta revisión extintor A12', eventTitle: 'Revisión anual', type: 'Acta', issueDate: '24/07/2025', expiryDate: '24/07/2026', fileName: 'acta-extintor-a12.pdf', content: 'ACTA EXTINTOR A12', sizeBytes: 840_000 },
-    { itemCode: 'CP-02', name: 'Contrato servicio Limpiezas Veloz', type: 'Contrato', issueDate: '12/08/2025', expiryDate: '12/08/2026', fileName: 'contrato-limpiezas.pdf', content: 'CONTRATO LIMPIEZAS', sizeBytes: 620_000 },
+    { assetCode: 'VH-014', name: 'Certificado ITV 2025', eventTitle: 'ITV', type: 'Certificado', issueDate: '14/07/2025', expiryDate: '13/07/2026', fileName: 'certificado-itv-2025.pdf', content: 'ITV 2025', sizeBytes: 2_400_000 },
+    { assetCode: 'MG-203', name: 'Certificado calibración WIKA', eventTitle: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', fileName: 'calibracion-wika.pdf', content: 'CALIBRACION WIKA', sizeBytes: 1_100_000 },
+    { assetCode: 'CNC-05', name: 'Manual técnico Haas ST-20', type: 'Manual', issueDate: '02/03/2024', expiryDate: null, fileName: 'manual-haas-st20.pdf', content: 'MANUAL HAAS ST-20', sizeBytes: 4_800_000, previous: { issueDate: '02/03/2023', expiryDate: null, fileName: 'manual-haas-st20-v2.pdf', content: 'MANUAL HAAS V2' } },
+    { assetCode: 'EXT-A12', name: 'Acta revisión extintor A12', eventTitle: 'Revisión anual', type: 'Acta', issueDate: '24/07/2025', expiryDate: '24/07/2026', fileName: 'acta-extintor-a12.pdf', content: 'ACTA EXTINTOR A12', sizeBytes: 840_000 },
+    { assetCode: 'CP-02', name: 'Contrato servicio Limpiezas Veloz', type: 'Contrato', issueDate: '12/08/2025', expiryDate: '12/08/2026', fileName: 'contrato-limpiezas.pdf', content: 'CONTRATO LIMPIEZAS', sizeBytes: 620_000 },
   ]
   for (const [index, document] of documentData.entries()) {
     const logicalDocument = await prisma.document.create({
@@ -278,7 +278,7 @@ async function main(): Promise<void> {
         createdAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         updatedAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         project: { connect: { code: PROJECT_CODE } },
-        items: { create: [{ item: { connect: { code: document.itemCode } } }] },
+        assets: { create: [{ asset: { connect: { code: document.assetCode } } }] },
       },
     })
     if (document.previous) {
@@ -314,12 +314,12 @@ async function main(): Promise<void> {
       uploadedAt: new Date(),
       markers: {
         create: [
-          { code: 'CNC-05', label: 'Torno Haas', left: 18, top: 32, pinColor: 'brand-600', dotColor: 'emerald-400', item: { connect: { code: 'CNC-05' } } },
-          { code: 'CP-02', label: 'Compresor ⚠', left: 42, top: 50, pinColor: 'red-600', dotColor: 'white', animate: true, item: { connect: { code: 'CP-02' } } },
-          { code: 'MG-203', label: 'Manómetro', left: 72, top: 28, pinColor: 'amber-500', dotColor: 'white', item: { connect: { code: 'MG-203' } } },
-          { code: 'EXT-A12', label: '', left: 28, top: 72, pinColor: 'red-500', dotColor: 'white', item: { connect: { code: 'EXT-A12' } } },
+          { code: 'CNC-05', label: 'Torno Haas', left: 18, top: 32, pinColor: 'brand-600', dotColor: 'emerald-400', asset: { connect: { code: 'CNC-05' } } },
+          { code: 'CP-02', label: 'Compresor ⚠', left: 42, top: 50, pinColor: 'red-600', dotColor: 'white', animate: true, asset: { connect: { code: 'CP-02' } } },
+          { code: 'MG-203', label: 'Manómetro', left: 72, top: 28, pinColor: 'amber-500', dotColor: 'white', asset: { connect: { code: 'MG-203' } } },
+          { code: 'EXT-A12', label: '', left: 28, top: 72, pinColor: 'red-500', dotColor: 'white', asset: { connect: { code: 'EXT-A12' } } },
           { code: 'EXT-B04', label: '', left: 55, top: 78, pinColor: 'red-500', dotColor: 'white' },
-          { code: 'SRV-03', label: 'CPD', left: 85, top: 62, pinColor: 'slate-700', dotColor: 'amber-400', item: { connect: { code: 'SRV-03' } } },
+          { code: 'SRV-03', label: 'CPD', left: 85, top: 62, pinColor: 'slate-700', dotColor: 'amber-400', asset: { connect: { code: 'SRV-03' } } },
         ],
       },
     },
@@ -329,7 +329,7 @@ async function main(): Promise<void> {
   console.log('  • Audit logs (5)')
   const auditData: Array<{ email: string; action: string; entityId: string; detail: string; timestamp: string }> = [
     { email: 'jr@docucore.local', action: 'Completó evento', entityId: 'EXT-A12', detail: 'Revisión anual completada · próxima 15/07/2027', timestamp: '15/07/2026 10:32' },
-    { email: 'maria@docucore.local', action: 'Creación', entityId: 'BH-04', detail: 'Nuevo ítem "Bomba hidráulica BH-04" creado', timestamp: '15/07/2026 09:15' },
+    { email: 'maria@docucore.local', action: 'Creación', entityId: 'BH-04', detail: 'Nuevo activo "Bomba hidráulica BH-04" creado', timestamp: '15/07/2026 09:15' },
     { email: 'agomez@docucore.local', action: 'Cambio estado', entityId: 'CP-02', detail: 'Activo → Fuera de servicio · motivo: avería motor', timestamp: '14/07/2026 16:48' },
     { email: 'ltorres@docucore.local', action: 'Documento añadido', entityId: 'CNC-05', detail: 'Manual técnico v3.2 · 4.8 MB', timestamp: '14/07/2026 11:02' },
     { email: 'ltorres@docucore.local', action: 'Movimiento', entityId: 'MG-203', detail: 'Planta 1 · Nave B → Almacén B', timestamp: '13/07/2026 14:21' },

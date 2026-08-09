@@ -1,5 +1,5 @@
 import type {
-  Project, Item, DocumentRecord, CalendarEvent, FloorPlanMarker,
+  Project, Asset, DocumentRecord, CalendarEvent, FloorPlanMarker,
   AuditLog, DashboardKpi, UpcomingExpiration, AlertItem, ActivityItem,
   ChartBar, ConfigCard, DocKpi, User,
 } from '@/types'
@@ -78,7 +78,7 @@ export const projects: Project[] = [
   },
 ]
 
-export const items: Item[] = [
+export const assets: Asset[] = [
   {
     id: 1,
     code: 'CNC-05',
@@ -203,8 +203,8 @@ export const documents: DocumentRecord[] = [
     name: 'Certificado ITV 2025',
     size: '2.4 MB',
     uploadInfo: 'Subido 14/07/2025',
-    itemCode: 'VH-014',
-    itemName: 'Furgoneta Renault Master',
+    assetCode: 'VH-014',
+    assetName: 'Furgoneta Renault Master',
     type: 'Certificado',
     typeChipClass: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
     version: 'v1',
@@ -220,8 +220,8 @@ export const documents: DocumentRecord[] = [
     name: 'Certificado calibración WIKA',
     size: '1.1 MB',
     uploadInfo: 'Laboratorio ACME',
-    itemCode: 'MG-203',
-    itemName: 'Manómetro WIKA',
+    assetCode: 'MG-203',
+    assetName: 'Manómetro WIKA',
     type: 'Calibración',
     typeChipClass: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
     version: 'v2',
@@ -237,8 +237,8 @@ export const documents: DocumentRecord[] = [
     name: 'Manual técnico Haas ST-20',
     size: '4.8 MB',
     uploadInfo: 'v3.2',
-    itemCode: 'CNC-05',
-    itemName: 'Torno CNC Haas',
+    assetCode: 'CNC-05',
+    assetName: 'Torno CNC Haas',
     type: 'Manual',
     typeChipClass: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
     version: 'v3.2',
@@ -254,8 +254,8 @@ export const documents: DocumentRecord[] = [
     name: 'Acta revisión extintor A12',
     size: '840 KB',
     uploadInfo: '',
-    itemCode: 'EXT-A12',
-    itemName: 'Extintor CO2',
+    assetCode: 'EXT-A12',
+    assetName: 'Extintor CO2',
     type: 'Acta',
     typeChipClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
     version: 'v1',
@@ -271,8 +271,8 @@ export const documents: DocumentRecord[] = [
     name: 'Contrato servicio Limpiezas Veloz',
     size: '620 KB',
     uploadInfo: '',
-    itemCode: 'CLN-001',
-    itemName: 'Contrato limpieza',
+    assetCode: 'CLN-001',
+    assetName: 'Contrato limpieza',
     type: 'Contrato',
     typeChipClass: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
     version: 'v2',
@@ -321,7 +321,7 @@ export const floorPlanMarkers: FloorPlanMarker[] = [
 
 export const auditLogs: AuditLog[] = [
   { id: 1, timestamp: '15/07/2026 10:32', userName: 'J. Ramírez', userInitials: 'JR', userColorClass: 'bg-emerald-500', action: 'Completó evento', actionChipClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', entityId: 'EXT-A12', detail: 'Revisión anual completada · próxima 15/07/2027' },
-  { id: 2, timestamp: '15/07/2026 09:15', userName: 'María Fernández', userInitials: 'MF', userColorClass: 'bg-brand-500', action: 'Creación', actionChipClass: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300', entityId: 'BH-04', detail: 'Nuevo ítem "Bomba hidráulica BH-04" creado' },
+  { id: 2, timestamp: '15/07/2026 09:15', userName: 'María Fernández', userInitials: 'MF', userColorClass: 'bg-brand-500', action: 'Creación', actionChipClass: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300', entityId: 'BH-04', detail: 'Nuevo activo "Bomba hidráulica BH-04" creado' },
   { id: 3, timestamp: '14/07/2026 16:48', userName: 'A. Gómez', userInitials: 'AG', userColorClass: 'bg-amber-500', action: 'Cambio estado', actionChipClass: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300', entityId: 'CP-02', detail: 'Activo → Fuera de servicio · motivo: avería motor' },
   { id: 4, timestamp: '14/07/2026 11:02', userName: 'L. Torres', userInitials: 'LT', userColorClass: 'bg-indigo-500', action: 'Documento añadido', actionChipClass: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300', entityId: 'CNC-05', detail: 'Manual técnico v3.2 · 4.8 MB' },
   { id: 5, timestamp: '13/07/2026 14:21', userName: 'L. Torres', userInitials: 'LT', userColorClass: 'bg-indigo-500', action: 'Movimiento', actionChipClass: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', entityId: 'MG-203', detail: 'Planta 1 · Nave B → Almacén B' },
@@ -351,7 +351,7 @@ export const alertItems: AlertItem[] = [
 
 export const activityFeed: ActivityItem[] = [
   { id: 1, time: 'Hoy · 10:32', text: 'J. Ramírez completó revisión de EXT-A12', detail: 'Próxima revisión: 15/07/2027', dotColorClass: 'bg-emerald-500' },
-  { id: 2, time: 'Hoy · 09:15', text: 'María Fernández creó ítem "Bomba hidráulica BH-04"', detail: 'Ubicación: Planta 1 · Nave A', dotColorClass: 'bg-brand-500' },
+  { id: 2, time: 'Hoy · 09:15', text: 'María Fernández creó activo "Bomba hidráulica BH-04"', detail: 'Ubicación: Planta 1 · Nave A', dotColorClass: 'bg-brand-500' },
   { id: 3, time: 'Ayer · 16:48', text: 'Cambio de estado: CP-02 → Fuera de servicio', detail: 'Por A. Gómez · motivo: avería motor', dotColorClass: 'bg-amber-500' },
   { id: 4, time: 'Ayer · 11:02', text: 'Nuevo documento adjunto en CNC-05', detail: 'Manual técnico v3.2 · 4.8 MB', dotColorClass: 'bg-indigo-500' },
   { id: 5, time: '13/07 · 14:21', text: 'L. Torres movió MG-203 a "Almacén B"', detail: 'Origen: Planta 1 · Nave B', dotColorClass: 'bg-slate-400' },
@@ -368,8 +368,8 @@ export const chartBars: ChartBar[] = [
 ]
 
 export const configCards: ConfigCard[] = [
-  { title: 'Tipos de ítem', description: 'Máquinas, extintores, vehículos, documentos…', footer: '6 tipos configurados →', iconBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600', iconKey: 'box' },
-  { title: 'Campos dinámicos', description: 'Define campos personalizados por tipo de ítem.', footer: '24 campos definidos →', iconBgClass: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600', iconKey: 'lines' },
+  { title: 'Tipos de activo', description: 'Máquinas, extintores, vehículos, documentos…', footer: '6 tipos configurados →', iconBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600', iconKey: 'box' },
+  { title: 'Campos dinámicos', description: 'Define campos personalizados por tipo de activo.', footer: '24 campos definidos →', iconBgClass: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600', iconKey: 'lines' },
   { title: 'Estados', description: 'Activo, fuera de servicio, en revisión, vencido…', footer: '7 estados configurados →', iconBgClass: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600', iconKey: 'smile' },
   { title: 'Usuarios y permisos', description: 'Gestiona roles, accesos y responsabilidades.', footer: '6 usuarios activos →', iconBgClass: 'bg-amber-50 dark:bg-amber-900/30 text-amber-600', iconKey: 'users' },
   { title: 'Alertas y notificaciones', description: 'Reglas de aviso, correo y canales externos.', footer: '12 reglas activas →', iconBgClass: 'bg-red-50 dark:bg-red-900/30 text-red-600', iconKey: 'bell' },

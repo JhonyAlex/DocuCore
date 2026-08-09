@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { ApiItem, ApiLocationItem } from '@/lib/api'
-import { mapApiItemToDisplay, mapApiLocationItemToAsset } from '@/lib/itemMappers'
+import type { ApiAsset, ApiLocationAsset } from '@/lib/api'
+import { mapApiAssetToDisplay, mapApiLocationAssetToDisplay } from '@/lib/assetMappers'
 
-function apiItem(overrides: Partial<ApiItem>): ApiItem {
+function apiAsset(overrides: Partial<ApiAsset>): ApiAsset {
   return {
     id: 1,
     code: 'CNC-05',
@@ -34,9 +34,9 @@ function apiItem(overrides: Partial<ApiItem>): ApiItem {
   }
 }
 
-describe('mapApiItemToDisplay', () => {
-  it('maps the canonical machine item to the approved Items UI tokens', () => {
-    expect(mapApiItemToDisplay(apiItem({}))).toMatchObject({
+describe('mapApiAssetToDisplay', () => {
+  it('maps the canonical machine asset to the approved Assets UI tokens', () => {
+    expect(mapApiAssetToDisplay(apiAsset({}))).toMatchObject({
       typeChipClass: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
       statusChipClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
       pulseDot: undefined,
@@ -56,13 +56,13 @@ describe('mapApiItemToDisplay', () => {
     })
   })
 
-  it('derives the serial presentation from the item type without storing a separate label', () => {
-    expect(mapApiItemToDisplay(apiItem({ type: { id: 2, name: 'Extintor' }, serialNumber: 'EXT-2026-01' })).serialLabel).toBe('Lote: EXT-2026-01')
-    expect(mapApiItemToDisplay(apiItem({ type: { id: 3, name: 'Vehículo' }, serialNumber: '1234 ABC' })).serialLabel).toBe('Mat: 1234 ABC')
+  it('derives the serial presentation from the asset type without storing a separate label', () => {
+    expect(mapApiAssetToDisplay(apiAsset({ type: { id: 2, name: 'Extintor' }, serialNumber: 'EXT-2026-01' })).serialLabel).toBe('Lote: EXT-2026-01')
+    expect(mapApiAssetToDisplay(apiAsset({ type: { id: 3, name: 'Vehículo' }, serialNumber: '1234 ABC' })).serialLabel).toBe('Mat: 1234 ABC')
   })
 
-  it('uses the status color for initials and pulse rendering when an item is under review', () => {
-    const display = mapApiItemToDisplay(apiItem({
+  it('uses the status color for initials and pulse rendering when an asset is under review', () => {
+    const display = mapApiAssetToDisplay(apiAsset({
       type: { id: 5, name: 'Instrumento' },
       status: { id: 2, name: 'En revisión', pulseDot: null },
       responsible: { id: 4, name: 'L. Torres', initials: 'LT', color: 'brand' },
@@ -78,11 +78,11 @@ describe('mapApiItemToDisplay', () => {
   })
 
   it('preserves red status chips and pulse dots for decommissioned and expired assets', () => {
-    const decommissioned = mapApiItemToDisplay(apiItem({
+    const decommissioned = mapApiAssetToDisplay(apiAsset({
       status: { id: 3, name: 'Fuera de servicio', pulseDot: 'red' },
       responsible: { id: 3, name: 'A. Gómez', initials: 'AG', color: 'amber' },
     }))
-    const expired = mapApiItemToDisplay(apiItem({
+    const expired = mapApiAssetToDisplay(apiAsset({
       type: { id: 3, name: 'Vehículo' },
       status: { id: 4, name: 'Vencido', pulseDot: 'red' },
     }))
@@ -101,7 +101,7 @@ describe('mapApiItemToDisplay', () => {
   })
 
   it('leaves unknown API display tokens empty instead of inventing a visual class', () => {
-    const display = mapApiItemToDisplay(apiItem({
+    const display = mapApiAssetToDisplay(apiAsset({
       type: { id: 99, name: 'Desconocido' },
       status: { id: 99, name: 'Pendiente', pulseDot: null },
       responsible: { id: 99, name: 'Persona', initials: 'PP', color: 'pink' },
@@ -117,12 +117,17 @@ describe('mapApiItemToDisplay', () => {
     })
   })
 
-  it('shows no invented upcoming event when an item has no dated relations', () => {
-    expect(mapApiItemToDisplay(apiItem({ nextEvents: [], eventCount: 0, documentCount: 0 })).nextEvent).toBeNull()
+  it('shows no invented upcoming event when an asset has no dated relations', () => {
+    expect(mapApiAssetToDisplay(apiAsset({ nextEvents: [], eventCount: 0, documentCount: 0 })).nextEvent).toBeNull()
+  })
+
+  it('renders the trash date label only for deleted assets', () => {
+    expect(mapApiAssetToDisplay(apiAsset({})).deletedLabel).toBeUndefined()
+    expect(mapApiAssetToDisplay(apiAsset({ deletedAt: '2026-08-09T10:00:00.000Z' })).deletedLabel).toBe('Eliminado el 09/08/2026')
   })
 })
 
-function locationItem(overrides: Partial<ApiLocationItem>): ApiLocationItem {
+function locationAsset(overrides: Partial<ApiLocationAsset>): ApiLocationAsset {
   return {
     id: 1,
     code: 'CNC-05',
@@ -135,9 +140,9 @@ function locationItem(overrides: Partial<ApiLocationItem>): ApiLocationItem {
   }
 }
 
-describe('mapApiLocationItemToAsset', () => {
+describe('mapApiLocationAssetToDisplay', () => {
   it('uses the type color for the avatar, matching the reference location list', () => {
-    expect(mapApiLocationItemToAsset(locationItem({}))).toEqual({
+    expect(mapApiLocationAssetToDisplay(locationAsset({}))).toEqual({
       code: 'CNC-05',
       name: 'Torno CNC Haas ST-20',
       installedDate: '04/02/2024',
@@ -148,8 +153,8 @@ describe('mapApiLocationItemToAsset', () => {
     })
   })
 
-  it('keeps the type color for the avatar even when the item is under review', () => {
-    const asset = mapApiLocationItemToAsset(locationItem({
+  it('keeps the type color for the avatar even when the asset is under review', () => {
+    const asset = mapApiLocationAssetToDisplay(locationAsset({
       code: 'BSC-11',
       name: 'Báscula industrial',
       installDate: '2025-09-10T00:00:00.000Z',
@@ -164,7 +169,7 @@ describe('mapApiLocationItemToAsset', () => {
   })
 
   it('leaves unknown tokens empty instead of inventing a visual class', () => {
-    const asset = mapApiLocationItemToAsset(locationItem({
+    const asset = mapApiLocationAssetToDisplay(locationAsset({
       type: { id: 99, name: 'Desconocido' },
       status: { id: 99, name: 'Pendiente', pulseDot: null },
     }))

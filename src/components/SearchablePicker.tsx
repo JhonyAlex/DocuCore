@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import PortalListbox from '@/components/PortalListbox'
 
 export type SearchableOption = { value: string; label: string; hint?: string }
 
@@ -24,15 +25,6 @@ export default function SearchablePicker({ value, selectedLabel, placeholder, ar
   const rootRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchSeqRef = useRef(0)
-
-  useEffect(() => {
-    if (!open) return
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) close()
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  })
 
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
@@ -77,7 +69,7 @@ export default function SearchablePicker({ value, selectedLabel, placeholder, ar
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef}>
       <input
         type="text"
         role="combobox"
@@ -92,20 +84,22 @@ export default function SearchablePicker({ value, selectedLabel, placeholder, ar
         className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"
       />
       {open && (
-        <ul role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
-          {allowClear && <li><button type="button" role="option" aria-selected={value === null} onClick={clear} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{clearLabel}</button></li>}
-          {searching && <li className="px-3 py-2 text-sm text-slate-500">Buscando…</li>}
-          {!searching && searchError && <li className="px-3 py-2 text-sm text-red-600">No se pudo buscar. Inténtalo de nuevo.</li>}
-          {!searching && !searchError && options.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{emptyText}</li>}
-          {!searching && !searchError && options.map((option) => (
-            <li key={option.value}>
-              <button type="button" role="option" aria-selected={value === option.value} onClick={() => choose(option)} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
-                <span className="block">{option.label}</span>
-                {option.hint && <span className="block text-xs text-slate-500">{option.hint}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
+        <PortalListbox anchorRef={rootRef} onClose={close}>
+          <ul role="listbox">
+            {allowClear && <li><button type="button" role="option" aria-selected={value === null} onClick={clear} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">{clearLabel}</button></li>}
+            {searching && <li className="px-3 py-2 text-sm text-slate-500">Buscando…</li>}
+            {!searching && searchError && <li className="px-3 py-2 text-sm text-red-600">No se pudo buscar. Inténtalo de nuevo.</li>}
+            {!searching && !searchError && options.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{emptyText}</li>}
+            {!searching && !searchError && options.map((option) => (
+              <li key={option.value}>
+                <button type="button" role="option" aria-selected={value === option.value} onClick={() => choose(option)} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <span className="block">{option.label}</span>
+                  {option.hint && <span className="block text-xs text-slate-500">{option.hint}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </PortalListbox>
       )}
     </div>
   )

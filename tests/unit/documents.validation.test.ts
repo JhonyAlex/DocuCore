@@ -2,64 +2,64 @@ import { describe, expect, it } from 'vitest'
 import { createDocumentMetadataSchema, documentListQuerySchema, updateDocumentMetadataSchema } from '../../server/lib/validate'
 
 describe('document list query schema', () => {
-  it('accepts itemId=null to filter documents without an asset', () => {
-    const parsed = documentListQuerySchema.parse({ itemId: 'null', page: 1, limit: 20 })
+  it('accepts assetId=null to filter documents without an asset', () => {
+    const parsed = documentListQuerySchema.parse({ assetId: 'null', page: 1, limit: 20 })
 
-    expect(parsed.itemId).toBeNull()
+    expect(parsed.assetId).toBeNull()
   })
 
-  it('accepts itemId=null as a raw null value', () => {
-    const parsed = documentListQuerySchema.parse({ itemId: null, page: 1, limit: 20 })
+  it('accepts assetId=null as a raw null value', () => {
+    const parsed = documentListQuerySchema.parse({ assetId: null, page: 1, limit: 20 })
 
-    expect(parsed.itemId).toBeNull()
+    expect(parsed.assetId).toBeNull()
   })
 
-  it('parses a positive numeric itemId', () => {
-    const parsed = documentListQuerySchema.parse({ itemId: '7', page: 1, limit: 20 })
+  it('parses a positive numeric assetId', () => {
+    const parsed = documentListQuerySchema.parse({ assetId: '7', page: 1, limit: 20 })
 
-    expect(parsed.itemId).toBe(7)
+    expect(parsed.assetId).toBe(7)
   })
 
-  it('treats an empty itemId as undefined (no filter)', () => {
-    const parsed = documentListQuerySchema.parse({ itemId: '', page: 1, limit: 20 })
+  it('treats an empty assetId as undefined (no filter)', () => {
+    const parsed = documentListQuerySchema.parse({ assetId: '', page: 1, limit: 20 })
 
-    expect(parsed.itemId).toBeUndefined()
+    expect(parsed.assetId).toBeUndefined()
   })
 
-  it('rejects a non-numeric itemId', () => {
-    expect(() => documentListQuerySchema.parse({ itemId: 'abc', page: 1, limit: 20 })).toThrow()
+  it('rejects a non-numeric assetId', () => {
+    expect(() => documentListQuerySchema.parse({ assetId: 'abc', page: 1, limit: 20 })).toThrow()
   })
 })
 
 describe('document metadata schemas', () => {
   it('allows detaching all assets through updateDocumentMetadataSchema', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemIds: null })
+    const parsed = updateDocumentMetadataSchema.parse({ assetIds: null })
 
-    expect(parsed.itemIds).toBeNull()
+    expect(parsed.assetIds).toBeNull()
   })
 
-  it('accepts an empty itemIds as null when updating', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemIds: '' })
+  it('accepts an empty assetIds as null when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ assetIds: '' })
 
-    expect(parsed.itemIds).toBeNull()
+    expect(parsed.assetIds).toBeNull()
   })
 
-  it('treats an empty itemIds array as null when updating', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemIds: [] })
+  it('treats an empty assetIds array as null when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ assetIds: [] })
 
-    expect(parsed.itemIds).toBeNull()
+    expect(parsed.assetIds).toBeNull()
   })
 
-  it('accepts a list of item ids when updating', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemIds: [2, 5] })
+  it('accepts a list of asset ids when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ assetIds: [2, 5] })
 
-    expect(parsed.itemIds).toEqual([2, 5])
+    expect(parsed.assetIds).toEqual([2, 5])
   })
 
-  it('parses a JSON string itemIds when updating (multipart compatible)', () => {
-    const parsed = updateDocumentMetadataSchema.parse({ itemIds: '[2,5]' })
+  it('parses a JSON string assetIds when updating (multipart compatible)', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ assetIds: '[2,5]' })
 
-    expect(parsed.itemIds).toEqual([2, 5])
+    expect(parsed.assetIds).toEqual([2, 5])
   })
 
   it('accepts current-version dates when updating document metadata', () => {
@@ -78,33 +78,33 @@ describe('document metadata schemas', () => {
     expect(() => updateDocumentMetadataSchema.parse({ expiryDate: '31/12/2026' })).toThrow()
   })
 
-  it('rejects a non-numeric itemIds list', () => {
-    expect(() => updateDocumentMetadataSchema.parse({ itemIds: 'abc' })).toThrow()
+  it('rejects a non-numeric assetIds list', () => {
+    expect(() => updateDocumentMetadataSchema.parse({ assetIds: 'abc' })).toThrow()
   })
 
-  it('rejects a non-positive item id', () => {
-    expect(() => updateDocumentMetadataSchema.parse({ itemIds: [0] })).toThrow()
+  it('rejects a non-positive asset id', () => {
+    expect(() => updateDocumentMetadataSchema.parse({ assetIds: [0] })).toThrow()
   })
 
-  it('accepts a JSON string itemIds when creating a document', () => {
+  it('accepts a JSON string assetIds when creating a document', () => {
     const parsed = createDocumentMetadataSchema.parse({
-      name: 'X', type: 'Manual', projectId: 1, itemIds: '[2,5]', issueDate: '2026-08-01',
+      name: 'X', type: 'Manual', projectId: 1, assetIds: '[2,5]', issueDate: '2026-08-01',
     })
 
-    expect(parsed.itemIds).toEqual([2, 5])
+    expect(parsed.assetIds).toEqual([2, 5])
   })
 
-  it('accepts a list of item ids when creating a document', () => {
+  it('accepts a list of asset ids when creating a document', () => {
     const parsed = createDocumentMetadataSchema.parse({
-      name: 'X', type: 'Manual', projectId: 1, itemIds: [2, 5], issueDate: '2026-08-01',
+      name: 'X', type: 'Manual', projectId: 1, assetIds: [2, 5], issueDate: '2026-08-01',
     })
 
-    expect(parsed.itemIds).toEqual([2, 5])
+    expect(parsed.assetIds).toEqual([2, 5])
   })
 
-  it('rejects createDocumentMetadataSchema with a non-numeric itemIds', () => {
+  it('rejects createDocumentMetadataSchema with a non-numeric assetIds', () => {
     expect(() => createDocumentMetadataSchema.parse({
-      name: 'X', type: 'Manual', projectId: 1, itemIds: 'abc', issueDate: '2026-08-01',
+      name: 'X', type: 'Manual', projectId: 1, assetIds: 'abc', issueDate: '2026-08-01',
     })).toThrow()
   })
 })

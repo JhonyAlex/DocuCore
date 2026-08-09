@@ -1,18 +1,18 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '@/hooks/useTheme'
 import { routeLabels } from '@/lib/navigation'
-import { useItemCreateRequest } from '@/contexts/ItemCreateContext'
+import { useAssetCreateRequest } from '@/contexts/AssetCreateContext'
 
 export default function Topbar() {
   const { isDark, toggle } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
-  const { requestCreate } = useItemCreateRequest()
+  const { requestCreate } = useAssetCreateRequest()
   const label = routeLabels[location.pathname] ?? 'Panel general'
 
-  const openItemForm = () => {
+  const openAssetForm = () => {
     requestCreate()
-    void navigate('/items')
+    void navigate('/assets')
   }
 
   return (
@@ -40,9 +40,9 @@ export default function Topbar() {
           <svg className={`w-5 h-5${!isDark ? ' hidden' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
         </button>
 
-        <button type="button" onClick={openItemForm} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
+        <button type="button" onClick={openAssetForm} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Nuevo ítem
+          Nuevo activo
         </button>
       </div>
     </header>

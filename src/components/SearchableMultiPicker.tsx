@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchableOption } from '@/components/SearchablePicker'
+import PortalListbox from '@/components/PortalListbox'
 
 export type SelectedValue = { id: number; label: string }
 
@@ -14,7 +15,8 @@ type SearchableMultiPickerProps = {
 }
 
 // Variante multi-selección del SearchablePicker: chips de seleccionados +
-// búsqueda con debounce y check en las opciones ya elegidas.
+// búsqueda con debounce y check en las opciones ya elegidas. El listbox viaja
+// en un portal (PortalListbox) para no recortarse dentro del modal.
 export default function SearchableMultiPicker({ values, placeholder, ariaLabel, onSearch, onChange, disabled, emptyText = 'Sin resultados' }: SearchableMultiPickerProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -24,15 +26,6 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
   const rootRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchSeqRef = useRef(0)
-
-  useEffect(() => {
-    if (!open) return
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) close()
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  })
 
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
@@ -78,7 +71,7 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
   const selectedValueIds = new Set(values.map((value) => value.id))
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef}>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5">
         {values.map((selected) => (
           <span key={selected.id} className="inline-flex items-center gap-1 rounded-md bg-brand-50 dark:bg-brand-900/30 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
@@ -101,25 +94,27 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
         />
       </div>
       {open && (
-        <ul role="listbox" className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg">
-          {searching && <li className="px-3 py-2 text-sm text-slate-500">Buscando…</li>}
-          {!searching && searchError && <li className="px-3 py-2 text-sm text-red-600">No se pudo buscar. Inténtalo de nuevo.</li>}
-          {!searching && !searchError && options.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{emptyText}</li>}
-          {!searching && !searchError && options.map((option) => {
-            const selected = selectedValueIds.has(Number(option.value))
-            return (
-              <li key={option.value}>
-                <button type="button" role="option" aria-selected={selected} onClick={() => toggle(option)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{option.label}</span>
-                    {option.hint && <span className="block truncate text-xs text-slate-500">{option.hint}</span>}
-                  </span>
-                  {selected && <span className="text-brand-600" aria-hidden="true">✓</span>}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+        <PortalListbox anchorRef={rootRef} onClose={close}>
+          <ul role="listbox">
+            {searching && <li className="px-3 py-2 text-sm text-slate-500">Buscando…</li>}
+            {!searching && searchError && <li className="px-3 py-2 text-sm text-red-600">No se pudo buscar. Inténtalo de nuevo.</li>}
+            {!searching && !searchError && options.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{emptyText}</li>}
+            {!searching && !searchError && options.map((option) => {
+              const selected = selectedValueIds.has(Number(option.value))
+              return (
+                <li key={option.value}>
+                  <button type="button" role="option" aria-selected={selected} onClick={() => toggle(option)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{option.label}</span>
+                      {option.hint && <span className="block truncate text-xs text-slate-500">{option.hint}</span>}
+                    </span>
+                    {selected && <span className="text-brand-600" aria-hidden="true">✓</span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </PortalListbox>
       )}
     </div>
   )

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
-import { downloadDocument, fetchDocument, fetchDocuments, updateDocument, type ApiItem, type ApiStatus } from '@/lib/api'
-import { formatApiDate, formatDocumentSize, mapApiItemEventToDisplay, mapApiItemToDisplay } from '@/lib/itemMappers'
+import { downloadDocument, fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
+import { formatApiDate, formatDocumentSize, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 
 const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Historial', 'Plano']
 
@@ -24,8 +24,8 @@ const sourceCardStyles = {
   brand: 'bg-brand-50/50 dark:bg-brand-900/20 border-brand-100 dark:border-brand-900/50',
 }
 
-function ItemDocuments({ item, limit }: { item: ApiItem; limit?: number }) {
-  const allDocuments = item.documents ?? []
+function AssetDocuments({ asset, limit }: { asset: ApiAsset; limit?: number }) {
+  const allDocuments = asset.documents ?? []
   const documents = limit ? allDocuments.slice(0, limit) : allDocuments
   if (documents.length === 0) return <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400">No hay documentos asociados a este activo.</div>
   return <div className="space-y-2">{documents.map((document) => {
@@ -35,20 +35,23 @@ function ItemDocuments({ item, limit }: { item: ApiItem; limit?: number }) {
   })}</div>
 }
 
-interface ItemModalProps {
-  item: ApiItem | null
+interface AssetModalProps {
+  asset: ApiAsset | null
   statuses: ApiStatus[]
   onClose: () => void
   onEdit: () => void
   onChangeStatus: (statusId: number) => Promise<void>
+  onDelete: (asset: ApiAsset) => void | Promise<void>
   onDocumentsChanged: () => void | Promise<void>
 }
 
-export default function ItemModal({ item, statuses, onClose, onEdit, onChangeStatus, onDocumentsChanged }: ItemModalProps) {
+export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged }: AssetModalProps) {
   const [activeTab, setActiveTab] = useState(0)
   const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [changingStatus, setChangingStatus] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
@@ -57,7 +60,16 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
   const onCloseRef = useRef(onClose)
   const linkDialogOpenRef = useRef(linkDialogOpen)
   const statusMenuRef = useRef<HTMLDivElement>(null)
-  const itemId = item?.id
+  const assetId = asset?.id
+
+  // UX-02: el modal nunca se desmonta (vive en la vista); al cambiar de activo
+  // (o al cerrar y reabrir) siempre arranca en la pestaña «Resumen».
+  useEffect(() => {
+    setActiveTab(0)
+    setShowStatusSelector(false)
+    setStatusError(null)
+    setDeleteError(null)
+  }, [assetId])
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -68,7 +80,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
   }, [linkDialogOpen])
 
   useEffect(() => {
-    if (!itemId) return
+    if (!assetId) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || linkDialogOpenRef.current) return
@@ -82,7 +94,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
       document.removeEventListener('keydown', handleKeyDown)
       previouslyFocused?.focus()
     }
-  }, [itemId])
+  }, [assetId])
 
   useEffect(() => {
     if (!linkDialogOpen) return
@@ -105,15 +117,15 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [showStatusSelector])
 
-  if (!item) return null
-  const displayItem = mapApiItemToDisplay(item)
-  const nextEvents = item.nextEvents.map((event) => ({
-    ...mapApiItemEventToDisplay(event),
+  if (!asset) return null
+  const displayAsset = mapApiAssetToDisplay(asset)
+  const nextEvents = asset.nextEvents.map((event) => ({
+    ...mapApiAssetEventToDisplay(event),
     calendarDate: formatApiDate(event.date),
   }))
   const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
   const activeStatus = statuses.find((status) => status.name === 'Activo')
-  const isDecommissioned = item.statusId === decommissionedStatus?.id
+  const isDecommissioned = asset.statusId === decommissionedStatus?.id
 
   const changeStatus = async (statusId: number) => {
     setStatusError(null)
@@ -127,12 +139,24 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     }
   }
 
+  // ITEM-05: eliminar mueve el activo a la papelera; la vista cierra la ficha.
+  const handleDelete = async () => {
+    setDeleteError(null)
+    setDeleting(true)
+    try {
+      await onDelete(asset)
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'No se pudo eliminar el activo.')
+      setDeleting(false)
+    }
+  }
+
   const searchDocuments = async (query: string): Promise<SearchableOption[]> => {
     const res = await fetchDocuments({ search: query || undefined, limit: 20 })
     return res.data.map((document) => ({
       value: String(document.id),
       label: document.name,
-      hint: `v${document.currentVersion?.version ?? 1} · ${document.items.length > 0 ? document.items.map((linked) => `${linked.code} · ${linked.name}`).join(', ') : 'Sin activo'}`,
+      hint: `v${document.currentVersion?.version ?? 1} · ${document.assets.length > 0 ? document.assets.map((linked) => `${linked.code} · ${linked.name}`).join(', ') : 'Sin activo'}`,
     }))
   }
 
@@ -142,7 +166,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
     setLinking(true)
     try {
       const document = await fetchDocument(Number(option.value))
-      await updateDocument(document.id, { itemIds: [...new Set([...document.items.map((linked) => linked.id), item.id])] })
+      await updateDocument(document.id, { assetIds: [...new Set([...document.assets.map((linked) => linked.id), asset.id])] })
       setLinkDialogOpen(false)
       await onDocumentsChanged()
     } catch {
@@ -154,11 +178,11 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`item-dialog-title-${item.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`asset-dialog-title-${asset.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
-            <div className="text-xs font-mono text-slate-500">{displayItem.code}</div>
-            <h3 id={`item-dialog-title-${item.id}`} className="font-semibold text-lg">{displayItem.name}</h3>
+            <div className="text-xs font-mono text-slate-500">{displayAsset.code}</div>
+            <h3 id={`asset-dialog-title-${asset.id}`} className="font-semibold text-lg">{displayAsset.name}</h3>
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -169,8 +193,8 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
           {tabs.map((tab, i) => (
             <button key={tab} onClick={() => setActiveTab(i)} className={`py-3 border-b-2 ${activeTab === i ? 'border-brand-600 text-brand-600 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'} whitespace-nowrap`}>
               {tab}
-              {tab === 'Documentos' && <span className="text-xs text-slate-400 ml-1">{item.documentCount}</span>}
-              {tab === 'Eventos' && <span className="text-xs text-slate-400 ml-1">{item.eventCount}</span>}
+              {tab === 'Documentos' && <span className="text-xs text-slate-400 ml-1">{asset.documentCount}</span>}
+              {tab === 'Eventos' && <span className="text-xs text-slate-400 ml-1">{asset.eventCount}</span>}
             </button>
           ))}
         </div>
@@ -183,16 +207,16 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
                       <div className="text-xs text-slate-500">Estado</div>
                       <div ref={statusMenuRef} className="relative mt-1 inline-block">
                         <button type="button" onClick={() => setShowStatusSelector((current) => !current)} aria-label="Cambiar estado" aria-haspopup="listbox" aria-expanded={showStatusSelector} className="flex items-center gap-1.5 cursor-pointer">
-                          <StatusChip label={displayItem.status} chipClass={displayItem.statusChipClass} pulseDot={displayItem.pulseDot} />
+                          <StatusChip label={displayAsset.status} chipClass={displayAsset.statusChipClass} pulseDot={displayAsset.pulseDot} />
                           <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${showStatusSelector ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
                         </button>
                         {showStatusSelector && (
                           <ul role="listbox" aria-label="Seleccionar estado" className="absolute left-0 top-full z-10 mt-1 min-w-44 overflow-hidden rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg fade-in">
                             {statuses.map((status) => (
                               <li key={status.id}>
-                                <button type="button" role="option" aria-selected={status.id === item.statusId} onClick={() => { setShowStatusSelector(false); void changeStatus(status.id) }} disabled={changingStatus} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
+                                <button type="button" role="option" aria-selected={status.id === asset.statusId} onClick={() => { setShowStatusSelector(false); void changeStatus(status.id) }} disabled={changingStatus} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
                                   <span className="flex-1">{status.name}</span>
-                                  {status.id === item.statusId && <span className="text-brand-600" aria-hidden="true">✓</span>}
+                                  {status.id === asset.statusId && <span className="text-brand-600" aria-hidden="true">✓</span>}
                                 </button>
                               </li>
                             ))}
@@ -202,26 +226,26 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
                     </div>
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                     <div className="text-xs text-slate-500">Tipo</div>
-                    <div className="mt-1 text-sm font-medium">{displayItem.type}</div>
+                    <div className="mt-1 text-sm font-medium">{displayAsset.type}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                     <div className="text-xs text-slate-500">Ubicación</div>
-                    <div className="mt-1 text-sm font-medium">{displayItem.location}</div>
+                    <div className="mt-1 text-sm font-medium">{displayAsset.location}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                     <div className="text-xs text-slate-500">Responsable</div>
                     <div className="mt-1 text-sm font-medium flex items-center gap-1.5">
-                      <span className={`w-5 h-5 rounded-full ${displayItem.responsibleColor} text-white text-[10px] font-medium flex items-center justify-center`}>{displayItem.responsibleInitials}</span>
-                      {displayItem.responsible}
+                      <span className={`w-5 h-5 rounded-full ${displayAsset.responsibleColor} text-white text-[10px] font-medium flex items-center justify-center`}>{displayAsset.responsibleInitials}</span>
+                      {displayAsset.responsible}
                     </div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                     <div className="text-xs text-slate-500">Nº de serie</div>
-                    <div className="mt-1 text-sm font-mono">{displayItem.serialNumber}</div>
+                    <div className="mt-1 text-sm font-mono">{displayAsset.serialNumber}</div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                     <div className="text-xs text-slate-500">Instalación</div>
-                    <div className="mt-1 text-sm font-medium">{displayItem.installDate}</div>
+                    <div className="mt-1 text-sm font-medium">{displayAsset.installDate}</div>
                 </div>
               </div>
               <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center aspect-square">
@@ -256,7 +280,7 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
             </div>
 
             <h4 className="font-medium mb-3">Documentos recientes</h4>
-            <ItemDocuments item={item} limit={2} />
+            <AssetDocuments asset={asset} limit={2} />
           </div>
         )}
 
@@ -275,18 +299,22 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
                 </button>
               </div>
             </div>
-            <ItemDocuments item={item} />
+            <AssetDocuments asset={asset} />
           </div>
         )}
 
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
-            {isDecommissioned ? (
-              <button type="button" onClick={() => activeStatus && void changeStatus(activeStatus.id)} disabled={changingStatus || !activeStatus} className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">Reactivar</button>
-            ) : (
-              <button type="button" onClick={() => decommissionedStatus && void changeStatus(decommissionedStatus.id)} disabled={changingStatus || !decommissionedStatus} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
-            )}
-            {statusError && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{statusError}</div>}
+            <div className="flex items-center gap-4">
+              {isDecommissioned ? (
+                <button type="button" onClick={() => activeStatus && void changeStatus(activeStatus.id)} disabled={changingStatus || !activeStatus} className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">Reactivar</button>
+              ) : (
+                <button type="button" onClick={() => decommissionedStatus && void changeStatus(decommissionedStatus.id)} disabled={changingStatus || !decommissionedStatus} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
+              )}
+              {/* ITEM-05: eliminar mueve a la papelera (recuperable 30 días). */}
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Eliminar</button>
+            </div>
+            {(statusError || deleteError) && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{statusError ?? deleteError}</div>}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">Cerrar</button>
@@ -302,14 +330,14 @@ export default function ItemModal({ item, statuses, onClose, onEdit, onChangeSta
               <button type="button" aria-label="Cerrar" onClick={() => setLinkDialogOpen(false)} disabled={linking} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">×</button>
             </div>
             <div className="p-4">
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Busca el documento y añádelo a los activos asociados de {item.code}. Un documento puede estar vinculado a varios activos a la vez.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Busca el documento y añádelo a los activos asociados de {asset.code}. Un documento puede estar vinculado a varios activos a la vez.</p>
               <SearchablePicker value={null} selectedLabel={null} placeholder="Buscar documento por nombre…" ariaLabel="Buscar documento" allowClear={false} disabled={linking} onSearch={searchDocuments} onSelect={(option) => void linkDocument(option)} emptyText="No hay documentos con ese nombre" />
               {linkError && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{linkError}</p>}
             </div>
           </div>
         </div>
       )}
-      {createDialogOpen && <DocumentModal document={null} initialItemIds={[{ id: item.id, label: `${item.code} · ${item.name}` }]} onClose={() => setCreateDialogOpen(false)} onChanged={onDocumentsChanged} />}
+      {createDialogOpen && <DocumentModal document={null} initialAssetIds={[{ id: asset.id, label: `${asset.code} · ${asset.name}` }]} onClose={() => setCreateDialogOpen(false)} onChanged={onDocumentsChanged} />}
     </div>
   )
 }

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchableOption } from '@/components/SearchablePicker'
 import SearchableMultiPicker, { type SelectedValue } from '@/components/SearchableMultiPicker'
-import { createDocument, createDocumentVersion, downloadDocument, fetchDocument, fetchItems, updateDocument, type ApiDocument, type ApiDocumentDetail, type DocumentMetadataInput } from '@/lib/api'
+import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, updateDocument, type ApiDocument, type ApiDocumentDetail, type DocumentMetadataInput } from '@/lib/api'
 
 type DocumentModalProps = {
   document: ApiDocument | null
-  initialItemIds?: SelectedValue[]
+  initialAssetIds?: SelectedValue[]
   onClose: () => void
   onChanged: () => void | Promise<void>
 }
@@ -16,14 +16,14 @@ function dateInput(value: string | null | undefined): string {
   return value ? value.slice(0, 10) : ''
 }
 
-export default function DocumentModal({ document, initialItemIds = [], onClose, onChanged }: DocumentModalProps) {
+export default function DocumentModal({ document, initialAssetIds = [], onClose, onChanged }: DocumentModalProps) {
   const [detail, setDetail] = useState<ApiDocumentDetail | null>(null)
   const [name, setName] = useState(document?.name ?? '')
   const [type, setType] = useState(document?.type ?? documentTypes[0])
-  const [items, setItems] = useState<SelectedValue[]>(() => {
+  const [assets, setAssets] = useState<SelectedValue[]>(() => {
     const seeded = [
-      ...(document?.items ?? []).map((item) => ({ id: item.id, label: `${item.code} · ${item.name}` })),
-      ...initialItemIds,
+      ...(document?.assets ?? []).map((asset) => ({ id: asset.id, label: `${asset.code} · ${asset.name}` })),
+      ...initialAssetIds,
     ]
     const seen = new Set<number>()
     return seeded.filter((value) => !seen.has(value.id) && seen.add(value.id))
@@ -57,11 +57,11 @@ export default function DocumentModal({ document, initialItemIds = [], onClose, 
     return () => { active = false }
   }, [document])
 
-  const metadata = (): DocumentMetadataInput => ({ name, type, projectId: 1, itemIds: items.map((item) => item.id), issueDate, expiryDate: expiryDate || null })
+  const metadata = (): DocumentMetadataInput => ({ name, type, projectId: 1, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || null })
 
-  const searchItems = async (query: string): Promise<SearchableOption[]> => {
-    const res = await fetchItems({ search: query || undefined, limit: 20 })
-    return res.data.map((item) => ({ value: String(item.id), label: `${item.code} · ${item.name}`, hint: item.location?.name }))
+  const searchAssets = async (query: string): Promise<SearchableOption[]> => {
+    const res = await fetchAssets({ search: query || undefined, limit: 20 })
+    return res.data.map((asset) => ({ value: String(asset.id), label: `${asset.code} · ${asset.name}`, hint: asset.location?.name }))
   }
 
   const save = async () => {
@@ -70,7 +70,7 @@ export default function DocumentModal({ document, initialItemIds = [], onClose, 
     setSaving(true)
     try {
       if (isNew && file) await createDocument(metadata(), file)
-      if (!isNew && document) await updateDocument(document.id, { name, type, itemIds: items.map((item) => item.id), issueDate, expiryDate: expiryDate || null })
+      if (!isNew && document) await updateDocument(document.id, { name, type, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || null })
       await onChanged()
       onClose()
     } catch {
@@ -108,7 +108,7 @@ export default function DocumentModal({ document, initialItemIds = [], onClose, 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="text-sm">Nombre<input ref={initialFocusRef} value={name} onChange={(event) => setName(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
             <label className="text-sm">Tipo<select value={type} onChange={(event) => setType(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((value) => <option key={value}>{value}</option>)}</select></label>
-            <label className="text-sm">Activos asociados<SearchableMultiPicker values={items} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={saving} onSearch={searchItems} onChange={setItems} /></label>
+            <label className="text-sm">Activos asociados<SearchableMultiPicker values={assets} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={saving} onSearch={searchAssets} onChange={setAssets} /></label>
             <label className="text-sm">Emisión<input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
             <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
             {isNew && <label className="text-sm">Fichero<input type="file" accept=".pdf,.xlsx,.xls,.txt,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain" onChange={(event) => setFile(event.target.files?.[0] ?? null)} disabled={saving} className="mt-1 block w-full text-xs" /></label>}

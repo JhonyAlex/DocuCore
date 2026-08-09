@@ -1,5 +1,5 @@
-import type { ApiItem, ApiItemEvent, ApiLocationItem } from '@/lib/api'
-import type { Item, ItemNextEvent, LocationAsset, PulseColor } from '@/types'
+import type { ApiAsset, ApiAssetEvent, ApiLocationAsset } from '@/lib/api'
+import type { Asset, AssetNextEvent, LocationAsset, PulseColor } from '@/types'
 
 const typeChipMap: Record<string, string> = {
   Máquina: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
@@ -78,7 +78,7 @@ function formatRelativeDays(daysUntil: number): string {
   return `${daysUntil}d`
 }
 
-export function mapApiItemEventToDisplay(event: ApiItemEvent): ItemNextEvent {
+export function mapApiAssetEventToDisplay(event: ApiAssetEvent): AssetNextEvent {
   return {
     id: event.id,
     label: event.title,
@@ -92,21 +92,21 @@ export function mapApiItemEventToDisplay(event: ApiItemEvent): ItemNextEvent {
 }
 
 // En la lista de activos de una ubicación el avatar usa el color del tipo,
-// sin la sobreescritura por estado que aplica la tabla de ítems (el HTML de
+// sin la sobreescritura por estado que aplica la tabla de activos (el HTML de
 // referencia muestra BSC-11 "En revisión" con avatar índigo de Instrumento).
-export function mapApiLocationItemToAsset(item: ApiLocationItem): LocationAsset {
+export function mapApiLocationAssetToDisplay(asset: ApiLocationAsset): LocationAsset {
   return {
-    code: item.code,
-    name: item.name,
-    installedDate: formatApiDate(item.installDate),
-    initials: item.initials,
-    initialsBgClass: avatarBgMap[typeColorToken[item.type.name] ?? ''] ?? '',
-    statusLabel: item.status.name,
-    statusChipClass: statusChipMap[item.status.name] ?? '',
+    code: asset.code,
+    name: asset.name,
+    installedDate: formatApiDate(asset.installDate),
+    initials: asset.initials,
+    initialsBgClass: avatarBgMap[typeColorToken[asset.type.name] ?? ''] ?? '',
+    statusLabel: asset.status.name,
+    statusChipClass: statusChipMap[asset.status.name] ?? '',
   }
 }
 
-export function mapApiItemToDisplay(api: ApiItem): Item {
+export function mapApiAssetToDisplay(api: ApiAsset): Asset {
   const typeName = api.type?.name ?? ''
   const statusName = api.status?.name ?? ''
   const serialPrefix = typeName === 'Extintor' ? 'Lote' : typeName === 'Vehículo' ? 'Mat' : 'SN'
@@ -122,9 +122,9 @@ export function mapApiItemToDisplay(api: ApiItem): Item {
     serialLabel: `${serialPrefix}: ${api.serialNumber}`,
     serialNumber: api.serialNumber,
     installDate: formatApiDate(api.installDate),
-    type: typeName as Item['type'],
+    type: typeName as Asset['type'],
     typeChipClass: typeChipMap[typeName] ?? '',
-    status: statusName as Item['status'],
+    status: statusName as Asset['status'],
     statusChipClass: statusChipMap[statusName] ?? '',
     pulseDot,
     location: api.location?.label ?? api.location?.name ?? '',
@@ -133,6 +133,7 @@ export function mapApiItemToDisplay(api: ApiItem): Item {
     responsible: api.responsible?.name ?? '',
     responsibleInitials: api.responsible?.initials ?? '',
     responsibleColor: responsibleColorMap[api.responsible?.color ?? ''] ?? '',
-    nextEvent: api.nextEvents[0] ? mapApiItemEventToDisplay(api.nextEvents[0]) : null,
+    nextEvent: api.nextEvents[0] ? mapApiAssetEventToDisplay(api.nextEvents[0]) : null,
+    deletedLabel: api.deletedAt ? `Eliminado el ${formatApiDate(api.deletedAt)}` : undefined,
   }
 }

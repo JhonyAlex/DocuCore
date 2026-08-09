@@ -1,13 +1,13 @@
 import { Outlet } from 'react-router-dom'
 import Sidebar from '@/components/Sidebar'
 import Topbar from '@/components/Topbar'
-import { ItemCreateProvider } from '@/contexts/ItemCreateProvider'
+import { AssetCreateProvider } from '@/contexts/AssetCreateProvider'
 import { SessionProvider } from '@/contexts/SessionProvider'
 
 export default function AppLayout() {
   return (
     <SessionProvider>
-      <ItemCreateProvider>
+      <AssetCreateProvider>
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <main className="flex-1 flex flex-col overflow-hidden">
@@ -17,7 +17,7 @@ export default function AppLayout() {
             </div>
           </main>
         </div>
-      </ItemCreateProvider>
+      </AssetCreateProvider>
     </SessionProvider>
   )
 }

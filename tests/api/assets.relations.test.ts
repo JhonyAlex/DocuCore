@@ -3,13 +3,13 @@ import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { databaseUrl, ensureTestDatabase } from '../helpers/database'
 
-// Valida contra la BD aislada de E2E que POST /api/items y PUT /api/items/:id
-// comprueben antes de escribir que la ubicación pertenece al proyecto del ítem
+// Valida contra la BD aislada de E2E que POST /api/assets y PUT /api/assets/:id
+// comprueben antes de escribir que la ubicación pertenece al proyecto del activo
 // y que el responsable es miembro del proyecto, incluyendo el PUT parcial.
 
 let server: Server | undefined
 let baseUrl: string
-const createdItemIds: number[] = []
+const createdAssetIds: number[] = []
 const createdLocationIds: number[] = []
 
 type LocationRow = { id: number; name: string; code: string }
@@ -24,10 +24,10 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${path}`, init)
 }
 
-function itemPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function assetPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     code: `QA-REL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    name: 'Ítem de relaciones QA',
+    name: 'Activo de relaciones QA',
     serialNumber: `SN-REL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     installDate: '2026-07-15',
     typeId: 1,
@@ -95,123 +95,123 @@ afterAll(async () => {
   for (const id of createdLocationIds) {
     await api(`/api/locations/${id}`, { method: 'DELETE' }).catch(() => undefined)
   }
-  for (const id of createdItemIds) {
-    await api(`/api/items/${id}`, { method: 'DELETE' }).catch(() => undefined)
+  for (const id of createdAssetIds) {
+    await api(`/api/assets/${id}`, { method: 'DELETE' }).catch(() => undefined)
   }
   await new Promise<void>((resolve, reject) => {
     activeServer.close((error) => error ? reject(error) : resolve())
   })
 })
 
-describe('items relation validation', () => {
-  it('creates an item whose location and responsible belong to the project', async () => {
-    const response = await api('/api/items', {
+describe('assets relation validation', () => {
+  it('creates an asset whose location and responsible belong to the project', async () => {
+    const response = await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload()),
+      body: JSON.stringify(assetPayload()),
     })
     expect(response.status).toBe(201)
     const created = await response.json() as { id: number; projectId: number; locationId: number; responsibleId: number }
-    createdItemIds.push(created.id)
+    createdAssetIds.push(created.id)
     expect(created.projectId).toBe(1)
     expect(created.locationId).toBe(project1Location.id)
     expect(created.responsibleId).toBe(project1OnlyUser.id)
   })
 
   it('rejects a location from another project on create', async () => {
-    const response = await api('/api/items', {
+    const response = await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload({ locationId: project2Location.id })),
+      body: JSON.stringify(assetPayload({ locationId: project2Location.id })),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the item project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
   })
 
   it('rejects a responsible who is not a member of the project on create', async () => {
-    const response = await api('/api/items', {
+    const response = await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload({ projectId: 2, responsibleId: project1OnlyUser.id })),
+      body: JSON.stringify(assetPayload({ projectId: 2, responsibleId: project1OnlyUser.id })),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the item project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
   })
 
   it('rejects a nonexistent location on create', async () => {
-    const response = await api('/api/items', {
+    const response = await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload({ locationId: 999_999 })),
+      body: JSON.stringify(assetPayload({ locationId: 999_999 })),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the item project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
   })
 
   it('keeps existing relations valid when the PUT changes only the name', async () => {
-    const created = await (await api('/api/items', {
+    const created = await (await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload()),
+      body: JSON.stringify(assetPayload()),
     })).json() as { id: number }
-    createdItemIds.push(created.id)
+    createdAssetIds.push(created.id)
 
-    const response = await api(`/api/items/${created.id}`, {
+    const response = await api(`/api/assets/${created.id}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Ítem renombrado QA' }),
+      body: JSON.stringify({ name: 'Activo renombrado QA' }),
     })
     expect(response.status).toBe(200)
     const updated = await response.json() as { name: string; projectId: number; locationId: number; responsibleId: number }
-    expect(updated.name).toBe('Ítem renombrado QA')
+    expect(updated.name).toBe('Activo renombrado QA')
     expect(updated.projectId).toBe(1)
     expect(updated.locationId).toBe(project1Location.id)
     expect(updated.responsibleId).toBe(project1OnlyUser.id)
   })
 
   it('rejects a partial PUT that moves the project alone, leaving the old relations', async () => {
-    const created = await (await api('/api/items', {
+    const created = await (await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload()),
+      body: JSON.stringify(assetPayload()),
     })).json() as { id: number }
-    createdItemIds.push(created.id)
+    createdAssetIds.push(created.id)
 
-    const response = await api(`/api/items/${created.id}`, {
+    const response = await api(`/api/assets/${created.id}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ projectId: 2 }),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the item project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
   })
 
   it('rejects a partial PUT that changes only the location to another project', async () => {
-    const created = await (await api('/api/items', {
+    const created = await (await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload()),
+      body: JSON.stringify(assetPayload()),
     })).json() as { id: number }
-    createdItemIds.push(created.id)
+    createdAssetIds.push(created.id)
 
-    const response = await api(`/api/items/${created.id}`, {
+    const response = await api(`/api/assets/${created.id}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ locationId: project2Location.id }),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the item project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
   })
 
   it('accepts a PUT that moves project, location and responsible coherently', async () => {
-    const created = await (await api('/api/items', {
+    const created = await (await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(itemPayload()),
+      body: JSON.stringify(assetPayload()),
     })).json() as { id: number }
-    createdItemIds.push(created.id)
+    createdAssetIds.push(created.id)
 
-    const response = await api(`/api/items/${created.id}`, {
+    const response = await api(`/api/assets/${created.id}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ projectId: 2, locationId: project2Location.id, responsibleId: bothProjectsUser.id }),

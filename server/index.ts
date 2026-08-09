@@ -3,7 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import itemsRouter from './routes/items'
+import assetsRouter from './routes/assets'
 import documentsRouter from './routes/documents'
 import locationsRouter from './routes/locations'
 import metaRouter from './routes/meta'
@@ -17,7 +17,7 @@ app.use(express.json())
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
-app.use('/api/items', itemsRouter)
+app.use('/api/assets', assetsRouter)
 app.use('/api/documents', documentsRouter)
 app.use('/api/locations', locationsRouter)
 app.use('/api', metaRouter)
