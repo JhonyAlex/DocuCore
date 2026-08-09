@@ -15,7 +15,7 @@ export const createItemSchema = z.object({
   installDate: isoDateSchema,
   typeId: z.number().int().positive(),
   statusId: z.number().int().positive(),
-  location: z.string().min(1),
+  locationId: z.number().int().positive(),
   projectId: z.number().int().positive(),
   responsibleId: z.number().int().positive(),
   initials: z.string().min(1),
@@ -27,6 +27,18 @@ export const updateItemSchema = createItemSchema.partial()
 export const changeStatusSchema = z.object({
   statusId: z.number().int().positive(),
 })
+
+export const createLocationSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(160).optional(),
+  code: z.string().trim().min(1).max(40),
+  surface: z.string().trim().min(1).max(60),
+  parentId: z.number().int().positive().nullable(),
+  responsibleId: z.number().int().positive(),
+  projectId: z.number().int().positive(),
+}).strict()
+
+export const updateLocationSchema = createLocationSchema.partial()
 
 const optionalPositiveId = z.preprocess((value) => value === '' || value === undefined ? undefined : Number(value), z.number().int().positive().optional())
 const nullableOptionalPositiveId = z.preprocess((value) => value === 'null' || value === null ? null : value === '' || value === undefined ? undefined : Number(value), z.number().int().positive().nullable().optional())
@@ -61,3 +73,5 @@ export const documentListQuerySchema = z.object({
 export type CreateItemInput = z.infer<typeof createItemSchema>
 export type UpdateItemInput = z.infer<typeof updateItemSchema>
 export type ChangeStatusInput = z.infer<typeof changeStatusSchema>
+export type CreateLocationInput = z.infer<typeof createLocationSchema>
+export type UpdateLocationInput = z.infer<typeof updateLocationSchema>

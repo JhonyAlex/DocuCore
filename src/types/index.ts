@@ -11,7 +11,7 @@ export interface ItemFilters {
   search: string
   typeId: number | null
   statusId: number | null
-  location: string | null
+  locationId: number | null
 }
 
 export interface Pagination {
@@ -108,21 +108,13 @@ export interface FloorPlanMarker {
   animate?: boolean
 }
 
-export interface LocationDetail {
-  name: string
-  parent: string
-  responsible: string
-  assetCount: number
-  surface: string
-  code: string
-}
-
 export interface LocationAsset {
   code: string
   name: string
   installedDate: string
   initials: string
   initialsBgClass: string
+  statusLabel: string
   statusChipClass: string
 }
 

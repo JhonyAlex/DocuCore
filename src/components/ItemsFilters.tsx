@@ -1,12 +1,12 @@
 import { useState, type ChangeEvent } from 'react'
 import type { ItemFilters } from '@/types'
-import type { ApiItemType, ApiStatus } from '@/lib/api'
+import type { ApiItemType, ApiLocation, ApiStatus } from '@/lib/api'
 
 interface ItemsFiltersProps {
   filters: ItemFilters
   types: ApiItemType[]
   statuses: ApiStatus[]
-  locations: string[]
+  locations: ApiLocation[]
   onFilterChange: (next: ItemFilters) => void
 }
 
@@ -28,15 +28,16 @@ export default function ItemsFilters({ filters, types, statuses, locations, onFi
     applyFilters({ ...filters, statusId: e.target.value ? Number(e.target.value) : null })
   }
   const handleLocation = (e: ChangeEvent<HTMLSelectElement>) => {
-    applyFilters({ ...filters, location: e.target.value || null })
+    applyFilters({ ...filters, locationId: e.target.value ? Number(e.target.value) : null })
   }
   const clearAll = () => {
-    applyFilters({ search: '', typeId: null, statusId: null, location: null })
+    applyFilters({ search: '', typeId: null, statusId: null, locationId: null })
   }
 
   const activeType = types.find((t) => t.id === filters.typeId)
   const activeStatus = statuses.find((s) => s.id === filters.statusId)
-  const hasActive = Boolean(filters.search || filters.typeId || filters.statusId || filters.location)
+  const activeLocation = locations.find((l) => l.id === filters.locationId)
+  const hasActive = Boolean(filters.search || filters.typeId || filters.statusId || filters.locationId)
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 mb-4">
@@ -57,10 +58,10 @@ export default function ItemsFilters({ filters, types, statuses, locations, onFi
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
-        <select value={filters.location ?? ''} onChange={handleLocation} className="px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
+        <select value={filters.locationId ?? ''} onChange={handleLocation} className="px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
           <option value="">Todas las ubicaciones</option>
           {locations.map((l) => (
-            <option key={l} value={l}>{l}</option>
+            <option key={l.id} value={l.id}>{l.label}</option>
           ))}
         </select>
         <button onClick={clearAll} className="px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Limpiar</button>
@@ -70,7 +71,7 @@ export default function ItemsFilters({ filters, types, statuses, locations, onFi
           {filters.search && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Búsqueda: ${filters.search} ×`}</span>}
           {(activeType || showReferenceChips) && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Tipo: ${activeType?.name ?? 'Máquina'} ×`}</span>}
           {(activeStatus || showReferenceChips) && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Estado: ${activeStatus?.name ?? 'Activo'} ×`}</span>}
-          {filters.location && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Ubicación: ${filters.location} ×`}</span>}
+          {activeLocation && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Ubicación: ${activeLocation.label} ×`}</span>}
           <button onClick={clearAll} className="text-brand-600 hover:text-brand-700 ml-2">Limpiar todos</button>
         </div>
       )}

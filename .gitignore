@@ -62,3 +62,6 @@ vite-err.txt
 # Temp
 *.tmp
 data/
+
+# Local agent workspace
+.zcode/

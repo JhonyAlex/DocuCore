@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ApiItem } from '@/lib/api'
-import { mapApiItemToDisplay } from '@/lib/itemMappers'
+import type { ApiItem, ApiLocationItem } from '@/lib/api'
+import { mapApiItemToDisplay, mapApiLocationItemToAsset } from '@/lib/itemMappers'
 
 function apiItem(overrides: Partial<ApiItem>): ApiItem {
   return {
@@ -12,7 +12,7 @@ function apiItem(overrides: Partial<ApiItem>): ApiItem {
     installDate: '2024-02-04T00:00:00.000Z',
     typeId: 1,
     statusId: 1,
-    location: 'Planta 1 · Nave A',
+    locationId: 2,
     projectId: 1,
     responsibleId: 2,
     initials: 'CN',
@@ -29,6 +29,7 @@ function apiItem(overrides: Partial<ApiItem>): ApiItem {
     eventCount: 2,
     type: { id: 1, name: 'Máquina' },
     status: { id: 1, name: 'Activo', pulseDot: null },
+    location: { id: 2, name: 'Planta 1 · Nave A', code: 'PIN-NA-01A', label: 'Planta 1 · Nave A' },
     responsible: { id: 2, name: 'J. Ramírez', initials: 'JR', color: 'emerald' },
     ...overrides,
   }
@@ -42,6 +43,7 @@ describe('mapApiItemToDisplay', () => {
       pulseDot: undefined,
       initialsBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600',
       responsibleColor: 'bg-emerald-500',
+      location: 'Planta 1 · Nave A',
       installDate: '04/02/2024',
       nextEvent: {
         id: 'event:1',
@@ -112,5 +114,57 @@ describe('mapApiItemToDisplay', () => {
 
   it('shows no invented upcoming event when an item has no dated relations', () => {
     expect(mapApiItemToDisplay(apiItem({ nextEvents: [], eventCount: 0, documentCount: 0 })).nextEvent).toBeNull()
+  })
+})
+
+function locationItem(overrides: Partial<ApiLocationItem>): ApiLocationItem {
+  return {
+    id: 1,
+    code: 'CNC-05',
+    name: 'Torno CNC Haas ST-20',
+    installDate: '2024-02-04T00:00:00.000Z',
+    initials: 'CN',
+    type: { id: 1, name: 'Máquina' },
+    status: { id: 1, name: 'Activo', pulseDot: null },
+    ...overrides,
+  }
+}
+
+describe('mapApiLocationItemToAsset', () => {
+  it('uses the type color for the avatar, matching the reference location list', () => {
+    expect(mapApiLocationItemToAsset(locationItem({}))).toEqual({
+      code: 'CNC-05',
+      name: 'Torno CNC Haas ST-20',
+      installedDate: '04/02/2024',
+      initials: 'CN',
+      initialsBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600',
+      statusLabel: 'Activo',
+      statusChipClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+    })
+  })
+
+  it('keeps the type color for the avatar even when the item is under review', () => {
+    const asset = mapApiLocationItemToAsset(locationItem({
+      code: 'BSC-11',
+      name: 'Báscula industrial',
+      installDate: '2025-09-10T00:00:00.000Z',
+      initials: 'BA',
+      type: { id: 5, name: 'Instrumento' },
+      status: { id: 2, name: 'En revisión', pulseDot: null },
+    }))
+
+    expect(asset.initialsBgClass).toBe('bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600')
+    expect(asset.statusLabel).toBe('En revisión')
+    expect(asset.statusChipClass).toBe('bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300')
+  })
+
+  it('leaves unknown tokens empty instead of inventing a visual class', () => {
+    const asset = mapApiLocationItemToAsset(locationItem({
+      type: { id: 99, name: 'Desconocido' },
+      status: { id: 99, name: 'Pendiente', pulseDot: null },
+    }))
+
+    expect(asset.initialsBgClass).toBe('')
+    expect(asset.statusChipClass).toBe('')
   })
 })

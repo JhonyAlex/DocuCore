@@ -34,6 +34,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
       res.status(409).json({ error: 'Conflict', message: 'Unique constraint violated' })
       return
     }
+    if (err.code === 'P2003') {
+      res.status(409).json({ error: 'Conflict', message: 'Record is referenced by other entities' })
+      return
+    }
   }
 
   console.error('Unhandled error:', err)

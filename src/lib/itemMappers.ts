@@ -1,5 +1,5 @@
-import type { ApiItem, ApiItemEvent } from '@/lib/api'
-import type { Item, ItemNextEvent, PulseColor } from '@/types'
+import type { ApiItem, ApiItemEvent, ApiLocationItem } from '@/lib/api'
+import type { Item, ItemNextEvent, LocationAsset, PulseColor } from '@/types'
 
 const typeChipMap: Record<string, string> = {
   Máquina: 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
@@ -83,6 +83,21 @@ export function mapApiItemEventToDisplay(event: ApiItemEvent): ItemNextEvent {
   }
 }
 
+// En la lista de activos de una ubicación el avatar usa el color del tipo,
+// sin la sobreescritura por estado que aplica la tabla de ítems (el HTML de
+// referencia muestra BSC-11 "En revisión" con avatar índigo de Instrumento).
+export function mapApiLocationItemToAsset(item: ApiLocationItem): LocationAsset {
+  return {
+    code: item.code,
+    name: item.name,
+    installedDate: formatApiDate(item.installDate),
+    initials: item.initials,
+    initialsBgClass: avatarBgMap[typeColorToken[item.type.name] ?? ''] ?? '',
+    statusLabel: item.status.name,
+    statusChipClass: statusChipMap[item.status.name] ?? '',
+  }
+}
+
 export function mapApiItemToDisplay(api: ApiItem): Item {
   const typeName = api.type?.name ?? ''
   const statusName = api.status?.name ?? ''
@@ -103,7 +118,7 @@ export function mapApiItemToDisplay(api: ApiItem): Item {
     status: statusName as Item['status'],
     statusChipClass: statusChipMap[statusName] ?? '',
     pulseDot,
-    location: api.location,
+    location: api.location?.label ?? api.location?.name ?? '',
     initials: api.initials,
     initialsBgClass: avatarBgMap[avatarToken ?? ''] ?? '',
     responsible: api.responsible?.name ?? '',

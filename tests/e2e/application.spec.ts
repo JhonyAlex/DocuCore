@@ -3,6 +3,7 @@ import { expect, test } from './fixtures'
 
 type ItemType = { id: number; name: string }
 type Status = { id: number; name: string }
+type LocationSummary = { id: number; name: string }
 
 const navDestinations: Array<{ label: string; route: string; heading?: string }> = [
   { label: 'Panel general', route: '/dashboard' },
@@ -24,16 +25,19 @@ async function goToItems(page: Page): Promise<void> {
 }
 
 async function createSeededItem(page: Page, code: string): Promise<void> {
-  const [typesResponse, statusesResponse] = await Promise.all([
+  const [typesResponse, statusesResponse, locationsResponse] = await Promise.all([
     page.request.get('/api/item-types'),
     page.request.get('/api/statuses'),
+    page.request.get('/api/locations'),
   ])
   const types = await typesResponse.json() as ItemType[]
   const statuses = await statusesResponse.json() as Status[]
+  const locationsBody = await locationsResponse.json() as { locations: LocationSummary[] }
   const machine = types.find((type) => type.name === 'Máquina')
   const active = statuses.find((status) => status.name === 'Activo')
+  const naveA = locationsBody.locations.find((location) => location.name === 'Planta 1 · Nave A')
 
-  if (!machine || !active) throw new Error('Canonical item metadata is missing.')
+  if (!machine || !active || !naveA) throw new Error('Canonical item metadata is missing.')
 
   const response = await page.request.post('/api/items', {
     data: {
@@ -44,7 +48,7 @@ async function createSeededItem(page: Page, code: string): Promise<void> {
       installDate: '2026-07-15',
       typeId: machine.id,
       statusId: active.id,
-      location: 'Planta 1 · Nave A',
+      locationId: naveA.id,
       projectId: 1,
       responsibleId: 1,
       initials: 'PG',

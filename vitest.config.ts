@@ -12,5 +12,6 @@ export default defineConfig({
     setupFiles: ['tests/setup.ts'],
     passWithNoTests: false,
     pool: 'forks',
+    fileParallelism: false,
   },
 })

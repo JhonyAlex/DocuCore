@@ -57,7 +57,7 @@ export default function DocumentModal({ document, initialItemId, initialItemLabe
 
   const searchItems = async (query: string): Promise<SearchableOption[]> => {
     const res = await fetchItems({ search: query || undefined, limit: 20 })
-    return res.data.map((item) => ({ value: String(item.id), label: `${item.code} · ${item.name}`, hint: item.location }))
+    return res.data.map((item) => ({ value: String(item.id), label: `${item.code} · ${item.name}`, hint: item.location?.name }))
   }
 
   const handleSelectItem = (option: SearchableOption | null) => {

@@ -18,6 +18,26 @@ export interface ApiUserRef {
   color: string
 }
 
+export interface ApiSessionUser {
+  id: number
+  name: string
+  role: string
+  initials: string
+  color: string
+}
+
+export interface ApiSessionProject {
+  id: number
+  code: string
+  name: string
+  assetCount: number
+}
+
+export interface ApiSession {
+  project: ApiSessionProject
+  user: ApiSessionUser
+}
+
 export interface ApiItemEvent {
   id: string
   title: string
@@ -36,11 +56,18 @@ export interface ItemWriteInput {
   installDate: string
   typeId: number
   statusId: number
-  location: string
+  locationId: number
   projectId: number
   responsibleId: number
   initials: string
   dynamicFields?: Record<string, unknown>
+}
+
+export interface ApiLocationRef {
+  id: number
+  name: string
+  code: string
+  label: string
 }
 
 export interface ApiItem {
@@ -52,7 +79,7 @@ export interface ApiItem {
   installDate: string
   typeId: number
   statusId: number
-  location: string
+  locationId: number
   projectId: number
   responsibleId: number
   initials: string
@@ -62,8 +89,53 @@ export interface ApiItem {
   eventCount: number
   type?: { id: number; name: string }
   status?: { id: number; name: string; pulseDot: string | null }
+  location?: ApiLocationRef
   responsible?: ApiUserRef
   dynamicFields?: Record<string, unknown>
+}
+
+export interface ApiLocation {
+  id: number
+  name: string
+  label: string
+  code: string
+  surface: string
+  responsibleId: number
+  parentId: number | null
+  projectId: number
+  responsible: ApiUserRef
+  itemCount: number
+  childCount: number
+  hasFloorPlan: boolean
+}
+
+export interface ApiLocationsResponse {
+  project: { id: number; code: string; name: string; assetCount: number }
+  locations: ApiLocation[]
+}
+
+export interface ApiLocationItem {
+  id: number
+  code: string
+  name: string
+  installDate: string
+  initials: string
+  type: { id: number; name: string }
+  status: { id: number; name: string; pulseDot: string | null }
+}
+
+export interface ApiLocationDetail extends ApiLocation {
+  ancestors: Array<{ id: number; name: string }>
+  items: ApiLocationItem[]
+}
+
+export interface LocationWriteInput {
+  name: string
+  code: string
+  surface: string
+  parentId: number | null
+  responsibleId: number
+  projectId: number
 }
 
 export interface ApiItemDocument {
@@ -139,7 +211,7 @@ export interface ItemListParams {
   search?: string
   typeId?: number
   statusId?: number
-  location?: string
+  locationId?: number
 }
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -153,6 +225,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     const body = await res.text().catch(() => '')
     throw new Error(`API ${res.status}: ${body || res.statusText}`)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -175,7 +248,7 @@ export function fetchItems(params: ItemListParams): Promise<ApiItemListResponse>
   if (params.search) q.set('search', params.search)
   if (params.typeId) q.set('typeId', String(params.typeId))
   if (params.statusId) q.set('statusId', String(params.statusId))
-  if (params.location) q.set('location', params.location)
+  if (params.locationId) q.set('locationId', String(params.locationId))
   return request<ApiItemListResponse>(`/items?${q.toString()}`)
 }
 
@@ -198,6 +271,10 @@ export function changeItemStatus(id: number, statusId: number): Promise<ApiItem>
   })
 }
 
+export function deleteItem(id: number): Promise<void> {
+  return request<void>(`/items/${id}`, { method: 'DELETE' })
+}
+
 export function fetchItemTypes(): Promise<ApiItemType[]> {
   return request<ApiItemType[]>('/item-types')
 }
@@ -206,8 +283,32 @@ export function fetchStatuses(): Promise<ApiStatus[]> {
   return request<ApiStatus[]>('/statuses')
 }
 
-export function fetchLocations(): Promise<string[]> {
-  return request<string[]>('/locations')
+export function fetchLocations(): Promise<ApiLocationsResponse> {
+  return request<ApiLocationsResponse>('/locations')
+}
+
+export function fetchLocation(id: number): Promise<ApiLocationDetail> {
+  return request<ApiLocationDetail>(`/locations/${id}`)
+}
+
+export function createLocation(data: LocationWriteInput): Promise<ApiLocation> {
+  return request<ApiLocation>('/locations', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateLocation(id: number, data: Partial<LocationWriteInput>): Promise<ApiLocation> {
+  return request<ApiLocation>(`/locations/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export function deleteLocation(id: number): Promise<void> {
+  return request<void>(`/locations/${id}`, { method: 'DELETE' })
+}
+
+export function fetchUsers(): Promise<ApiUserRef[]> {
+  return request<ApiUserRef[]>('/users')
+}
+
+export function fetchSession(): Promise<ApiSession> {
+  return request<ApiSession>('/session')
 }
 
 export function fetchDocuments(params: DocumentListParams = {}): Promise<ApiDocumentListResponse> {

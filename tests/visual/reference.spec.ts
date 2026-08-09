@@ -41,8 +41,13 @@ async function setTheme(page: Page, theme: Theme): Promise<void> {
 
 async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Promise<void> {
   await page.goto(target.route, { waitUntil: 'domcontentloaded' })
+  // El shell carga la sesión (proyecto activo + usuario) de forma asíncrona.
+  await expect(page.getByText('María Fernández', { exact: true }).first()).toBeVisible()
   if (target.route === '/items') {
     await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
+  }
+  if (target.route === '/locations') {
+    await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
   }
   await setTheme(page, theme)
 

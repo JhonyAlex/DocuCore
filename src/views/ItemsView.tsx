@@ -5,22 +5,24 @@ import ItemsTable from '@/components/ItemsTable'
 import ItemModal from '@/components/ItemModal'
 import ItemFormModal from '@/components/ItemFormModal'
 import type { ItemFormValues } from '@/components/ItemFormModal'
-import { changeItemStatus, createItem, fetchItemTypes, fetchItems, fetchLocations, fetchStatuses, updateItem, type ApiItem, type ApiItemType, type ApiStatus, type ItemListParams } from '@/lib/api'
+import { changeItemStatus, createItem, fetchItemTypes, fetchItems, fetchLocations, fetchStatuses, updateItem, type ApiItem, type ApiItemType, type ApiLocation, type ApiStatus, type ItemListParams } from '@/lib/api'
+import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiItemToDisplay } from '@/lib/itemMappers'
-import { currentProject, currentUser } from '@/data/mock'
+import { useSession } from '@/contexts/SessionContext'
 import { useItemCreateRequest } from '@/contexts/ItemCreateContext'
 
 const LIMIT = 6
 
 export default function ItemsView() {
   const { createRequested, clearCreateRequest } = useItemCreateRequest()
+  const { session, reload: reloadSession } = useSession()
   const [selectedItem, setSelectedItem] = useState<ApiItem | null>(null)
   const [items, setItems] = useState<ApiItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [types, setTypes] = useState<ApiItemType[]>([])
   const [statuses, setStatuses] = useState<ApiStatus[]>([])
-  const [locations, setLocations] = useState<string[]>([])
+  const [locations, setLocations] = useState<ApiLocation[]>([])
   const [optionsError, setOptionsError] = useState(false)
   const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null)
   const [page, setPage] = useState(1)
@@ -30,7 +32,7 @@ export default function ItemsView() {
     search: '',
     typeId: null,
     statusId: null,
-    location: null,
+    locationId: null,
   })
   const latestLoadRequest = useRef(0)
 
@@ -46,7 +48,7 @@ export default function ItemsView() {
         search: filters.search || undefined,
         typeId: filters.typeId ?? undefined,
         statusId: filters.statusId ?? undefined,
-        location: filters.location ?? undefined,
+        locationId: filters.locationId ?? undefined,
       }
       const res = await fetchItems(params)
       if (requestId !== latestLoadRequest.current) return
@@ -74,7 +76,7 @@ export default function ItemsView() {
         if (!active) return
         setTypes(nextTypes)
         setStatuses(nextStatuses)
-        setLocations(nextLocations)
+        setLocations(nextLocations.locations)
       })
       .catch(() => {
         if (active) setOptionsError(true)
@@ -96,13 +98,12 @@ export default function ItemsView() {
     setPage(1)
   }
 
-  const toUserError = (writeError: unknown) => {
-    const message = writeError instanceof Error ? writeError.message : ''
-    if (message.includes('409')) return 'Ya existe un ítem con ese código.'
-    if (message.includes('404')) return 'El ítem ya no está disponible. Actualiza la lista e inténtalo de nuevo.'
-    if (message.includes('400') || message.includes('422')) return 'Revisa los campos obligatorios e inténtalo de nuevo.'
-    return 'No se pudo guardar el ítem. Inténtalo de nuevo.'
-  }
+  const toUserError = (writeError: unknown) => toUserWriteError(writeError, {
+    conflict: 'Ya existe un ítem con ese código.',
+    notFound: 'El ítem ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
+    validation: 'Revisa los campos obligatorios e inténtalo de nuevo.',
+    fallback: 'No se pudo guardar el ítem. Inténtalo de nuevo.',
+  })
 
   const saveItem = async (values: ItemFormValues) => {
     try {
@@ -114,6 +115,7 @@ export default function ItemsView() {
         await createItem(values)
       }
       await loadItems()
+      reloadSession()
       setFormMode(null)
     } catch (writeError) {
       throw new Error(toUserError(writeError))
@@ -133,10 +135,10 @@ export default function ItemsView() {
 
   const pagination: Pagination = { page, totalPages, total, limit: LIMIT }
   const displayedItems: Item[] = items.map(mapApiItemToDisplay)
-  const projectId = Number(currentProject.id)
+  const projectId = session?.project.id ?? 0
   const formItem = formMode === 'edit' ? selectedItem : null
-  const responsibleId = formItem?.responsibleId ?? currentUser.id
-  const responsibleName = formItem?.responsible?.name ?? currentUser.name
+  const responsibleId = formItem?.responsibleId ?? session?.user.id ?? 0
+  const responsibleName = formItem?.responsible?.name ?? session?.user.name ?? ''
 
   return (
     <section className="fade-in">
@@ -168,7 +170,7 @@ export default function ItemsView() {
         onRetry={() => void loadItems()}
       />
       <ItemModal item={selectedItem} statuses={statuses} onClose={() => setSelectedItem(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDocumentsChanged={loadItems} />
-      {formMode && <ItemFormModal mode={formMode} item={formItem} types={types} statuses={statuses} locations={locations} projectName={currentProject.name} responsibleName={responsibleName} projectId={formItem?.projectId ?? projectId} responsibleId={responsibleId} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveItem} />}
+      {formMode && <ItemFormModal mode={formMode} item={formItem} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formItem?.projectId ?? projectId} responsibleId={responsibleId} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveItem} />}
     </section>
   )
 }

@@ -1,7 +1,7 @@
 import type {
   Project, Item, DocumentRecord, CalendarEvent, FloorPlanMarker,
   AuditLog, DashboardKpi, UpcomingExpiration, AlertItem, ActivityItem,
-  ChartBar, ConfigCard, DocKpi, LocationDetail, LocationAsset, User,
+  ChartBar, ConfigCard, DocKpi, User,
 } from '@/types'
 
 export const currentUser: User = {
@@ -317,21 +317,6 @@ export const floorPlanMarkers: FloorPlanMarker[] = [
   { id: 4, code: 'EXT-A12', label: '', left: 28, top: 72, pinColorClass: 'bg-red-500', dotColorClass: 'bg-white' },
   { id: 5, code: 'EXT-B04', label: '', left: 55, top: 78, pinColorClass: 'bg-red-500', dotColorClass: 'bg-white' },
   { id: 6, code: 'SRV-03', label: 'CPD', left: 85, top: 62, pinColorClass: 'bg-slate-700', dotColorClass: 'bg-amber-400' },
-]
-
-export const locationDetail: LocationDetail = {
-  name: 'Planta 1 · Nave A',
-  parent: 'Planta Industrial Norte → Nave Principal',
-  responsible: 'J. Ramírez',
-  assetCount: 42,
-  surface: '840 m²',
-  code: 'PIN-NA-01A',
-}
-
-export const locationAssets: LocationAsset[] = [
-  { code: 'CNC-05', name: 'Torno CNC Haas ST-20', installedDate: '04/02/2024', initials: 'CN', initialsBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600', statusChipClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-  { code: 'BH-04', name: 'Bomba hidráulica', installedDate: '15/07/2026', initials: 'BH', initialsBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600', statusChipClass: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-  { code: 'BSC-11', name: 'Báscula industrial', installedDate: '10/09/2025', initials: 'BA', initialsBgClass: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600', statusChipClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
 ]
 
 export const auditLogs: AuditLog[] = [

@@ -63,7 +63,7 @@ describe('items API validation', () => {
         installDate: '2026-02-30',
         typeId: 1,
         statusId: 1,
-        location: 'Planta 1 · Nave A',
+        locationId: 1,
         projectId: 1,
         responsibleId: 1,
         initials: 'QA',

@@ -33,6 +33,7 @@ model User {
   itemsOwned  Item[]          @relation("ItemResponsible")
   memberships ProjectMember[]
   auditLogs   AuditLog[]
+  locationsResponsible Location[] @relation("LocationResponsible")
 }
 
 model Project {
@@ -103,7 +104,7 @@ model Item {
   installDate      DateTime
   typeId           Int
   statusId         Int
-  location         String
+  locationId       Int
   projectId        Int
   responsibleId    Int
   initials         String
@@ -113,6 +114,7 @@ model Item {
 
   type        ItemType  @relation(fields: [typeId], references: [id])
   status      Status    @relation(fields: [statusId], references: [id])
+  location    Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   responsible User      @relation("ItemResponsible", fields: [responsibleId], references: [id])
   documents   Document[]
@@ -121,9 +123,9 @@ model Item {
 
   @@index([typeId])
   @@index([statusId])
+  @@index([locationId])
   @@index([projectId])
   @@index([responsibleId])
-  @@index([location])
 }
 
 model Status {
@@ -190,18 +192,26 @@ model Event {
 }
 
 model Location {
-  id          Int      @id @default(autoincrement())
-  name        String
-  parent      String
-  responsible String
-  assetCount  Int
-  surface     String
-  code        String   @unique
-  projectId   Int
-  createdAt   DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  name          String
+  label         String
+  code          String   @unique
+  surface       String
+  responsibleId Int
+  parentId      Int?
+  projectId     Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  floorPlan FloorPlan?
+  parent      Location?  @relation("LocationTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Location[] @relation("LocationTree")
+  responsible User       @relation("LocationResponsible", fields: [responsibleId], references: [id])
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items       Item[]
+  floorPlan   FloorPlan?
+
+  @@index([parentId])
+  @@index([projectId])
 }
 
 model FloorPlan {

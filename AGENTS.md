@@ -26,7 +26,7 @@ El HTML de referencia es un **contrato visual**. No es una inspiración. La apli
 
 - **Archivo protegido**: `docs/reference/docucore-prototype.html`
 - **SHA-256**: `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`
-- **Tamaño**: 126104 bytes (1709 líneas)
+- **Tamaño**: 126104 bytes (1800 líneas)
 - **Vistas identificadas**: 9 (dashboard, projects, items, docs, calendar, plans, locations, history, config)
 
 ## Arquitectura
@@ -85,7 +85,8 @@ pnpm test:e2e        # Playwright E2E
 pnpm test:visual     # Playwright regresión visual
 pnpm server          # Servidor Express (tsx watch)
 pnpm db:migrate      # Prisma migrate dev
-pnpm db:seed         # Seed de base de datos
+pnpm db:seed         # Seed canónico (142 activos, compatible con el HTML de referencia)
+pnpm db:reset:manual-test  # Reset a cero para pruebas manuales (0 activos/docs/ubicaciones)
 docker compose up    # Levantar todo (DB + app)
 ```
 
@@ -126,7 +127,7 @@ docker compose up    # Levantar todo (DB + app)
 
 - ✅ Prisma schema con 13 entidades (PostgreSQL)
 - ✅ Migración inicial aplicada
-- ✅ Seed reproducible con reinicio de identidades (142 items, 5 proyectos, 5 tipos, 5 estados, 5 ubicaciones)
+- ✅ Seed reproducible con reinicio de identidades (142 items, 5 proyectos, 5 tipos, 5 estados, 11 ubicaciones)
 - ✅ Express API con Zod (GET/POST/PUT/PATCH /api/items)
 - ✅ CRUD verificado: crear, editar, cambiar estado, filtrar, paginar
 - ✅ Auditoría automática en operaciones de escritura
@@ -156,6 +157,18 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ E2E de subida, versiones, descarga por bytes, persistencia y actualización/retiro de evento derivado
 - ⏳ Regresión visual pendiente: no se ha elevado el umbral de 0,5% ni modificado baselines
 
+**LOC-01 — Ubicaciones funcionales**: EN REVISIÓN (correcciones de integridad aplicadas; pendiente de validación final del usuario)
+
+- ✅ `Location` jerárquica real (`parentId` auto-referenciada), responsable por FK a `User` miembro del proyecto, `label` de presentación para la tabla (sin filas ocultas duplicadas); migraciones `20260807100000_location_hierarchy_and_item_fk`, correctivas `20260807120000_location_hidden` (superseded) / `20260807140000_location_label_not_hidden` y `20260808100000_location_label_no_default` (DEFAULT `''` residual eliminado; `prisma migrate diff` limpio)
+- ✅ `Item.location` (texto) → `locationId` FK obligatoria (`onDelete: Restrict`); filtro de ítems por ubicación incluye la subrama
+- ✅ API `GET/POST/PUT/DELETE /api/locations` con Zod, auditoría y borrado protegido (bloquea cualquier hija y activos en toda la subrama); validaciones de ciclo, mismo proyecto y responsable miembro; `GET /api/users`; `DELETE /api/items/:id`
+- ✅ POST/PUT `/api/items` validan antes de escribir: `location.projectId === projectId` y responsable miembro del proyecto; el PUT parcial valida el estado final (existentes + cambios)
+- ✅ `Location.label` sincronizado al renombrar: sigue al nuevo nombre si coincidía con el anterior; se conserva si es personalizada; el `label` explícito del PUT tiene prioridad
+- ✅ Dos estados de datos: `pnpm db:seed` canónico (142 activos; árbol, detalle, filtros y formulario comparten los mismos conteos; etiquetas largas de tabla derivadas de `label`) y `pnpm db:reset:manual-test` (0 activos/docs/ubicaciones; limpia el storage tras el reset de BD y solo con ruta+marcador válidos; termina con error si la limpieza segura falla)
+- ✅ Almacenamiento documental endurecido: marcador `.docucore-storage.json` con provisión solo en directorio nuevo y vacío, marcador ausente distinguido del corrupto/otro propietario (bloqueante) y errores de `writeFile` no ocultados
+- ✅ Shell sin mocks: `GET /api/session` (no-store) + `SessionProvider`. Alta por la UI: el Sidebar se actualiza sin recargar (recarga asíncrona de la sesión). Borrado directo por API (`DELETE /api/items/:id`): el conteo se actualiza al recargar la página, que es cuando la sesión se vuelve a cargar (E2E verifica ambos)
+- ✅ `LocationsView`: selección de hojas y padres, alta/edición, borrado con confirmación y mensaje, «Ver plano» deshabilitado sin plano, estados vacíos; regresión visual de `locations` en verde (máx. 0,069236%)
+
 ## Vistas
 
 | Vista | Estado | Validada |
@@ -166,7 +179,7 @@ docker compose up    # Levantar todo (DB + app)
 | Documentos | Implementada (PostgreSQL + almacenamiento local) | E2E; visual pendiente |
 | Calendario | Implementada (mock) | Visual (3 objetivos) |
 | Planos | Implementada (mock) | Visual (3 objetivos) |
-| Ubicaciones | Implementada (mock) | Visual (3 objetivos) |
+| Ubicaciones | Implementada (PostgreSQL, jerarquía + CRUD) | Visual (3 objetivos) + E2E |
 | Historial | Implementada (mock) | Visual (3 objetivos) |
 | Configuración | Implementada (mock) | Visual (3 objetivos) |
 
@@ -179,19 +192,24 @@ docker compose up    # Levantar todo (DB + app)
 | Datos demostrativos | Implementado (mock) |
 | CRUD Activos → PostgreSQL | Implementado y verificado E2E |
 | Documentos → PostgreSQL + archivos | Implementado y verificado E2E |
+| Ubicaciones → PostgreSQL (jerarquía + CRUD + asignación) | Implementado y verificado E2E |
 | Docker | Producción validada (app + PostgreSQL) |
 
 ## Errores conocidos
 
 Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; evaluar code splitting en una mejora posterior.
 
+Regresión visual: `pnpm test:visual` registra 24/30 con exit code 1; `locations` está 3/3 en verde (máx. 0,069236%). `documents` e `item-modal` mantienen el desfase preexistente de DOC-01 contra el HTML de referencia (contenidos documentales distintos); es trabajo pendiente de ese módulo, no de LOC-01. No se ha elevado el umbral de 0,5% ni modificado baselines.
+
 ## Último commit estable
 
-Auditoría funcional local y endurecimiento de Activos (`68f2cde`).
+La etapa LOC-01 se publica en `main` con el estado **EN REVISIÓN**. Para identificar el commit exacto de relevo, ejecutar `git log -1 --oneline`; no cambiar el estado a VALIDADO sin confirmación expresa del usuario.
 
 ## Próximo paso exacto
 
-Priorizar `CAL-01` o `ITEM-02`; los vencimientos documentales ya alimentan de forma validada los próximos eventos de `ITEM-03`.
+1. Ejecutar con el usuario `docs/progress/LOC-01_MANUAL_TEST.md` y registrar el resultado observado.
+2. Solo si el usuario acepta la prueba, cambiar LOC-01 de `EN REVISIÓN` a `VALIDADO` en `AGENTS.md`, `CURRENT_STATUS.md`, `ROADMAP.md` y `SESSION_LOG.md` mediante un commit documental separado.
+3. Después, priorizar la regresión visual pendiente de DOC-01 o continuar con `CAL-01` / `ITEM-02`; los vencimientos documentales ya alimentan los próximos eventos de `ITEM-03`.
 
 ## Archivos protegidos
 

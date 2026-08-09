@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
+import { StorageMarkerError, cleanDocumentStorage } from './lib/documentStorage'
 import { storeDocumentBuffer } from './lib/documentStorage'
 
 const prisma = new PrismaClient()
@@ -14,6 +15,50 @@ function isoFromEu(date: string, time?: string): Date {
 }
 
 const PROJECT_CODE = 'PRJ-2026-001'
+
+// Árbol visible del prototipo. Los hijos cuyo nombre NO comienza por el nombre
+// Modelo jerárquico real: todas las ubicaciones son administrables y visibles
+// al expandir su rama. `label` es el campo de presentación que muestra la tabla
+// de Activos (texto largo del prototipo); el árbol muestra `name`. Así no se
+// duplican ubicaciones ocultas.
+interface LocationSeed {
+  code: string
+  name: string
+  label: string
+  parentCode: string | null
+  responsibleEmail: string
+  surface: string
+  projectCode?: string
+}
+
+const locationsData: LocationSeed[] = [
+  // Ramas de nivel 1 del prototipo
+  { code: 'PIN-NP-01', name: 'Nave Principal', label: 'Nave Principal', parentCode: null, responsibleEmail: 'jr@docucore.local', surface: '2.200 m²' },
+  { code: 'PIN-AO-04', name: 'Anexo Oficinas', label: 'Anexo Oficinas', parentCode: null, responsibleEmail: 'maria@docucore.local', surface: '480 m²' },
+  { code: 'PIN-EX-05', name: 'Almacén exterior', label: 'Almacén exterior', parentCode: null, responsibleEmail: 'jr@docucore.local', surface: '1.200 m²' },
+  // Hojas y subramas visibles bajo Nave Principal
+  { code: 'PIN-NA-01A', name: 'Planta 1 · Nave A', label: 'Planta 1 · Nave A', parentCode: 'PIN-NP-01', responsibleEmail: 'jr@docucore.local', surface: '840 m²' },
+  { code: 'PIN-NB-01B', name: 'Planta 1 · Nave B', label: 'Planta 1 · Nave B', parentCode: 'PIN-NP-01', responsibleEmail: 'jr@docucore.local', surface: '760 m²' },
+  { code: 'PIN-NB-P3', name: 'Pasillo 3', label: 'Planta 1 · Nave B · Pasillo 3', parentCode: 'PIN-NB-01B', responsibleEmail: 'jr@docucore.local', surface: '90 m²' },
+  { code: 'PIN-SC-02', name: 'Sala compresores', label: 'Planta 1 · Sala compresores', parentCode: 'PIN-NP-01', responsibleEmail: 'agomez@docucore.local', surface: '120 m²' },
+  { code: 'PIN-LB-03', name: 'Laboratorio', label: 'Planta 1 · Laboratorio', parentCode: 'PIN-NP-01', responsibleEmail: 'ltorres@docucore.local', surface: '60 m²' },
+  { code: 'CPD-R3-24', name: 'CPD · Rack 3 · U24', label: 'CPD · Rack 3 · U24', parentCode: 'PIN-AO-04', responsibleEmail: 'pmartin@docucore.local', surface: '200 m²' },
+  { code: 'PIN-EX-04', name: 'Parking exterior', label: 'Parking exterior', parentCode: 'PIN-EX-05', responsibleEmail: 'jr@docucore.local', surface: '1.200 m²' },
+  // Proyecto secundario para pruebas de separación entre proyectos
+  { code: 'ECC-PL1', name: 'Planta 1 Centro', label: 'Planta 1 Centro', parentCode: null, responsibleEmail: 'pmartin@docucore.local', surface: '300 m²', projectCode: 'PRJ-2026-002' },
+]
+
+// Conteos objetivo del árbol (subrama): Nave A 42, Nave B 31, SC 8, LB 17,
+// Anexo 32, Almacén 12 (total 142). Los ítems canónicos fijan parte del conteo;
+// el resto se completa con relleno. BH-04 y BSC-11 quedan en Nave A.
+const generatedBuckets: Array<{ locationCode: string; count: number }> = [
+  { locationCode: 'PIN-NA-01A', count: 39 }, // + CNC-05, BH-04, BSC-11 = 42
+  { locationCode: 'PIN-NB-01B', count: 30 }, // + EXT-A12 (en Pasillo 3) = 31
+  { locationCode: 'PIN-SC-02', count: 7 }, // + CP-02 = 8
+  { locationCode: 'PIN-LB-03', count: 16 }, // + MG-203 = 17
+  { locationCode: 'PIN-AO-04', count: 31 }, // + SRV-03 (en CPD) = 32
+  { locationCode: 'PIN-EX-05', count: 11 }, // + VH-014 (en Parking) = 12
+]
 
 async function main(): Promise<void> {
   console.log('🌱 Seeding DocuCore database...')
@@ -37,6 +82,21 @@ async function main(): Promise<void> {
     RESTART IDENTITY CASCADE
   `)
 
+  // Tras vaciar la BD, limpiar ficheros huérfanos del storage. Solo se omite un
+  // marcador ausente (entorno nuevo, aún sin provisionar); un marcador corrupto
+  // o de otro propietario detiene el seed para no escribir sobre un storage que
+  // no es de DocuCore.
+  try {
+    const removed = await cleanDocumentStorage()
+    if (removed > 0) console.log(`  • Storage: ${removed} fichero(s) huérfano(s) eliminado(s).`)
+  } catch (error) {
+    if (error instanceof StorageMarkerError && error.code === 'MISSING_MARKER') {
+      // Sin marcador previo: nada que limpiar.
+    } else {
+      throw error
+    }
+  }
+
   console.log('  • Users (5)')
   await prisma.user.createMany({
     data: [
@@ -51,11 +111,24 @@ async function main(): Promise<void> {
   console.log('  • Projects (5)')
   await prisma.project.createMany({
     data: [
-      { code: 'PRJ-2026-001', name: 'Planta Industrial Norte', description: 'Planta de producción con 3 naves, 142 activos inventariados y 6 usuarios asociados.', status: 'ACTIVE', gradient: 'brand-indigo', assetCount: 142, userCount: 6, locationCount: 8 },
-      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Oficinas centrales · 5 plantas · Gestión de contratos y servicios.', status: 'ACTIVE', gradient: 'emerald-teal', assetCount: 87, userCount: 4, locationCount: 12 },
+      { code: PROJECT_CODE, name: 'Planta Industrial Norte', description: 'Planta de producción con 3 naves, 142 activos inventariados y 6 usuarios asociados.', status: 'ACTIVE', gradient: 'brand-indigo', assetCount: 142, userCount: 6, locationCount: locationsData.length },
+      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Oficinas centrales · 5 plantas · Gestión de contratos y servicios.', status: 'ACTIVE', gradient: 'emerald-teal', assetCount: 87, userCount: 4, locationCount: 1 },
       { code: 'PRJ-2026-003', name: 'Almacén Logístico Sur', description: 'Gestión de inventario, vehículos y extintores.', status: 'ACTIVE', gradient: 'amber-orange', assetCount: 213, userCount: 9, locationCount: 15 },
       { code: 'PRJ-2026-004', name: 'Cliente: Hospitales San Rafael', description: 'Gestión documental y calibraciones para equipo médico.', status: 'ACTIVE', gradient: 'purple-pink', assetCount: 58, userCount: 3, locationCount: 6 },
       { code: 'PRJ-2025-018', name: 'Auditoría ISO 9001 · 2025', description: 'Proyecto documental cerrado tras certificación.', status: 'ARCHIVED', gradient: 'slate', assetCount: 0, userCount: 2, locationCount: 0, docCount: 34 },
+    ],
+  })
+
+  console.log('  • Project members')
+  await prisma.projectMember.createMany({
+    data: [
+      { projectId: 1, userId: 1, role: 'Administradora' },
+      { projectId: 1, userId: 2, role: 'Técnico' },
+      { projectId: 1, userId: 3, role: 'Técnico' },
+      { projectId: 1, userId: 4, role: 'Laboratorio' },
+      { projectId: 1, userId: 5, role: 'Sistemas' },
+      { projectId: 2, userId: 5, role: 'Sistemas' },
+      { projectId: 2, userId: 1, role: 'Administradora' },
     ],
   })
 
@@ -81,29 +154,26 @@ async function main(): Promise<void> {
     ],
   })
 
-  console.log('  • Locations (5)')
-  const locationsData = [
-    { name: 'Planta 1 · Nave A', parent: 'Planta Industrial Norte → Nave Principal', responsible: 'J. Ramírez', assetCount: 42, surface: '840 m²', code: 'PIN-NA-01A' },
-    { name: 'Planta 1 · Sala compresores', parent: 'Planta Industrial Norte → Sala técnica', responsible: 'A. Gómez', assetCount: 6, surface: '120 m²', code: 'PIN-SC-02' },
-    { name: 'Planta 1 · Laboratorio', parent: 'Planta Industrial Norte → Laboratorio', responsible: 'L. Torres', assetCount: 18, surface: '60 m²', code: 'PIN-LB-03' },
-    { name: 'CPD · Rack 3 · U24', parent: 'Centro de procesamiento de datos', responsible: 'P. Martín', assetCount: 24, surface: '200 m²', code: 'CPD-R3-24' },
-    { name: 'Parking exterior', parent: 'Planta Industrial Norte → Exterior', responsible: 'J. Ramírez', assetCount: 9, surface: '1200 m²', code: 'PIN-EX-04' },
-  ]
-  for (const loc of locationsData) {
+  console.log(`  • Locations (${locationsData.length})`)
+  for (const location of locationsData) {
     await prisma.location.create({
       data: {
-        name: loc.name,
-        parent: loc.parent,
-        responsible: loc.responsible,
-        assetCount: loc.assetCount,
-        surface: loc.surface,
-        code: loc.code,
-        project: { connect: { code: PROJECT_CODE } },
+        code: location.code,
+        name: location.name,
+        label: location.label,
+        surface: location.surface,
+        parent: location.parentCode ? { connect: { code: location.parentCode } } : undefined,
+        responsible: { connect: { email: location.responsibleEmail } },
+        project: { connect: { code: location.projectCode ?? PROJECT_CODE } },
       },
     })
   }
 
   console.log('  • Items (142)')
+  // Los seis canónicos conservan el orden (ids 1-6) y sus ubicaciones de ficha
+  // para que la tabla de Activos coincida con el HTML de referencia. BH-04 y
+  // BSC-11 se intercalan después para el detalle de Planta 1 · Nave A, por lo
+  // que el relleno de Nave A comienza en id 9.
   const itemsData: Array<{
     code: string
     name: string
@@ -112,16 +182,18 @@ async function main(): Promise<void> {
     installDate: string
     typeName: string
     statusName: string
-    location: string
+    locationCode: string
     responsibleEmail: string
     initials: string
   }> = [
-    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', serialLabel: 'SN: HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', location: 'Planta 1 · Nave A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
-    { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', serialLabel: 'SN: AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', location: 'Planta 1 · Sala compresores', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
-    { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', serialLabel: 'SN: WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', location: 'Planta 1 · Laboratorio', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
-    { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', serialLabel: 'Lote: EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', location: 'Planta 1 · Nave B · Pasillo 3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
-    { code: 'SRV-03', name: 'Servidor Dell PowerEdge R750', serialNumber: 'DELL-R750-2023-003', serialLabel: 'SN: DELL-R750-2023-003', installDate: '15/06/2023', typeName: 'Servidor', statusName: 'Alerta', location: 'CPD · Rack 3 · U24', responsibleEmail: 'pmartin@docucore.local', initials: 'SV' },
-    { code: 'VH-014', name: 'Furgoneta Renault Master', serialNumber: '4521 LKM', serialLabel: 'Mat: 4521 LKM', installDate: '10/01/2021', typeName: 'Vehículo', statusName: 'Vencido', location: 'Parking exterior', responsibleEmail: 'jr@docucore.local', initials: 'VH' },
+    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', serialLabel: 'SN: HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
+    { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', serialLabel: 'SN: AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', locationCode: 'PIN-SC-02', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
+    { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', serialLabel: 'SN: WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-LB-03', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
+    { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', serialLabel: 'Lote: EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', locationCode: 'PIN-NB-P3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
+    { code: 'SRV-03', name: 'Servidor Dell PowerEdge R750', serialNumber: 'DELL-R750-2023-003', serialLabel: 'SN: DELL-R750-2023-003', installDate: '15/06/2023', typeName: 'Servidor', statusName: 'Alerta', locationCode: 'CPD-R3-24', responsibleEmail: 'pmartin@docucore.local', initials: 'SV' },
+    { code: 'VH-014', name: 'Furgoneta Renault Master', serialNumber: '4521 LKM', serialLabel: 'Mat: 4521 LKM', installDate: '10/01/2021', typeName: 'Vehículo', statusName: 'Vencido', locationCode: 'PIN-EX-04', responsibleEmail: 'jr@docucore.local', initials: 'VH' },
+    { code: 'BH-04', name: 'Bomba hidráulica', serialNumber: 'BH-2026-004', serialLabel: 'SN: BH-2026-004', installDate: '15/07/2026', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'BH' },
+    { code: 'BSC-11', name: 'Báscula industrial', serialNumber: 'BSC-2025-011', serialLabel: 'SN: BSC-2025-011', installDate: '10/09/2025', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-NA-01A', responsibleEmail: 'ltorres@docucore.local', initials: 'BA' },
   ]
   for (const it of itemsData) {
     await prisma.item.create({
@@ -131,42 +203,47 @@ async function main(): Promise<void> {
         serialNumber: it.serialNumber,
         serialLabel: it.serialLabel,
         installDate: isoFromEu(it.installDate),
-        location: it.location,
         initials: it.initials,
         type: { connect: { name: it.typeName } },
         status: { connect: { name: it.statusName } },
+        location: { connect: { code: it.locationCode } },
         project: { connect: { code: PROJECT_CODE } },
         responsible: { connect: { email: it.responsibleEmail } },
       },
     })
   }
 
-  const [project, machineType, activeStatus, responsible] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { code: PROJECT_CODE }, select: { id: true } }),
+  const [machineType, activeStatus, responsible] = await Promise.all([
     prisma.itemType.findUniqueOrThrow({ where: { name: 'Máquina' }, select: { id: true } }),
     prisma.status.findUniqueOrThrow({ where: { name: 'Activo' }, select: { id: true } }),
     prisma.user.findUniqueOrThrow({ where: { email: 'jr@docucore.local' }, select: { id: true } }),
   ])
 
-  // The canonical records stay first so the reference page remains stable.
-  await prisma.item.createMany({
-    data: Array.from({ length: 136 }, (_, index) => {
-      const sequence = String(index + 1).padStart(3, '0')
-      return {
-        code: `AST-${sequence}`,
-        name: `Activo industrial ${sequence}`,
-        serialNumber: `AST-SN-${sequence}`,
-        serialLabel: `SN: AST-SN-${sequence}`,
-        installDate: new Date(Date.UTC(2025, index % 12, (index % 28) + 1)),
-        typeId: machineType.id,
-        statusId: activeStatus.id,
-        location: 'Planta 1 · Nave A',
-        projectId: project.id,
-        responsibleId: responsible.id,
-        initials: 'AI',
-      }
-    }),
-  })
+  // Relleno determinista: completa los conteos visibles del árbol sin alterar
+  // los seis canónicos de la tabla ni los tres activos del detalle de Nave A.
+  let sequence = 0
+  for (const bucket of generatedBuckets) {
+    const location = await prisma.location.findUniqueOrThrow({ where: { code: bucket.locationCode }, select: { id: true, projectId: true } })
+    await prisma.item.createMany({
+      data: Array.from({ length: bucket.count }, () => {
+        sequence += 1
+        const label = String(sequence).padStart(3, '0')
+        return {
+          code: `AST-${label}`,
+          name: `Activo industrial ${label}`,
+          serialNumber: `AST-SN-${label}`,
+          serialLabel: `SN: AST-SN-${label}`,
+          installDate: new Date(Date.UTC(2025, sequence % 12, (sequence % 28) + 1)),
+          typeId: machineType.id,
+          statusId: activeStatus.id,
+          locationId: location.id,
+          projectId: location.projectId,
+          responsibleId: responsible.id,
+          initials: 'AI',
+        }
+      }),
+    })
+  }
 
   console.log('  • Related events (4) + document versions (207 logical documents)')
   const eventData = [
@@ -176,13 +253,14 @@ async function main(): Promise<void> {
     { itemCode: 'SRV-03', title: 'Revisión firmware', date: '12/08/2026', type: 'Mantenimiento de sistemas' },
   ]
   for (const event of eventData) {
+    const item = await prisma.item.findUniqueOrThrow({ where: { code: event.itemCode }, select: { id: true, projectId: true } })
     await prisma.event.create({
       data: {
         title: event.title,
         date: isoFromEu(event.date),
         type: event.type,
-        project: { connect: { code: PROJECT_CODE } },
-        item: { connect: { code: event.itemCode } },
+        projectId: item.projectId,
+        itemId: item.id,
       },
     })
   }

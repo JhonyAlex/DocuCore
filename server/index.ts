@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import itemsRouter from './routes/items'
 import documentsRouter from './routes/documents'
+import locationsRouter from './routes/locations'
 import metaRouter from './routes/meta'
 import { errorHandler } from './middleware/error'
 
@@ -18,6 +19,7 @@ app.get('/api/health', (_req, res) => {
 })
 app.use('/api/items', itemsRouter)
 app.use('/api/documents', documentsRouter)
+app.use('/api/locations', locationsRouter)
 app.use('/api', metaRouter)
 
 app.use('/api', (_req, res) => {

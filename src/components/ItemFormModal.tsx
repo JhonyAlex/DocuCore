@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ApiItem, ApiItemType, ApiStatus } from '@/lib/api'
+import type { ApiItem, ApiItemType, ApiLocation, ApiStatus } from '@/lib/api'
 
 export interface ItemFormValues {
   code: string
@@ -9,7 +9,7 @@ export interface ItemFormValues {
   installDate: string
   typeId: number
   statusId: number
-  location: string
+  locationId: number
   projectId: number
   responsibleId: number
   initials: string
@@ -20,7 +20,7 @@ interface ItemFormModalProps {
   item: ApiItem | null
   types: ApiItemType[]
   statuses: ApiStatus[]
-  locations: string[]
+  locations: ApiLocation[]
   projectName: string
   responsibleName: string
   projectId: number
@@ -45,7 +45,7 @@ function initialValues(item: ApiItem | null, typeId: number, statusId: number, p
     installDate: item ? dateForInput(item.installDate) : '',
     typeId: item?.typeId ?? typeId,
     statusId: item?.statusId ?? statusId,
-    location: item?.location ?? '',
+    locationId: item?.locationId ?? 0,
     projectId: item?.projectId ?? projectId,
     responsibleId: item?.responsibleId ?? responsibleId,
     initials: item?.initials ?? '',
@@ -163,9 +163,9 @@ export default function ItemFormModal({
               </div>
               <div>
                 <FieldLabel htmlFor="item-location">Ubicación</FieldLabel>
-                <select id="item-location" value={values.location} onChange={(event) => updateValue('location', event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
+                <select id="item-location" value={values.locationId || ''} onChange={(event) => updateValue('locationId', Number(event.target.value))} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
                   <option value="">Selecciona una ubicación</option>
-                  {locations.map((location) => <option key={location} value={location}>{location}</option>)}
+                  {locations.map((location) => <option key={location.id} value={location.id}>{location.label}</option>)}
                 </select>
               </div>
               <div>
