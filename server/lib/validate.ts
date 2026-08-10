@@ -18,7 +18,7 @@ export const createAssetSchema = z.object({
   projectId: z.number().int().positive(),
   responsibleId: z.number().int().positive(),
   initials: z.string().min(1),
-  dynamicFields: z.record(z.unknown()).optional(),
+  dynamicFields: z.array(z.object({ definitionId: z.number().int().positive(), value: z.unknown() }).strict()).max(200).optional(),
 }).strict()
 
 export const updateAssetSchema = createAssetSchema.partial()

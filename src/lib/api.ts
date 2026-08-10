@@ -5,6 +5,17 @@ const API_BASE = '/api'
 export interface ApiAssetType {
   id: number
   name: string
+  projectId?: number
+  sortOrder?: number
+  isActive?: boolean
+  assetCount?: number
+  fieldCount?: number
+}
+
+export interface AssetTypeInput {
+  name: string
+  sortOrder?: number
+  isActive?: boolean
 }
 
 export interface ApiStatus {
@@ -50,6 +61,73 @@ export interface ApiAssetEvent {
   sourceLabel: string
 }
 
+export type DynamicFieldType = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'MULTISELECT' | 'BOOLEAN'
+
+export interface ApiDynamicFieldOption {
+  id: number
+  key: string
+  label: string
+  sortOrder: number
+  isActive?: boolean
+}
+
+export interface DynamicFieldDefinitionInput {
+  fieldName: string
+  description?: string | null
+  groupName: string
+  fieldType: DynamicFieldType
+  required: boolean
+  placeholder?: string | null
+  unit?: string | null
+  minValue?: number | null
+  maxValue?: number | null
+  decimalPlaces?: number | null
+  periodicity?: DocumentPeriodicity | null
+  periodicityMode?: DocumentPeriodicityMode | null
+  eventTitle?: string | null
+  sortOrder?: number
+  isActive?: boolean
+  assetTypeIds: number[]
+  options: Array<{ key?: string; label: string }>
+}
+
+export interface ApiDynamicFieldDefinition extends DynamicFieldDefinitionInput {
+  id: number
+  projectId: number
+  key: string
+  assetTypes: ApiAssetType[]
+  options: ApiDynamicFieldOption[]
+  usageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApiAssetDynamicField {
+  definitionId: number
+  key: string
+  fieldName: string
+  description: string | null
+  groupName: string
+  fieldType: DynamicFieldType
+  required: boolean
+  placeholder: string | null
+  unit: string | null
+  minValue: number | null
+  maxValue: number | null
+  decimalPlaces: number | null
+  periodicity: DocumentPeriodicity | null
+  periodicityMode: DocumentPeriodicityMode | null
+  eventTitle: string | null
+  sortOrder: number
+  options: ApiDynamicFieldOption[]
+  value: unknown
+}
+
+export interface DynamicFieldValueInput {
+  definitionId: number
+  value: unknown
+}
+
 export interface AssetWriteInput {
   code: string
   name: string
@@ -61,7 +139,7 @@ export interface AssetWriteInput {
   projectId: number
   responsibleId: number
   initials: string
-  dynamicFields?: Record<string, unknown>
+  dynamicFields?: DynamicFieldValueInput[]
 }
 
 export interface ApiLocationRef {
@@ -96,7 +174,7 @@ export interface ApiAsset {
   status?: { id: number; name: string; pulseDot: string | null }
   location?: ApiLocationRef
   responsible?: ApiUserRef
-  dynamicFields?: Record<string, unknown>
+  dynamicFields?: ApiAssetDynamicField[]
 }
 
 export interface ApiLocation {
@@ -333,8 +411,53 @@ export function deleteAssetImage(id: number): Promise<void> {
   return request<void>(`/assets/${id}/image`, { method: 'DELETE' })
 }
 
-export function fetchAssetTypes(): Promise<ApiAssetType[]> {
-  return request<ApiAssetType[]>('/asset-types')
+export function fetchAssetTypes(projectId?: number): Promise<ApiAssetType[]> {
+  const suffix = projectId ? `?projectId=${projectId}` : ''
+  return request<ApiAssetType[]>(`/asset-types${suffix}`)
+}
+
+export function fetchConfiguredAssetTypes(projectId: number, includeInactive = false): Promise<ApiAssetType[]> {
+  return request<ApiAssetType[]>(`/projects/${projectId}/asset-types${includeInactive ? '?includeInactive=true' : ''}`)
+}
+
+export function createAssetType(projectId: number, input: AssetTypeInput): Promise<ApiAssetType> {
+  return request<ApiAssetType>(`/projects/${projectId}/asset-types`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateAssetType(projectId: number, id: number, input: Partial<AssetTypeInput>): Promise<ApiAssetType> {
+  return request<ApiAssetType>(`/projects/${projectId}/asset-types/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function archiveAssetType(projectId: number, id: number): Promise<void> {
+  return request<void>(`/projects/${projectId}/asset-types/${id}`, { method: 'DELETE' })
+}
+
+export function fetchDynamicFieldDefinitions(projectId: number, options: { assetTypeId?: number; includeInactive?: boolean } = {}): Promise<ApiDynamicFieldDefinition[]> {
+  const query = new URLSearchParams()
+  if (options.assetTypeId) query.set('assetTypeId', String(options.assetTypeId))
+  if (options.includeInactive) query.set('includeInactive', 'true')
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  return request<ApiDynamicFieldDefinition[]>(`/projects/${projectId}/dynamic-fields${suffix}`)
+}
+
+export function createDynamicFieldDefinition(projectId: number, input: DynamicFieldDefinitionInput): Promise<ApiDynamicFieldDefinition> {
+  return request<ApiDynamicFieldDefinition>(`/projects/${projectId}/dynamic-fields`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateDynamicFieldDefinition(projectId: number, id: number, input: Partial<DynamicFieldDefinitionInput>): Promise<ApiDynamicFieldDefinition> {
+  return request<ApiDynamicFieldDefinition>(`/projects/${projectId}/dynamic-fields/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function archiveDynamicFieldDefinition(projectId: number, id: number): Promise<void> {
+  return request<void>(`/projects/${projectId}/dynamic-fields/${id}`, { method: 'DELETE' })
+}
+
+export function updateAssetDynamicFields(assetId: number, values: DynamicFieldValueInput[]): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${assetId}/dynamic-fields`, { method: 'PUT', body: JSON.stringify({ values }) })
+}
+
+export function completeAssetDynamicDate(assetId: number, definitionId: number, performedDate: string): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${assetId}/dynamic-fields/${definitionId}/complete`, { method: 'POST', body: JSON.stringify({ performedDate }) })
 }
 
 export function fetchStatuses(): Promise<ApiStatus[]> {

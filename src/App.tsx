@@ -9,6 +9,8 @@ import PlansView from '@/views/PlansView'
 import LocationsView from '@/views/LocationsView'
 import HistoryView from '@/views/HistoryView'
 import ConfigView from '@/views/ConfigView'
+import DynamicFieldsConfigView from '@/views/DynamicFieldsConfigView'
+import AssetTypesConfigView from '@/views/AssetTypesConfigView'
 
 export default function App() {
   return (
@@ -25,6 +27,8 @@ export default function App() {
         <Route path="/locations" element={<LocationsView />} />
         <Route path="/history" element={<HistoryView />} />
         <Route path="/config" element={<ConfigView />} />
+        <Route path="/config/dynamic-fields" element={<DynamicFieldsConfigView />} />
+        <Route path="/config/asset-types" element={<AssetTypesConfigView />} />
       </Route>
     </Routes>
   )

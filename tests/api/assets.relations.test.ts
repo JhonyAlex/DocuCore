@@ -125,7 +125,7 @@ describe('assets relation validation', () => {
       body: JSON.stringify(assetPayload({ locationId: project2Location.id })),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
   })
 
   it('rejects a responsible who is not a member of the project on create', async () => {
@@ -135,7 +135,7 @@ describe('assets relation validation', () => {
       body: JSON.stringify(assetPayload({ projectId: 2, responsibleId: project1OnlyUser.id })),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
   })
 
   it('rejects a nonexistent location on create', async () => {
@@ -145,7 +145,7 @@ describe('assets relation validation', () => {
       body: JSON.stringify(assetPayload({ locationId: 999_999 })),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
   })
 
   it('keeps existing relations valid when the PUT changes only the name', async () => {
@@ -183,7 +183,7 @@ describe('assets relation validation', () => {
       body: JSON.stringify({ projectId: 2 }),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
   })
 
   it('rejects a partial PUT that changes only the location to another project', async () => {
@@ -200,7 +200,7 @@ describe('assets relation validation', () => {
       body: JSON.stringify({ locationId: project2Location.id }),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Location and responsible must belong to the asset project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
   })
 
   it('accepts a PUT that moves project, location and responsible coherently', async () => {
@@ -211,14 +211,18 @@ describe('assets relation validation', () => {
     })).json() as { id: number }
     createdAssetIds.push(created.id)
 
+    const targetTypes = await (await api('/api/asset-types?projectId=2')).json() as Array<{ id: number; name: string }>
+    const targetMachine = targetTypes.find((type) => type.name === 'Máquina')!
+
     const response = await api(`/api/assets/${created.id}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ projectId: 2, locationId: project2Location.id, responsibleId: bothProjectsUser.id }),
+      body: JSON.stringify({ projectId: 2, typeId: targetMachine.id, locationId: project2Location.id, responsibleId: bothProjectsUser.id }),
     })
     expect(response.status).toBe(200)
-    const updated = await response.json() as { projectId: number; locationId: number; responsibleId: number }
+    const updated = await response.json() as { projectId: number; typeId: number; locationId: number; responsibleId: number }
     expect(updated.projectId).toBe(2)
+    expect(updated.typeId).toBe(targetMachine.id)
     expect(updated.locationId).toBe(project2Location.id)
     expect(updated.responsibleId).toBe(bothProjectsUser.id)
   })

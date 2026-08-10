@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus, ApiUserRef } from '@/lib/api'
+import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus, ApiUserRef, DynamicFieldValueInput } from '@/lib/api'
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
 import SuggestInput from '@/components/SuggestInput'
 import AssetImagePicker from '@/components/AssetImagePicker'
 import AssetActionConfirmDialog from '@/components/AssetActionConfirmDialog'
+import DynamicFieldsFormSection from '@/components/DynamicFieldsFormSection'
 import { buildAssetSuggestionSearch } from '@/lib/assetSuggestions'
 
 // UX-03: valor especial del select de ubicación que abre el alta rápida de ubicación.
@@ -20,6 +21,7 @@ export interface AssetFormValues {
   projectId: number
   responsibleId: number
   initials: string
+  dynamicFields: DynamicFieldValueInput[]
 }
 
 interface AssetFormModalProps {
@@ -62,6 +64,7 @@ function initialValues(asset: ApiAsset | null, mode: AssetFormModalProps['mode']
     projectId: asset?.projectId ?? projectId,
     responsibleId: asset?.responsibleId ?? responsibleId,
     initials: asset?.initials ?? '',
+    dynamicFields: asset?.dynamicFields?.map((field) => ({ definitionId: field.definitionId, value: needsNewIdentity && field.fieldType === 'DATE' ? null : field.value })) ?? [],
   }
 }
 
@@ -247,6 +250,7 @@ export default function AssetFormModal({
               <div className="md:col-span-2">
                 <AssetImagePicker asset={mode === 'edit' ? asset : null} value={imageFile} onChange={setImageFile} />
               </div>
+              <DynamicFieldsFormSection key={`${mode}-${asset?.id ?? 'new'}-${values.typeId}`} projectId={values.projectId} assetTypeId={values.typeId} initialFields={asset?.dynamicFields ?? []} duplicate={mode === 'duplicate'} disabled={saving} onChange={(dynamicFields) => updateValue('dynamicFields', dynamicFields)} />
             </div>
           </div>
           <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
