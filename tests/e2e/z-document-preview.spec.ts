@@ -85,4 +85,60 @@ test.describe.serial('document preview', () => {
     await xlsxDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
     expect(consoleIssues).toEqual([])
   })
+
+  test('refreshes the embedded preview right after uploading a new version', async ({ page, consoleIssues }) => {
+    const name = `E2E Preview Refresh ${Date.now()}`
+    await createDocument(page, name, 'text/plain', Buffer.from('PRIMERA VERSION'), 'primera-e2e.txt')
+
+    await page.goto('/docs')
+    await page.getByText(name, { exact: true }).click()
+    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await expect(manageDialog.locator('pre')).toContainText('PRIMERA VERSION')
+
+    // Subir una nueva versión de otro contenido: la vista previa incrustada
+    // debe mostrar la versión vigente nueva sin reabrir el modal.
+    await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'segunda-e2e.txt', mimeType: 'text/plain', buffer: Buffer.from('SEGUNDA VERSION') })
+    await expect(manageDialog.locator('pre')).toContainText('SEGUNDA VERSION')
+    await expect(manageDialog.locator('pre')).not.toContainText('PRIMERA VERSION')
+    await expect(manageDialog.getByText(/v2 · segunda-e2e\.txt/)).toBeVisible()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('keeps long version filenames inside the dialog without overflowing', async ({ page, consoleIssues }) => {
+    const name = `E2E Long Name ${Date.now()}`
+    const longName1 = `certificado-calibracion-${'a'.repeat(180)}-v1.txt`
+    const longName2 = `certificado-calibracion-${'b'.repeat(180)}-v2.txt`
+    const doc = await createDocument(page, name, 'text/plain', Buffer.from('v1'), longName1)
+    const version = await page.request.post(`/api/documents/${doc.id}/versions`, {
+      multipart: { issueDate: '2026-07-15', file: { name: longName2, mimeType: 'text/plain', buffer: Buffer.from('v2') } },
+    })
+    expect(version.status()).toBe(201)
+
+    await page.goto('/docs')
+    await page.getByText(name, { exact: true }).click()
+    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+
+    // Nombres de fichero largos: el historial los trunca con ellipsis (title
+    // con el nombre completo) y las acciones «Ver»/«Descargar» permanecen dentro.
+    const rows = manageDialog.locator('ul li')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.nth(0).locator('span[title]')).toHaveAttribute('title', longName2)
+    await expect(rows.nth(1).locator('span[title]')).toHaveAttribute('title', longName1)
+    await expect(manageDialog.getByRole('button', { name: 'Ver v2' })).toBeInViewport()
+    await expect(manageDialog.getByRole('button', { name: 'Descargar v2' })).toBeInViewport()
+    await expect(manageDialog.getByRole('button', { name: 'Ver v1' })).toBeInViewport()
+    await expect(manageDialog.getByRole('button', { name: 'Descargar v1' })).toBeInViewport()
+
+    // La vista histórica usa sus propios bytes y deja el modal de gestión abierto.
+    await manageDialog.getByRole('button', { name: 'Ver v1' }).click()
+    const historicalPreview = page.getByRole('dialog', { name: `Vista previa de ${name}` })
+    await expect(historicalPreview).toContainText('v1')
+    await expect(historicalPreview.locator('pre')).toContainText('v1')
+    await historicalPreview.getByRole('button', { name: 'Cerrar vista previa' }).click()
+    await expect(manageDialog).toBeVisible()
+
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    expect(consoleIssues).toEqual([])
+  })
 })

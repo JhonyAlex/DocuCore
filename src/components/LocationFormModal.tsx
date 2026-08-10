@@ -126,7 +126,7 @@ export default function LocationFormModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
       <div role="dialog" aria-modal="true" aria-labelledby="location-form-title" className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div className="shrink-0 p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <div className="text-xs font-mono text-slate-500">{mode === 'create' ? 'NUEVA UBICACIÓN' : location?.code}</div>
             <h3 id="location-form-title" className="font-semibold text-lg">{mode === 'create' ? 'Nueva ubicación' : 'Editar ubicación'}</h3>
@@ -137,7 +137,7 @@ export default function LocationFormModal({
         </div>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="p-5 overflow-y-auto scrollbar-thin">
+          <div className="min-h-0 flex-1 p-5 overflow-y-auto scrollbar-thin">
             {(error || optionsError) && <div role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50/70 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error ?? 'No se pudieron cargar las opciones necesarias. Cierra el formulario e inténtalo de nuevo.'}</div>}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
@@ -170,7 +170,7 @@ export default function LocationFormModal({
               </div>
             </div>
           </div>
-          <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
+          <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
             <button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Cancelar</button>
             <button type="submit" disabled={saving || !optionsReady || optionsError} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed">{saving ? 'Guardando…' : mode === 'create' ? 'Crear ubicación' : 'Guardar cambios'}</button>
           </div>

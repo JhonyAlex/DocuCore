@@ -81,13 +81,13 @@ export default function DocumentsTable({ documents, loading, error, selectedIds,
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-lg ${documentIconClasses[document.type] ?? documentIconClasses.Manual} flex items-center justify-center text-xs font-bold`}>{format}</div>
-                      <div>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); onRowClick(document) }} className="font-medium text-left hover:text-brand-600">{document.name}</button>
-                        <div className="text-xs text-slate-500">{version ? `${formatDocumentSize(version.sizeBytes)} · Subido ${formatApiDate(version.uploadedAt)}` : 'Sin versiones'}</div>
+                      <div className="min-w-0">
+                        <button type="button" onClick={(event) => { event.stopPropagation(); onRowClick(document) }} title={document.name} className="block max-w-72 truncate font-medium text-left hover:text-brand-600">{document.name}</button>
+                        <div className="truncate text-xs text-slate-500">{version ? `${formatDocumentSize(version.sizeBytes)} · Subido ${formatApiDate(version.uploadedAt)}` : 'Sin versiones'}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{document.assets.length > 0 ? document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ') : '—'}</td>
+                  <td className="max-w-56 truncate px-4 py-3 text-slate-600 dark:text-slate-300" title={document.assets.length > 0 ? document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ') : undefined}>{document.assets.length > 0 ? document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ') : '—'}</td>
                   <td className="px-4 py-3"><span className={`chip ${typeClasses[document.type] ?? typeClasses.Manual}`}>{document.type}</span></td>
                   <td className="px-4 py-3 font-mono text-xs">{version ? `v${version.version}` : '—'}</td>
                   <td className="px-4 py-3 text-xs">{version ? formatApiDate(version.issueDate) : '—'}</td>

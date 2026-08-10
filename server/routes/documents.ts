@@ -77,6 +77,18 @@ function parseId(value: string): number | null {
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
+async function sendDocumentVersion(
+  res: Response,
+  version: { storageKey: string; mimeType: string; originalName: string },
+  disposition: 'inline' | 'attachment',
+): Promise<void> {
+  const bytes = await readDocumentFile(version.storageKey)
+  res.setHeader('Content-Type', version.mimeType)
+  res.setHeader('Content-Length', String(bytes.length))
+  res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodeURIComponent(version.originalName)}`)
+  res.send(bytes)
+}
+
 function uploadSingle(req: Request, res: Response): Promise<void> {
   return new Promise((resolve, reject) => upload.single('file')(req, res, (error) => error ? reject(error) : resolve()))
 }
@@ -314,11 +326,7 @@ router.get('/:id/preview', asyncHandler(async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   const version = await prisma.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
-  const bytes = await readDocumentFile(version.storageKey)
-  res.setHeader('Content-Type', version.mimeType)
-  res.setHeader('Content-Length', String(bytes.length))
-  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(version.originalName)}`)
-  res.send(bytes)
+  await sendDocumentVersion(res, version, 'inline')
 }))
 
 router.get('/:id/download', asyncHandler(async (req, res) => {
@@ -326,11 +334,18 @@ router.get('/:id/download', asyncHandler(async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   const version = await prisma.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
-  const bytes = await readDocumentFile(version.storageKey)
-  res.setHeader('Content-Type', version.mimeType)
-  res.setHeader('Content-Length', String(bytes.length))
-  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(version.originalName)}`)
-  res.send(bytes)
+  await sendDocumentVersion(res, version, 'attachment')
+}))
+
+// Cada versión histórica se puede visualizar sin convertirla en la versión
+// vigente. Usa el mismo contrato inline que la vista previa actual.
+router.get('/:id/versions/:version/preview', asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id)
+  const versionNumber = parseId(req.params.version)
+  if (!id || !versionNumber) return res.status(400).json({ error: 'Invalid id' })
+  const version = await prisma.documentVersion.findUnique({ where: { documentId_version: { documentId: id, version: versionNumber } } })
+  if (!version) return res.status(404).json({ error: 'Document version not found' })
+  await sendDocumentVersion(res, version, 'inline')
 }))
 
 router.get('/:id/versions/:version/download', asyncHandler(async (req, res) => {
@@ -339,11 +354,7 @@ router.get('/:id/versions/:version/download', asyncHandler(async (req, res) => {
   if (!id || !versionNumber) return res.status(400).json({ error: 'Invalid id' })
   const version = await prisma.documentVersion.findUnique({ where: { documentId_version: { documentId: id, version: versionNumber } } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
-  const bytes = await readDocumentFile(version.storageKey)
-  res.setHeader('Content-Type', version.mimeType)
-  res.setHeader('Content-Length', String(bytes.length))
-  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(version.originalName)}`)
-  res.send(bytes)
+  await sendDocumentVersion(res, version, 'attachment')
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {

@@ -411,6 +411,17 @@ test.describe('DocuCore application', () => {
     await expect(assetDialog.getByText('Certificado E2E Documento-Activo', { exact: true })).toBeVisible()
     await assetDialog.getByRole('button', { name: /Documentos.*1/ }).click()
     await expect(assetDialog.getByText('Certificado E2E Documento-Activo v1', { exact: true })).toBeVisible()
+
+    // Abrir el documento asociado desde la ficha no navega a Documentos ni
+    // cierra la ficha: «Gestionar documento» se apila encima.
+    await assetDialog.getByRole('button', { name: 'Gestionar Certificado E2E Documento-Activo' }).click()
+    const nestedDocumentDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await expect(nestedDocumentDialog).toBeVisible()
+    await expect(assetDialog).toBeVisible()
+    await expect(page).toHaveURL(/\/assets$/)
+    await nestedDocumentDialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+    await expect(nestedDocumentDialog).toBeHidden()
+    await expect(assetDialog).toBeVisible()
     await assetDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
 
     await page.goto('/docs')

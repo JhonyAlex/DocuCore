@@ -110,4 +110,40 @@ test.describe.serial('asset image', () => {
     await page.request.post(`/api/assets/${asset.id}/purge`, {}).catch(() => undefined)
     expect(consoleIssues).toEqual([])
   })
+
+  test('opens the photo in a viewer when touching the preview and closes it with Escape', async ({ page, consoleIssues }) => {
+    const asset = await createAsset(page, `QA-VIEW-${Date.now() % 100000}`, `SN-VIEW-${Date.now()}`)
+    const upload = await page.request.post(`/api/assets/${asset.id}/image`, {
+      multipart: { image: { name: 'foto.png', mimeType: 'image/png', buffer: PNG_BYTES } },
+    })
+    expect(upload.status()).toBe(200)
+
+    await page.goto('/assets')
+    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill(asset.name)
+    await page.locator('tbody tr', { hasText: asset.name }).click()
+    const assetDialog = page.getByRole('dialog', { name: asset.name })
+    const openViewer = assetDialog.getByRole('button', { name: `Abrir foto de ${asset.name}` })
+    await expect(openViewer).toBeVisible()
+
+    // Tocar cualquier zona de la foto abre el visor ampliado con la misma imagen.
+    await openViewer.click()
+    const photoDialog = page.getByRole('dialog', { name: `Foto de ${asset.name}` })
+    await expect(photoDialog.getByRole('img', { name: `Foto de ${asset.name}` })).toBeVisible()
+
+    // Escape cierra solo el visor; la ficha permanece abierta.
+    await page.keyboard.press('Escape')
+    await expect(photoDialog).toBeHidden()
+    await expect(assetDialog).toBeVisible()
+
+    // Reabrir y cerrar con ✕.
+    await openViewer.click()
+    await expect(photoDialog).toBeVisible()
+    await photoDialog.getByRole('button', { name: 'Cerrar foto' }).click()
+    await expect(photoDialog).toBeHidden()
+    await expect(assetDialog).toBeVisible()
+
+    await assetDialog.getByRole('button', { name: 'Cerrar' }).last().click()
+    await page.request.post(`/api/assets/${asset.id}/purge`, {}).catch(() => undefined)
+    expect(consoleIssues).toEqual([])
+  })
 })

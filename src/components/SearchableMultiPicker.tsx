@@ -74,9 +74,9 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
     <div ref={rootRef}>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5">
         {values.map((selected) => (
-          <span key={selected.id} className="inline-flex items-center gap-1 rounded-md bg-brand-50 dark:bg-brand-900/30 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
-            {selected.label}
-            <button type="button" aria-label={`Quitar ${selected.label}`} disabled={disabled} onClick={() => remove(selected)} className="text-brand-500 hover:text-brand-700 dark:hover:text-brand-200 disabled:opacity-40">×</button>
+          <span key={selected.id} title={selected.label} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-brand-50 dark:bg-brand-900/30 px-2 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
+            <span className="truncate">{selected.label}</span>
+            <button type="button" aria-label={`Quitar ${selected.label}`} disabled={disabled} onClick={() => remove(selected)} className="shrink-0 text-brand-500 hover:text-brand-700 dark:hover:text-brand-200 disabled:opacity-40">×</button>
           </span>
         ))}
         <input

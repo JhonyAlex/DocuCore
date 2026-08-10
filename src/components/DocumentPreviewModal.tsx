@@ -26,7 +26,7 @@ export function DocumentPreviewBody({ name, mimeType, objectUrl, text, compact =
   if (isText) {
     return <pre className={compact ? 'pointer-events-none whitespace-pre-wrap text-xs overflow-hidden max-h-40 p-3' : 'whitespace-pre-wrap text-sm overflow-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3'}>{text ?? ''}</pre>
   }
-  return <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400"><p>Este formato no tiene vista previa en el navegador.</p><p className="mt-1">Descarga el archivo desde «Descargar versión actual» para visualizarlo.</p></div>
+  return <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400"><p>Este formato no tiene vista previa en el navegador.</p><p className="mt-1">Descarga esta versión para visualizarla.</p></div>
 }
 
 type DocumentPreviewModalProps = {
@@ -61,11 +61,11 @@ export default function DocumentPreviewModal({ name, version, mimeType, objectUr
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Vista previa de ${name}`} tabIndex={-1} className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none flex flex-col">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h2 className="font-semibold text-lg truncate">Vista previa · {name} · v{version}</h2>
-          <button type="button" aria-label="Cerrar vista previa" onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">×</button>
+        <div className="shrink-0 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+          <h2 className="min-w-0 truncate font-semibold text-lg">Vista previa · {name} · v{version}</h2>
+          <button type="button" aria-label="Cerrar vista previa" onClick={onClose} className="shrink-0 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">×</button>
         </div>
-        <div className="p-4 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-4">
           <DocumentPreviewBody name={name} mimeType={mimeType} objectUrl={objectUrl} text={text} />
         </div>
       </div>

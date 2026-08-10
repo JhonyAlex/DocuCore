@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Vista previa por versión documental**: cada entrada del historial de «Gestionar documento» incorpora «Ver» junto a «Descargar»; `GET /api/documents/:id/versions/:version/preview` sirve exactamente la versión elegida inline sin alterar la versión vigente.
+- **Gestión documental desde la ficha del activo**: los documentos asociados son clicables y abren «Gestionar documento» encima de la ficha, sin navegar ni perder el contexto del activo.
 - **Imagen del activo (IMG-01)**: el cuadro de imagen de la ficha del activo muestra la foto (o el placeholder del HTML de referencia) y permite **subirla, cambiarla y quitarla** desde el hover; el formulario de alta/edición permite **elegir la imagen al añadir un activo desde cero** (se sube al guardar). Una imagen por activo, reemplazable, persistente en el storage gestionado de DocuCore (`POST/DELETE /api/assets/:id/image` y `GET /api/assets/:id/image` que la sirve inline con el MIME almacenado; PNG/JPG/WebP/GIF, máx. 10 MB); la purga del activo borra también su fichero. En reposo sin imagen, el cuadro es idéntico al HTML de referencia.
 - **Vista previa de documentos (DOC-03)**: al abrir «Gestionar documento», la versión actual se muestra incrustada justo debajo del campo Emisión, sin botón previo — PDF en visor nativo (iframe), imágenes en `<img>` y texto plano en `<pre>`; al tocar la vista previa se abre el visor ampliado. Los formatos sin visor nativo (xlsx/xls) muestran el área deshabilitada con la indicación de descargar el archivo. Escape/backdrop/✕ cierran solo el visor sin cerrar el modal padre.
 - **Formatos de imagen permitidos (DOC-03)**: la subida de documentos (alta y nuevas versiones) acepta también PNG, JPG/JPEG, WebP y GIF, tanto en el servidor (MIME + claves de almacenamiento) como en el selector de fichero; `GET /api/documents/:id/preview` sirve la versión actual en línea (`Content-Disposition: inline`), la descarga conserva `attachment`.
@@ -38,6 +40,8 @@
 
 ### Changed
 
+- Las barras de desplazamiento de toda la aplicación pasan a 5 px, con pista transparente y pulgar sutil que gana contraste al pasar el puntero.
+- Los modales con acciones mantienen cabecera y pie visibles; solo se desplaza el cuerpo, incluidos formularios de activo/ubicación, gestión documental y confirmaciones.
 - La relación documento-activo pasa de 1-N (`Document.itemId`) a N-N (tabla `DocumentItem`); la API de documentos usa `itemIds` en lugar de `itemId` en creación y edición, y el `PATCH` reemplaza el conjunto completo.
 - El duplicado de un activo nace con el estado por defecto de un activo nuevo (Activo) en lugar de heredar el ciclo de vida del origen; código y número de serie quedan vacíos por unicidad.
 - `Item.serialLabel` se elimina del formulario, API y PostgreSQL; la presentación `SN`, `Lote` o `Mat` se deriva del tipo y del número de serie. `Item.serialNumber` pasa a ser único mediante la migración `20260809190000_item_serial_unique_remove_label`.

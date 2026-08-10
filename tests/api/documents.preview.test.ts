@@ -43,6 +43,13 @@ async function createDocument(name: string, mimeType: string, bytes: Buffer, fil
   return created.id
 }
 
+async function createVersion(id: number, mimeType: string, bytes: Buffer, fileName: string): Promise<void> {
+  const form = new FormData()
+  form.set('issueDate', '2026-08-02')
+  form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), fileName)
+  expect((await api(`/api/documents/${id}/versions`, { method: 'POST', body: form })).status).toBe(201)
+}
+
 beforeAll(async () => {
   process.env.DATABASE_URL = databaseUrl
   storageDir = await mkdtemp(path.join(tmpdir(), 'docucore-preview-'))
@@ -87,6 +94,22 @@ describe('document preview endpoint', () => {
     expect(response.headers.get('content-type')).toContain('application/pdf')
     expect(response.headers.get('content-disposition')).toContain('inline')
     expect(Buffer.from(await response.arrayBuffer())).toEqual(PDF_BYTES)
+  })
+
+  it('serves a selected historical version inline without changing the current version', async () => {
+    const firstBytes = Buffer.from('VERSION HISTORICA')
+    const currentBytes = Buffer.from('VERSION VIGENTE')
+    const id = await createDocument(`QA-PREVIEW-HISTORY-${uniqueSuffix()}`, 'text/plain', firstBytes, 'historica.txt')
+    await createVersion(id, 'text/plain', currentBytes, 'vigente.txt')
+
+    const historical = await api(`/api/documents/${id}/versions/1/preview`)
+    expect(historical.status).toBe(200)
+    expect(historical.headers.get('content-type')).toContain('text/plain')
+    expect(historical.headers.get('content-disposition')).toContain('inline')
+    expect(Buffer.from(await historical.arrayBuffer())).toEqual(firstBytes)
+
+    const current = await api(`/api/documents/${id}/preview`)
+    expect(Buffer.from(await current.arrayBuffer())).toEqual(currentBytes)
   })
 
   it('serves an xlsx document (no native preview; download keeps attachment)', async () => {

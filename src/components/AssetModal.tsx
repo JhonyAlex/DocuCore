@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
-import AssetImageBox from '@/components/AssetImageBox'
+import AssetImageBox, { AssetImageViewer } from '@/components/AssetImageBox'
+import AssetDocuments from '@/components/AssetDocuments'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
-import { downloadDocument, fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
-import { formatApiDate, formatDocumentSize, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
+import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
+import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
+import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
 
 const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Historial', 'Plano']
 
@@ -23,17 +25,6 @@ const eventIconStyles = {
 
 const sourceCardStyles = {
   brand: 'bg-brand-50/50 dark:bg-brand-900/20 border-brand-100 dark:border-brand-900/50',
-}
-
-function AssetDocuments({ asset, limit }: { asset: ApiAsset; limit?: number }) {
-  const allDocuments = asset.documents ?? []
-  const documents = limit ? allDocuments.slice(0, limit) : allDocuments
-  if (documents.length === 0) return <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400">No hay documentos asociados a este activo.</div>
-  return <div className="space-y-2">{documents.map((document) => {
-    const version = document.currentVersion
-    const format = version?.originalName.split('.').pop()?.toUpperCase() ?? 'DOC'
-    return <div key={document.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-800"><div className="w-9 h-9 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 flex items-center justify-center text-xs font-bold">{format}</div><div className="flex-1"><div className="text-sm font-medium">{document.name}{version && ` v${version.version}`}</div><div className="text-xs text-slate-500">{version ? `${formatDocumentSize(version.sizeBytes)} · Subido ${formatApiDate(version.uploadedAt)}` : 'Sin versión'}</div></div>{version && <button type="button" onClick={() => void downloadDocument(document.id)} className="text-xs text-brand-600">Descargar</button>}</div>
-  })}</div>
 }
 
 interface AssetModalProps {
@@ -58,12 +49,17 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  // Visor de la foto del activo: abierto desde el cuadro de imagen; guardia
+  // para que Escape cierre solo el visor sin cerrar la ficha (patrón DOC-03).
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
+  const imagePreviewOpenRef = useRef(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const linkDialogOpenRef = useRef(linkDialogOpen)
   const statusMenuRef = useRef<HTMLDivElement>(null)
   const assetId = asset?.id
+  const documentDialog = useAssetDocumentDialog(assetId)
+  const documentDialogOpenRef = documentDialog.openRef
 
   // UX-02: el modal nunca se desmonta (vive en la vista); al cambiar de activo
   // (o al cerrar y reabrir) siempre arranca en la pestaña «Resumen».
@@ -72,6 +68,8 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setShowStatusSelector(false)
     setStatusError(null)
     setDeleteError(null)
+    setImagePreviewOpen(false)
+    imagePreviewOpenRef.current = false
   }, [assetId])
 
   useEffect(() => {
@@ -86,7 +84,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     if (!assetId) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || linkDialogOpenRef.current) return
+      if (event.key !== 'Escape' || linkDialogOpenRef.current || imagePreviewOpenRef.current || documentDialogOpenRef.current) return
       event.preventDefault()
       onCloseRef.current()
     }
@@ -97,7 +95,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
       document.removeEventListener('keydown', handleKeyDown)
       previouslyFocused?.focus()
     }
-  }, [assetId])
+  }, [assetId, documentDialogOpenRef])
 
   useEffect(() => {
     if (!linkDialogOpen) return
@@ -182,17 +180,17 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`asset-dialog-title-${asset.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div>
+        <div className="shrink-0 p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+          <div className="min-w-0">
             <div className="text-xs font-mono text-slate-500">{displayAsset.code}</div>
-            <h3 id={`asset-dialog-title-${asset.id}`} className="font-semibold text-lg">{displayAsset.name}</h3>
+            <h3 id={`asset-dialog-title-${asset.id}`} title={displayAsset.name} className="truncate font-semibold text-lg">{displayAsset.name}</h3>
           </div>
-          <button onClick={onClose} aria-label="Cerrar" className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+          <button onClick={onClose} aria-label="Cerrar" className="shrink-0 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
 
-        <div className="border-b border-slate-200 dark:border-slate-800 px-5 flex items-center gap-4 text-sm overflow-x-auto">
+        <div className="shrink-0 border-b border-slate-200 dark:border-slate-800 px-5 flex items-center gap-4 text-sm overflow-x-auto scrollbar-thin">
           {tabs.map((tab, i) => (
             <button key={tab} onClick={() => setActiveTab(i)} className={`py-3 border-b-2 ${activeTab === i ? 'border-brand-600 text-brand-600 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'} whitespace-nowrap`}>
               {tab}
@@ -203,7 +201,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
         </div>
 
         {activeTab === 0 && (
-          <div className="p-5 overflow-y-auto scrollbar-thin">
+          <div className="min-h-0 flex-1 p-5 overflow-y-auto scrollbar-thin">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
               <div className="md:col-span-2 grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
@@ -251,7 +249,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                     <div className="mt-1 text-sm font-medium">{displayAsset.installDate}</div>
                 </div>
               </div>
-              <AssetImageBox asset={asset} onChanged={onImageChanged} />
+              <AssetImageBox asset={asset} onChanged={onImageChanged} onView={() => { imagePreviewOpenRef.current = true; setImagePreviewOpen(true) }} />
             </div>
 
             <h4 className="font-medium mb-3">Próximos eventos</h4>
@@ -281,12 +279,13 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             </div>
 
             <h4 className="font-medium mb-3">Documentos recientes</h4>
-            <AssetDocuments asset={asset} limit={2} />
+            <AssetDocuments asset={asset} limit={2} openingId={documentDialog.openingId} onOpen={(documentId) => void documentDialog.openAssociated(documentId)} />
+            {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
           </div>
         )}
 
         {activeTab === 2 && (
-          <div className="p-5 overflow-y-auto scrollbar-thin">
+          <div className="min-h-0 flex-1 p-5 overflow-y-auto scrollbar-thin">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium">Documentos asociados</h4>
               <div className="flex items-center gap-2">
@@ -294,17 +293,18 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                   Vincular documento
                 </button>
-                <button type="button" onClick={() => setCreateDialogOpen(true)} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium flex items-center gap-1">
+                <button type="button" onClick={documentDialog.openCreate} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                   Nuevo documento
                 </button>
               </div>
             </div>
-            <AssetDocuments asset={asset} />
+            <AssetDocuments asset={asset} openingId={documentDialog.openingId} onOpen={(documentId) => void documentDialog.openAssociated(documentId)} />
+            {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
           </div>
         )}
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-4">
               {isDecommissioned ? (
@@ -325,12 +325,12 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
       </div>
       {linkDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !linking && setLinkDialogOpen(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="link-document-dialog-title" className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div role="dialog" aria-modal="true" aria-labelledby="link-document-dialog-title" className="flex min-h-0 max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
+            <div className="shrink-0 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h3 id="link-document-dialog-title" className="font-semibold">Vincular documento</h3>
               <button type="button" aria-label="Cerrar" onClick={() => setLinkDialogOpen(false)} disabled={linking} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">×</button>
             </div>
-            <div className="p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-4">
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Busca el documento y añádelo a los activos asociados de {asset.code}. Un documento puede estar vinculado a varios activos a la vez.</p>
               <SearchablePicker value={null} selectedLabel={null} placeholder="Buscar documento por nombre…" ariaLabel="Buscar documento" allowClear={false} disabled={linking} onSearch={searchDocuments} onSelect={(option) => void linkDocument(option)} emptyText="No hay documentos con ese nombre" />
               {linkError && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{linkError}</p>}
@@ -338,7 +338,9 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
           </div>
         </div>
       )}
-      {createDialogOpen && <DocumentModal document={null} initialAssetIds={[{ id: asset.id, label: `${asset.code} · ${asset.name}` }]} onClose={() => setCreateDialogOpen(false)} onChanged={onDocumentsChanged} />}
+      {documentDialog.createOpen && <DocumentModal document={null} initialAssetIds={[{ id: asset.id, label: `${asset.code} · ${asset.name}` }]} onClose={documentDialog.close} onChanged={onDocumentsChanged} />}
+      {documentDialog.document && <DocumentModal document={documentDialog.document} onClose={documentDialog.close} onChanged={onDocumentsChanged} />}
+      {imagePreviewOpen && asset.imageUrl && <AssetImageViewer src={asset.imageUrl} name={asset.name} onClose={() => { imagePreviewOpenRef.current = false; setImagePreviewOpen(false) }} />}
     </div>
   )
 }

@@ -403,8 +403,9 @@ export function deleteDocument(id: number): Promise<void> {
   return request(`/documents/${id}`, { method: 'DELETE' })
 }
 
-export async function fetchDocumentPreview(id: number): Promise<Blob> {
-  const response = await fetch(`${API_BASE}/documents/${id}/preview`)
+export async function fetchDocumentPreview(id: number, version?: number): Promise<Blob> {
+  const suffix = version ? `/versions/${version}/preview` : '/preview'
+  const response = await fetch(`${API_BASE}/documents/${id}${suffix}`)
   if (!response.ok) throw new Error(`API ${response.status}: preview failed`)
   return response.blob()
 }
