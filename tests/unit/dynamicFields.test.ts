@@ -4,15 +4,14 @@ import { dynamicFieldDefinitionSchema, parseDynamicValue } from '../../server/li
 const options = [{ id: 1, definitionId: 1, key: 'alta', label: 'Alta', sortOrder: 0, isActive: true }]
 
 describe('dynamic field configuration and values', () => {
-  it('accepts a periodic date applied to several asset types', () => {
-    const result = dynamicFieldDefinitionSchema.parse({ fieldName: 'Próxima revisión', groupName: 'Mantenimiento', fieldType: 'DATE', required: false, periodicity: 'Trimestral', periodicityMode: 'Calendario', assetTypeIds: [1, 2], options: [] })
-    expect(result.periodicity).toBe('Trimestral')
+  it('accepts a date characteristic applied to several asset types without recurrence', () => {
+    const result = dynamicFieldDefinitionSchema.parse({ fieldName: 'Próxima revisión', groupName: 'Mantenimiento', fieldType: 'DATE', required: false, assetTypeIds: [1, 2], options: [] })
     expect(result.assetTypeIds).toEqual([1, 2])
   })
 
-  it('rejects selection fields without options and recurrence on non-date fields', () => {
+  it('rejects selection fields without options and requires tasks for a preventive plan', () => {
     expect(() => dynamicFieldDefinitionSchema.parse({ fieldName: 'Criticidad', groupName: 'General', fieldType: 'SELECT', required: false, assetTypeIds: [1], options: [] })).toThrow()
-    expect(() => dynamicFieldDefinitionSchema.parse({ fieldName: 'Marca', groupName: 'General', fieldType: 'TEXT', required: false, periodicity: 'Anual', assetTypeIds: [1], options: [] })).toThrow()
+    expect(() => dynamicFieldDefinitionSchema.parse({ fieldName: 'Plan', groupName: 'General', fieldType: 'PREVENTIVE', required: false, assetTypeIds: [1], options: [] })).toThrow()
   })
 
   it('validates numbers and stable option keys', () => {

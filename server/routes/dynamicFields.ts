@@ -35,8 +35,11 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const projectId = projectIdOf(req.params.projectId)
   const input = dynamicFieldDefinitionSchema.parse(req.body)
-  const types = await prisma.assetType.count({ where: { id: { in: input.assetTypeIds }, projectId, isActive: true } })
-  if (types !== new Set(input.assetTypeIds).size) return res.status(400).json({ error: 'Unknown asset type' })
+  const [types, tasks] = await Promise.all([
+    prisma.assetType.count({ where: { id: { in: input.assetTypeIds }, projectId, isActive: true } }),
+    prisma.task.count({ where: { id: { in: input.taskIds }, projectId, isActive: true } }),
+  ])
+  if (types !== new Set(input.assetTypeIds).size || tasks !== new Set(input.taskIds).size) return res.status(400).json({ error: 'Unknown asset type or task' })
   const key = await uniqueKey(projectId, input.fieldName)
   const created = await prisma.$transaction(async (tx) => {
     const definition = await tx.dynamicFieldDefinition.create({
@@ -44,10 +47,10 @@ router.post('/', asyncHandler(async (req, res) => {
         projectId, key, fieldName: input.fieldName, description: input.description ?? null, groupName: input.groupName,
         fieldType: input.fieldType, required: input.required, placeholder: input.placeholder ?? null, unit: input.unit ?? null,
         minValue: input.minValue ?? null, maxValue: input.maxValue ?? null, decimalPlaces: input.decimalPlaces ?? null,
-        periodicity: input.periodicity ?? null, periodicityMode: input.periodicity ? (input.periodicityMode ?? 'Calendario') : null,
-        eventTitle: input.eventTitle ?? null, sortOrder: input.sortOrder ?? 0, isActive: input.isActive ?? true,
+        sortOrder: input.sortOrder ?? 0, isActive: input.isActive ?? true,
         assetTypes: { create: [...new Set(input.assetTypeIds)].map((assetTypeId) => ({ assetTypeId })) },
         options: { create: input.options.map((option, index) => ({ key: option.key ?? `${fieldKey(option.label)}-${index + 1}`, label: option.label, sortOrder: index })) },
+        planTasks: { create: input.taskIds.map((taskId, sortOrder) => ({ taskId, sortOrder })) },
       },
       include: definitionInclude,
     })
@@ -68,9 +71,11 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     const types = await prisma.assetType.count({ where: { id: { in: input.assetTypeIds }, projectId, isActive: true } })
     if (types !== new Set(input.assetTypeIds).size) return res.status(400).json({ error: 'Unknown asset type' })
   }
+  if (input.taskIds) {
+    const tasks = await prisma.task.count({ where: { id: { in: input.taskIds }, projectId, isActive: true } })
+    if (tasks !== new Set(input.taskIds).size) return res.status(400).json({ error: 'Unknown task' })
+  }
   if (input.fieldType && input.fieldType !== before.fieldType && before._count.values > 0) return res.status(409).json({ error: 'A field with values cannot change type' })
-  const fieldType = input.fieldType ?? before.fieldType
-  if (fieldType !== 'DATE' && (input.periodicity || input.periodicityMode || input.eventTitle)) return res.status(400).json({ error: 'Only date fields accept event configuration' })
   const updated = await prisma.$transaction(async (tx) => {
     if (input.assetTypeIds) {
       await tx.dynamicFieldDefinitionAssetType.deleteMany({ where: { definitionId: id } })
@@ -84,7 +89,11 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       await tx.dynamicFieldOption.deleteMany({ where: { definitionId: id } })
       await tx.dynamicFieldOption.createMany({ data: input.options.map((option, index) => ({ definitionId: id, key: option.key ?? `${fieldKey(option.label)}-${index + 1}`, label: option.label, sortOrder: index })) })
     }
-    const { assetTypeIds: _types, options: _options, ...data } = input
+    if (input.taskIds) {
+      await tx.preventivePlanTask.deleteMany({ where: { definitionId: id } })
+      await tx.preventivePlanTask.createMany({ data: [...new Set(input.taskIds)].map((taskId, sortOrder) => ({ definitionId: id, taskId, sortOrder })) })
+    }
+    const { assetTypeIds: _types, options: _options, taskIds: _taskIds, ...data } = input
     const definition = await tx.dynamicFieldDefinition.update({
       where: { id },
       data: {
@@ -92,9 +101,6 @@ router.patch('/:id', asyncHandler(async (req, res) => {
         description: input.description === undefined ? undefined : input.description,
         placeholder: input.placeholder === undefined ? undefined : input.placeholder,
         unit: input.unit === undefined ? undefined : input.unit,
-        periodicity: fieldType === 'DATE' ? input.periodicity : null,
-        periodicityMode: fieldType === 'DATE' && (input.periodicity ?? before.periodicity) ? (input.periodicityMode ?? before.periodicityMode ?? 'Calendario') : null,
-        eventTitle: fieldType === 'DATE' ? input.eventTitle : null,
       },
       include: definitionInclude,
     })

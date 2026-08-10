@@ -20,6 +20,7 @@ enum FieldType {
   SELECT
   MULTISELECT
   BOOLEAN
+  PREVENTIVE
 }
 
 model User {
@@ -59,6 +60,7 @@ model Project {
   locations        Location[]
   assetTypes       AssetType[]
   fieldDefinitions DynamicFieldDefinition[]
+  tasks            Task[]
 }
 
 model ProjectMember {
@@ -107,9 +109,6 @@ model DynamicFieldDefinition {
   maxValue        Float?
   decimalPlaces   Int?
   defaultValue    Json?
-  periodicity     String?
-  periodicityMode String?
-  eventTitle      String?
   sortOrder       Int       @default(0)
   isActive        Boolean   @default(true)
   createdAt       DateTime  @default(now())
@@ -119,6 +118,9 @@ model DynamicFieldDefinition {
   assetTypes DynamicFieldDefinitionAssetType[]
   options    DynamicFieldOption[]
   values     AssetDynamicFieldValue[]
+  planTasks  PreventivePlanTask[]
+  dateSchedules AssetDateSchedule[]
+  preventivePlans AssetPreventivePlan[]
 
   @@unique([projectId, key])
   @@index([projectId, isActive, sortOrder])
@@ -163,6 +165,7 @@ model AssetDynamicFieldValue {
 
   asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
   definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  dateSchedule AssetDateSchedule?
 
   @@unique([assetId, definitionId])
   @@index([definitionId])
@@ -201,6 +204,9 @@ model Asset {
   events             Event[]
   markers            FloorPlanMarker[]
   dynamicFieldValues AssetDynamicFieldValue[]
+  dateSchedules      AssetDateSchedule[]
+  preventivePlans   AssetPreventivePlan[]
+  eventAcknowledgements AssetEventAcknowledgement[]
 
   @@index([typeId])
   @@index([statusId])
@@ -287,6 +293,133 @@ model Event {
 
   @@index([projectId])
   @@index([assetId])
+}
+
+// A catalog task is reusable, while executions retain their own immutable copy.
+model Task {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  code      String
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  planTasks PreventivePlanTask[]
+
+  @@unique([projectId, code])
+  @@index([projectId, isActive])
+}
+
+// Template selected when a dynamic field is configured as a periodic plan.
+model PreventivePlanTask {
+  definitionId Int
+  taskId       Int
+  sortOrder    Int @default(0)
+
+  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  task       Task                   @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@id([definitionId, taskId])
+  @@index([taskId])
+}
+
+// Recurrence is an asset assignment concern, never a field-definition concern.
+model AssetDateSchedule {
+  id              Int      @id @default(autoincrement())
+  assetId         Int
+  definitionId    Int
+  periodicity     String?
+  periodicityMode String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  value      AssetDynamicFieldValue @relation(fields: [assetId, definitionId], references: [assetId, definitionId], onDelete: Cascade)
+  occurrences AssetDateOccurrence[]
+
+  @@unique([assetId, definitionId])
+  @@index([definitionId])
+}
+
+model AssetDateOccurrence {
+  id            Int       @id @default(autoincrement())
+  scheduleId    Int
+  scheduledDate DateTime  @db.Date
+  completedAt   DateTime?
+  completedDate DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+
+  schedule AssetDateSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId, completedAt, scheduledDate])
+}
+
+// A configured PREVENTIVE definition becomes a reusable periodic plan when it
+// is assigned to an asset. Each execution snapshots its own checklist.
+model AssetPreventivePlan {
+  id              Int      @id @default(autoincrement())
+  assetId         Int
+  definitionId    Int
+  name            String
+  periodicity     String
+  periodicityMode String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  executions PreventiveExecution[]
+
+  @@index([assetId, isActive])
+  @@index([definitionId])
+}
+
+model PreventiveExecution {
+  id            Int       @id @default(autoincrement())
+  planId        Int
+  scheduledDate DateTime  @db.Date
+  completedAt   DateTime?
+  completedDate DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+
+  plan  AssetPreventivePlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  tasks PreventiveExecutionTask[]
+
+  @@index([planId, completedAt, scheduledDate])
+}
+
+model PreventiveExecutionTask {
+  id          Int       @id @default(autoincrement())
+  executionId Int
+  taskId      Int?
+  code        String
+  name        String    @db.VarChar(100)
+  sortOrder   Int       @default(0)
+  completedAt DateTime?
+
+  execution PreventiveExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, sortOrder])
+}
+
+// Documents can be completed from the unified event history without mutating
+// their version data. The source key is deliberately generic for future event sources.
+model AssetEventAcknowledgement {
+  id            Int      @id @default(autoincrement())
+  assetId       Int
+  sourceKey     String
+  completedAt   DateTime @default(now())
+  completedDate DateTime @db.Date
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, sourceKey])
+  @@index([assetId, completedAt])
 }
 
 model Location {

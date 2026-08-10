@@ -7,6 +7,7 @@ import AssetActionConfirmDialog, { type AssetConfirmedAction } from '@/component
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
 import AssetCharacteristics from '@/components/AssetCharacteristics'
 import AssetEventsPanel from '@/components/AssetEventsPanel'
+import AssetPreventivesPanel from '@/components/AssetPreventivesPanel'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
@@ -278,6 +279,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             </div>
 
             <h4 className="font-medium mb-3">Próximos eventos</h4>
+            <AssetPreventivesPanel asset={asset} onChanged={onImageChanged} />
             <div className="space-y-2 mb-5">
               {nextEvents.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400">
@@ -335,7 +337,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
           </div>
         )}
 
-        {activeTab === 3 && <AssetEventsPanel asset={asset} />}
+        {activeTab === 3 && <AssetEventsPanel asset={asset} onChanged={onImageChanged} />}
 
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>

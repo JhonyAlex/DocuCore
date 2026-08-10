@@ -247,33 +247,31 @@ async function main(): Promise<void> {
     required?: boolean
     unit?: string
     options?: string[]
-    periodicity?: string
-    periodicityMode?: string
   }> = [
     { typeName: 'Máquina', name: 'Fabricante', fieldType: 'TEXT', group: 'Identificación' },
     { typeName: 'Máquina', name: 'Modelo', fieldType: 'TEXT', group: 'Identificación' },
     { typeName: 'Máquina', name: 'Potencia', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'kW' },
     { typeName: 'Máquina', name: 'Tensión', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'V' },
-    { typeName: 'Máquina', name: 'Próximo mantenimiento', fieldType: 'DATE', group: 'Mantenimiento', periodicity: 'Trimestral', periodicityMode: 'Calendario' },
+    { typeName: 'Máquina', name: 'Próximo mantenimiento', fieldType: 'DATE', group: 'Mantenimiento' },
     { typeName: 'Máquina', name: 'Zona ATEX', fieldType: 'BOOLEAN', group: 'Seguridad' },
     { typeName: 'Máquina', name: 'Criticidad', fieldType: 'SELECT', group: 'Seguridad', options: ['Baja', 'Media', 'Alta', 'Crítica'] },
     { typeName: 'Máquina', name: 'Observaciones técnicas', fieldType: 'TEXTAREA', group: 'General' },
     { typeName: 'Instrumento', name: 'Marca', fieldType: 'TEXT', group: 'Identificación' },
     { typeName: 'Instrumento', name: 'Rango de medida', fieldType: 'TEXT', group: 'Metrología' },
     { typeName: 'Instrumento', name: 'Precisión', fieldType: 'NUMBER', group: 'Metrología', unit: '%' },
-    { typeName: 'Instrumento', name: 'Próxima calibración', fieldType: 'DATE', group: 'Metrología', periodicity: 'Anual', periodicityMode: 'Calendario' },
+    { typeName: 'Instrumento', name: 'Próxima calibración', fieldType: 'DATE', group: 'Metrología' },
     { typeName: 'Instrumento', name: 'Laboratorio habitual', fieldType: 'SELECT', group: 'Metrología', options: ['Interno', 'ENAC externo', 'Fabricante'] },
     { typeName: 'Extintor', name: 'Agente extintor', fieldType: 'SELECT', group: 'Especificaciones', options: ['CO2', 'Polvo ABC', 'Agua', 'Espuma'] },
     { typeName: 'Extintor', name: 'Capacidad', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'kg' },
-    { typeName: 'Extintor', name: 'Próxima revisión', fieldType: 'DATE', group: 'Mantenimiento', periodicity: 'Anual', periodicityMode: 'Calendario' },
+    { typeName: 'Extintor', name: 'Próxima revisión', fieldType: 'DATE', group: 'Mantenimiento' },
     { typeName: 'Extintor', name: 'Fecha de retimbrado', fieldType: 'DATE', group: 'Mantenimiento' },
     { typeName: 'Vehículo', name: 'Matrícula', fieldType: 'TEXT', group: 'Identificación', required: true },
     { typeName: 'Vehículo', name: 'Kilometraje', fieldType: 'NUMBER', group: 'Uso', unit: 'km' },
     { typeName: 'Vehículo', name: 'Combustible', fieldType: 'SELECT', group: 'Especificaciones', options: ['Diésel', 'Gasolina', 'Eléctrico', 'Híbrido'] },
-    { typeName: 'Vehículo', name: 'Próxima ITV', fieldType: 'DATE', group: 'Mantenimiento', periodicity: 'Anual', periodicityMode: 'Calendario' },
+    { typeName: 'Vehículo', name: 'Próxima ITV', fieldType: 'DATE', group: 'Mantenimiento' },
     { typeName: 'Servidor', name: 'Sistema operativo', fieldType: 'TEXT', group: 'Sistema' },
     { typeName: 'Servidor', name: 'Dirección IP', fieldType: 'TEXT', group: 'Red' },
-    { typeName: 'Servidor', name: 'Próximo backup verificado', fieldType: 'DATE', group: 'Continuidad', periodicity: 'Mensual', periodicityMode: 'Subida' },
+    { typeName: 'Servidor', name: 'Próximo backup verificado', fieldType: 'DATE', group: 'Continuidad' },
   ]
   const project = await prisma.project.findUniqueOrThrow({ where: { code: PROJECT_CODE }, select: { id: true } })
   for (const [index, definition] of dynamicSeeds.entries()) {
@@ -287,8 +285,6 @@ async function main(): Promise<void> {
         groupName: definition.group,
         required: definition.required ?? false,
         unit: definition.unit,
-        periodicity: definition.periodicity,
-        periodicityMode: definition.periodicity ? (definition.periodicityMode ?? 'Calendario') : null,
         sortOrder: index,
         assetTypes: { create: { assetTypeId: assetType.id } },
         options: { create: (definition.options ?? []).map((label, optionIndex) => ({ key: `${fieldKey(label)}-${optionIndex + 1}`, label, sortOrder: optionIndex })) },

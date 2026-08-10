@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import DynamicFieldInput from '@/components/DynamicFieldInput'
 import { fetchDynamicFieldDefinitions, type ApiAssetDynamicField, type ApiDynamicFieldDefinition, type DynamicFieldValueInput } from '@/lib/api'
+import { PERIODICITIES, type DocumentPeriodicityMode } from '@/lib/periodicity'
 
 interface DynamicFieldsFormSectionProps {
   projectId: number
@@ -29,8 +30,12 @@ export default function DynamicFieldsFormSection({ projectId, assetTypeId, initi
     fetchDynamicFieldDefinitions(projectId, { assetTypeId })
       .then((next) => {
         if (!active) return
-        const initialById = new Map(initialFieldsRef.current.map((field) => [field.definitionId, duplicate && field.fieldType === 'DATE' ? null : field.value]))
-        const nextValues = Object.fromEntries(next.map((definition) => [definition.id, initialById.get(definition.id) ?? null]))
+        const initialById = new Map(initialFieldsRef.current.map((field) => [field.definitionId, field]))
+        const nextValues = Object.fromEntries(next.map((definition) => {
+          const prior = initialById.get(definition.id)
+          const value = duplicate && definition.fieldType === 'DATE' ? null : prior?.value ?? null
+          return [definition.id, definition.fieldType === 'DATE' ? { date: value, periodicity: prior?.dateSchedule?.periodicity ?? null, periodicityMode: prior?.dateSchedule?.periodicityMode ?? null } : value]
+        }))
         setDefinitions(next)
         setValues(nextValues)
         onChangeRef.current(next.map((definition) => ({ definitionId: definition.id, value: nextValues[definition.id] })))
@@ -54,7 +59,7 @@ export default function DynamicFieldsFormSection({ projectId, assetTypeId, initi
       <div className="mb-3"><h4 className="text-sm font-semibold">Características</h4><p className="text-xs text-slate-500 dark:text-slate-400">Campos configurados para el tipo de activo seleccionado.</p></div>
       {loading ? <p className="text-sm text-slate-500">Cargando características…</p> : error ? <p role="alert" className="text-sm text-red-600">No se pudieron cargar las características.</p> : definitions.length === 0 ? <p className="text-sm text-slate-400">Este tipo no tiene campos dinámicos.</p> : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {definitions.map((definition) => <div key={definition.id}><label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">{definition.fieldName}{definition.required && <span className="ml-1 text-red-500">*</span>}</label><DynamicFieldInput field={{ ...definition, definitionId: definition.id }} value={values[definition.id]} onChange={(value) => update(definition.id, value)} disabled={disabled} />{definition.description && <p className="mt-1 text-xs text-slate-400">{definition.description}</p>}</div>)}
+          {definitions.map((definition) => <div key={definition.id}><label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">{definition.fieldName}{definition.required && <span className="ml-1 text-red-500">*</span>}</label>{definition.fieldType === 'DATE' ? <div className="space-y-2"><DynamicFieldInput field={{ ...definition, definitionId: definition.id }} value={(values[definition.id] as { date?: string | null } | undefined)?.date ?? null} onChange={(date) => update(definition.id, { ...(values[definition.id] as object), date })} disabled={disabled} /><div className="grid grid-cols-2 gap-2"><select aria-label={`Periodicidad de ${definition.fieldName}`} value={(values[definition.id] as { periodicity?: string | null } | undefined)?.periodicity ?? ''} onChange={(event) => update(definition.id, { ...(values[definition.id] as object), periodicity: event.target.value || null, periodicityMode: event.target.value ? ((values[definition.id] as { periodicityMode?: string | null }).periodicityMode ?? 'Calendario') : null })} disabled={disabled} className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"><option value="">Sin periodicidad</option>{PERIODICITIES.map((item) => <option key={item}>{item}</option>)}</select>{(values[definition.id] as { periodicity?: string | null } | undefined)?.periodicity && <select aria-label={`Modo de ${definition.fieldName}`} value={(values[definition.id] as { periodicityMode?: string | null }).periodicityMode ?? 'Calendario'} onChange={(event) => update(definition.id, { ...(values[definition.id] as object), periodicityMode: event.target.value as DocumentPeriodicityMode })} disabled={disabled} className="rounded border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"><option value="Calendario">Según calendario</option><option value="Subida">Según realización</option></select>}</div></div> : <DynamicFieldInput field={{ ...definition, definitionId: definition.id }} value={values[definition.id]} onChange={(value) => update(definition.id, value)} disabled={disabled} />}{definition.description && <p className="mt-1 text-xs text-slate-400">{definition.description}</p>}</div>)}
         </div>
       )}
     </section>

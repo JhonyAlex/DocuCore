@@ -1,17 +1,21 @@
 import { Router, type Request, type Response } from 'express'
 import { Prisma } from '@prisma/client'
 import multer from 'multer'
+import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { deriveAssetEvents } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
-import { completeDynamicDateSchema, dynamicFieldValuesSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
-import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
+import { completeDynamicDateSchema, dateScheduleValueSchema, dynamicFieldValuesSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
+import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setAssetDateSchedule } from '../lib/assetSchedules'
 
 const router: Router = Router()
 
 const ACTOR_USER_ID = 1
+const periodicitySchema = z.enum(['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual'])
+const preventiveAssignmentSchema = z.object({ definitionId: z.number().int().positive(), name: z.string().trim().min(1).max(120), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodicity: periodicitySchema, periodicityMode: z.enum(['Calendario', 'Subida']), taskIds: z.array(z.number().int().positive()).max(100).optional() }).strict()
+const completeEventSchema = z.object({ source: z.enum(['event', 'document', 'dynamic-date', 'preventive']), id: z.number().int().positive(), performedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
 
 // ITEM-05: un activo en la papelera se puede recuperar hasta 30 días después
 // de su eliminación; pasada esa ventana, la purga lo borra físicamente.
@@ -59,7 +63,7 @@ const assetInclude = {
         where: { definition: { isActive: true } },
         include: {
           definition: {
-            include: { options: { orderBy: { sortOrder: 'asc' } } },
+            include: { options: { orderBy: { sortOrder: 'asc' } }, planTasks: { include: { task: { select: { id: true, code: true, name: true, isActive: true } } }, orderBy: { sortOrder: 'asc' } } },
           },
         },
       },
@@ -69,8 +73,7 @@ const assetInclude = {
   location: { select: { id: true, name: true, code: true, label: true } },
   responsible: { select: { id: true, name: true, initials: true, color: true } },
   events: {
-    where: { completedAt: null },
-    select: { id: true, title: true, date: true, type: true },
+    select: { id: true, title: true, date: true, type: true, completedAt: true },
   },
   documentAssets: {
     orderBy: { document: { updatedAt: 'desc' } },
@@ -92,9 +95,12 @@ const assetInclude = {
   },
   dynamicFieldValues: {
     include: {
-      definition: { select: { id: true, fieldName: true, eventTitle: true, fieldType: true, isActive: true } },
+      definition: { select: { id: true, fieldName: true, fieldType: true, isActive: true } },
     },
   },
+  dateSchedules: { where: { isActive: true }, include: { definition: { select: { fieldName: true } }, occurrences: { orderBy: { id: 'asc' }, select: { id: true, scheduledDate: true, completedAt: true } } } },
+  preventivePlans: { where: { isActive: true }, include: { executions: { orderBy: { id: 'asc' }, include: { tasks: { orderBy: { sortOrder: 'asc' }, select: { id: true, code: true, name: true, completedAt: true } } } } } },
+  eventAcknowledgements: { select: { sourceKey: true } },
 } satisfies Prisma.AssetInclude
 
 type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
@@ -105,7 +111,8 @@ function derivedEventClock(): Date {
 }
 
 function withDerivedEvents(asset: AssetWithRelations) {
-  const documents = asset.documentAssets.map((link) => link.document)
+  const acknowledged = new Set(asset.eventAcknowledgements.map((entry) => entry.sourceKey))
+  const documents = asset.documentAssets.map((link) => link.document).filter((document) => !acknowledged.has(`document:${document.id}`))
   const nextEvents = deriveAssetEvents({ ...asset, documents }, derivedEventClock())
   // IMG-01: la clave interna de storage no se expone (como en documentos); el
   // frontend recibe una URL servida por el propio API.
@@ -126,15 +133,14 @@ function withDerivedEvents(asset: AssetWithRelations) {
       minValue: definition.minValue,
       maxValue: definition.maxValue,
       decimalPlaces: definition.decimalPlaces,
-      periodicity: definition.periodicity,
-      periodicityMode: definition.periodicityMode,
-      eventTitle: definition.eventTitle,
       sortOrder: definition.sortOrder,
       options: definition.options.filter((option) => option.isActive).map(({ id, key, label, sortOrder }) => ({ id, key, label, sortOrder })),
+      tasks: definition.planTasks.map((link) => link.task),
       value: value ? storedValue(definition.fieldType, value) : null,
+      dateSchedule: asset.dateSchedules.find((schedule) => schedule.definitionId === definition.id) ? (() => { const schedule = asset.dateSchedules.find((entry) => entry.definitionId === definition.id)!; const occurrence = schedule.occurrences.find((entry) => !entry.completedAt); return { periodicity: schedule.periodicity, periodicityMode: schedule.periodicityMode, occurrenceId: occurrence?.id ?? null, date: occurrence?.scheduledDate.toISOString().slice(0, 10) ?? null } })() : null,
     }
   })
-  const { events: _events, documentAssets: _documentAssets, dynamicFieldValues: _dynamicFieldValues, type, imageStorageKey: _imageStorageKey, ...base } = asset
+  const { events: _events, documentAssets: _documentAssets, dynamicFieldValues: _dynamicFieldValues, dateSchedules: _dateSchedules, preventivePlans, eventAcknowledgements: _eventAcknowledgements, type, imageStorageKey: _imageStorageKey, ...base } = asset
   return {
     ...base,
     imageUrl: _imageStorageKey ? `/api/assets/${base.id}/image` : null,
@@ -153,6 +159,7 @@ function withDerivedEvents(asset: AssetWithRelations) {
     })),
     eventCount: nextEvents.length,
     nextEvents,
+    preventivePlans: preventivePlans.map((plan) => ({ id: plan.id, definitionId: plan.definitionId, name: plan.name, periodicity: plan.periodicity, periodicityMode: plan.periodicityMode, executions: plan.executions.map((execution) => ({ id: execution.id, scheduledDate: execution.scheduledDate.toISOString(), completedAt: execution.completedAt?.toISOString() ?? null, tasks: execution.tasks.map((task) => ({ ...task, completedAt: task.completedAt?.toISOString() ?? null })) })) })),
   }
 }
 
@@ -203,12 +210,27 @@ async function replaceDynamicValues(
     if (definition.required && !supplied.has(definition.id)) throw Object.assign(new Error(`Required dynamic field is missing: ${definition.fieldName}`), { status: 400 })
   }
 
-  await tx.assetDynamicFieldValue.deleteMany({ where: { assetId, definitionId: { in: definitions.map((definition) => definition.id) } } })
+  // A DATE value owns a schedule/history. It is updated in place so completing
+  // an occurrence never disappears when the asset is edited again.
   for (const input of inputs) {
     const definition = byId.get(input.definitionId)!
+    if (definition.fieldType === 'PREVENTIVE') continue
+    if (definition.fieldType === 'DATE') {
+      const raw = typeof input.value === 'object' && input.value !== null && !Array.isArray(input.value)
+        ? dateScheduleValueSchema.parse(input.value)
+        : { date: input.value === null || input.value === undefined || input.value === '' ? null : String(input.value), periodicity: null, periodicityMode: null }
+      const date = raw.date ? asUtcDate(raw.date) : null
+      const empty = { textValue: null, numberValue: null, dateValue: date, booleanValue: null, jsonValue: Prisma.JsonNull }
+      await tx.assetDynamicFieldValue.upsert({ where: { assetId_definitionId: { assetId, definitionId: definition.id } }, create: { assetId, definitionId: definition.id, ...empty }, update: empty })
+      await setAssetDateSchedule(tx, { assetId, definitionId: definition.id, date, periodicity: raw.periodicity, periodicityMode: raw.periodicityMode })
+      continue
+    }
     const data = parseDynamicValue(definition, input.value)
-    if (!data) continue
-    await tx.assetDynamicFieldValue.create({ data: { assetId, definitionId: definition.id, ...data } })
+    if (!data) {
+      await tx.assetDynamicFieldValue.deleteMany({ where: { assetId, definitionId: definition.id } })
+      continue
+    }
+    await tx.assetDynamicFieldValue.upsert({ where: { assetId_definitionId: { assetId, definitionId: definition.id } }, create: { assetId, definitionId: definition.id, ...data }, update: data })
   }
 }
 
@@ -334,6 +356,103 @@ router.get(
   }),
 )
 
+// Unified history: every source has a completed/pending occurrence. Documents
+// use acknowledgements because their evidence remains version-owned.
+router.get('/:id/events', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  if (id === null) return res.status(400).json({ error: 'Invalid id' })
+  const asset = await prisma.asset.findFirst({
+    where: { id, deletedAt: null },
+    include: {
+      events: { orderBy: { date: 'desc' } },
+      dateSchedules: { include: { definition: { select: { fieldName: true } }, occurrences: { orderBy: { scheduledDate: 'desc' } } } },
+      preventivePlans: { include: { executions: { orderBy: { scheduledDate: 'desc' }, include: { tasks: { orderBy: { sortOrder: 'asc' } } } } } },
+      documentAssets: { include: { document: { select: { id: true, name: true, type: true, eventTitle: true, versions: { orderBy: { version: 'desc' }, take: 1, select: { expiryDate: true } } } } } },
+      eventAcknowledgements: true,
+    },
+  })
+  if (!asset) return res.status(404).json({ error: 'Not found' })
+  const acknowledgements = new Map(asset.eventAcknowledgements.map((entry) => [entry.sourceKey, entry]))
+  const rows = [
+    ...asset.events.map((event) => ({ source: 'event', id: event.id, title: event.title, date: event.date.toISOString(), sourceLabel: event.type, completedAt: event.completedAt?.toISOString() ?? null, completedDate: event.completedAt?.toISOString().slice(0, 10) ?? null, progress: null })),
+    ...asset.dateSchedules.flatMap((schedule) => schedule.occurrences.map((occurrence) => ({ source: 'dynamic-date', id: occurrence.id, title: schedule.definition.fieldName, date: occurrence.scheduledDate.toISOString(), sourceLabel: 'Fecha', completedAt: occurrence.completedAt?.toISOString() ?? null, completedDate: occurrence.completedDate?.toISOString().slice(0, 10) ?? null, progress: null }))),
+    ...asset.preventivePlans.flatMap((plan) => plan.executions.map((execution) => ({ source: 'preventive', id: execution.id, title: plan.name, date: execution.scheduledDate.toISOString(), sourceLabel: 'Plan periódico', completedAt: execution.completedAt?.toISOString() ?? null, completedDate: execution.completedDate?.toISOString().slice(0, 10) ?? null, progress: { completed: execution.tasks.filter((task) => task.completedAt).length, total: execution.tasks.length } }))),
+    ...asset.documentAssets.flatMap(({ document }) => {
+      const date = document.versions[0]?.expiryDate
+      if (!date) return []
+      const acknowledgement = acknowledgements.get(`document:${document.id}`)
+      return [{ source: 'document', id: document.id, title: document.eventTitle ?? document.name, date: date.toISOString(), sourceLabel: document.type, completedAt: acknowledgement?.completedAt.toISOString() ?? null, completedDate: acknowledgement?.completedDate.toISOString().slice(0, 10) ?? null, progress: null }]
+    }),
+  ].sort((left, right) => Date.parse(right.date) - Date.parse(left.date))
+  res.json(rows)
+}))
+
+router.post('/:id/events/complete', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  if (id === null) return res.status(400).json({ error: 'Invalid id' })
+  const input = completeEventSchema.parse(req.body)
+  const performed = asUtcDate(input.performedDate)
+  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true } })
+  if (!asset) return res.status(404).json({ error: 'Not found' })
+  await prisma.$transaction(async (tx) => {
+    if (input.source === 'event') {
+      const event = await tx.event.findFirst({ where: { id: input.id, assetId: id, completedAt: null } })
+      if (!event) throw Object.assign(new Error('Event is not pending'), { status: 409 })
+      await tx.event.update({ where: { id: event.id }, data: { completedAt: new Date() } })
+    } else if (input.source === 'dynamic-date') {
+      const occurrence = await tx.assetDateOccurrence.findFirst({ where: { id: input.id, completedAt: null, schedule: { assetId: id } } })
+      if (!occurrence) throw Object.assign(new Error('Date occurrence is not pending'), { status: 409 })
+      await completeAssetDateOccurrence(tx, occurrence.id, performed)
+    } else if (input.source === 'preventive') {
+      const execution = await tx.preventiveExecution.findFirst({ where: { id: input.id, completedAt: null, plan: { assetId: id, isActive: true } }, include: { plan: true, tasks: true } })
+      if (!execution) throw Object.assign(new Error('Preventive execution is not pending'), { status: 409 })
+      if (execution.tasks.some((task) => !task.completedAt)) throw Object.assign(new Error('Complete all preventive tasks first'), { status: 409 })
+      await tx.preventiveExecution.update({ where: { id: execution.id }, data: { completedAt: new Date(), completedDate: performed } })
+      const { calculateNextExpiry } = await import('../lib/periodicity')
+      const next = calculateNextExpiry(execution.scheduledDate, performed, execution.plan.periodicityMode as 'Calendario' | 'Subida', execution.plan.periodicity as 'Mensual' | 'Bimestral' | 'Trimestral' | 'Cuatrimestral' | 'Semestral' | 'Anual')
+      await createPreventiveExecution(tx, execution.planId, next)
+    } else {
+      const document = await tx.documentItem.findUnique({ where: { documentId_assetId: { documentId: input.id, assetId: id } } })
+      if (!document) throw Object.assign(new Error('Document does not belong to this asset'), { status: 404 })
+      await tx.assetEventAcknowledgement.upsert({ where: { assetId_sourceKey: { assetId: id, sourceKey: `document:${input.id}` } }, create: { assetId: id, sourceKey: `document:${input.id}`, completedDate: performed }, update: { completedAt: new Date(), completedDate: performed } })
+    }
+    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Realización', entityId: asset.code, detail: `Evento ${input.source}:${input.id} completado el ${input.performedDate}`, timestamp: new Date() } })
+  })
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+  res.json(withDerivedEvents(updated))
+}))
+
+router.post('/:id/preventives', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  if (id === null) return res.status(400).json({ error: 'Invalid id' })
+  const input = preventiveAssignmentSchema.parse(req.body)
+  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { projectId: true, typeId: true, code: true } })
+  if (!asset) return res.status(404).json({ error: 'Not found' })
+  const definition = await prisma.dynamicFieldDefinition.findFirst({ where: { id: input.definitionId, projectId: asset.projectId, fieldType: 'PREVENTIVE', isActive: true, assetTypes: { some: { assetTypeId: asset.typeId } } }, include: { planTasks: true } })
+  if (!definition) return res.status(400).json({ error: 'Preventive definition does not apply to this asset' })
+  const taskIds = input.taskIds ?? definition.planTasks.map((task) => task.taskId)
+  if (taskIds.some((taskId) => !definition.planTasks.some((link) => link.taskId === taskId))) return res.status(400).json({ error: 'Task is not part of the preventive definition' })
+  await prisma.$transaction(async (tx) => {
+    const plan = await tx.assetPreventivePlan.create({ data: { assetId: id, definitionId: definition.id, name: input.name, periodicity: input.periodicity, periodicityMode: input.periodicityMode } })
+    await createPreventiveExecution(tx, plan.id, asUtcDate(input.scheduledDate), taskIds)
+    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Creación', entityId: asset.code, detail: `Plan periódico "${input.name}" asignado`, timestamp: new Date() } })
+  })
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+  res.status(201).json(withDerivedEvents(updated))
+}))
+
+router.post('/:id/preventives/executions/:executionId/tasks/:taskId/complete', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  const executionId = toNumberId(req.params.executionId)
+  const taskId = toNumberId(req.params.taskId)
+  if (id === null || executionId === null || taskId === null) return res.status(400).json({ error: 'Invalid id' })
+  const task = await prisma.preventiveExecutionTask.findFirst({ where: { id: taskId, executionId, execution: { plan: { assetId: id }, completedAt: null } } })
+  if (!task) return res.status(404).json({ error: 'Preventive task not found' })
+  await prisma.preventiveExecutionTask.update({ where: { id: task.id }, data: { completedAt: task.completedAt ? null : new Date() } })
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+  res.json(withDerivedEvents(updated))
+}))
+
 router.put(
   '/:id/dynamic-fields',
   asyncHandler(async (req, res) => {
@@ -360,20 +479,12 @@ router.post(
     const { performedDate } = completeDynamicDateSchema.parse(req.body)
     const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true, typeId: true } })
     if (!asset) return res.status(404).json({ error: 'Not found' })
-    const definition = await prisma.dynamicFieldDefinition.findFirst({
-      where: { id: definitionId, projectId: asset.projectId, isActive: true, fieldType: 'DATE', assetTypes: { some: { assetTypeId: asset.typeId } } },
-      include: { values: { where: { assetId: id }, take: 1 } },
-    })
-    if (!definition) return res.status(404).json({ error: 'Dynamic date field not found' })
-    if (!definition.periodicity || !definition.periodicityMode) return res.status(409).json({ error: 'Dynamic date field has no periodicity' })
-    const current = definition.values[0]
-    if (!current?.dateValue) return res.status(409).json({ error: 'Dynamic date field has no current date' })
-    const performed = new Date(`${performedDate}T00:00:00.000Z`)
-    if (Number.isNaN(performed.getTime()) || performed.toISOString().slice(0, 10) !== performedDate) return res.status(400).json({ error: 'Invalid performed date' })
-    const next = calculateNextExpiry(current.dateValue, performed, definition.periodicityMode as DocumentPeriodicityMode, definition.periodicity as DocumentPeriodicity)
+    const schedule = await prisma.assetDateSchedule.findFirst({ where: { assetId: id, definitionId, isActive: true, definition: { projectId: asset.projectId, fieldType: 'DATE', assetTypes: { some: { assetTypeId: asset.typeId } } }, occurrences: { some: { completedAt: null } }, }, include: { definition: { select: { fieldName: true } }, occurrences: { where: { completedAt: null }, orderBy: { id: 'asc' }, take: 1 } } })
+    if (!schedule?.occurrences[0]) return res.status(404).json({ error: 'Dynamic date occurrence not found' })
+    const performed = asUtcDate(performedDate)
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.assetDynamicFieldValue.update({ where: { id: current.id }, data: { dateValue: next } })
-      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Realización', entityId: asset.code, detail: `${definition.fieldName}: ${current.dateValue!.toISOString().slice(0, 10)} → ${next.toISOString().slice(0, 10)} · ${definition.periodicity} · ${definition.periodicityMode === 'Calendario' ? 'según calendario' : `realizado ${performedDate}`}`, timestamp: new Date() } })
+      await completeAssetDateOccurrence(tx, schedule.occurrences[0].id, performed)
+      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Realización', entityId: asset.code, detail: `${schedule.definition.fieldName}: ocurrencia ${schedule.occurrences[0].scheduledDate.toISOString().slice(0, 10)} completada el ${performedDate}`, timestamp: new Date() } })
       return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
     })
     res.json(withDerivedEvents(updated))

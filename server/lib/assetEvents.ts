@@ -1,5 +1,5 @@
 export type DerivedEventUrgency = 'amber' | 'red' | 'slate'
-export type DerivedEventSource = 'event' | 'document' | 'dynamic-field'
+export type DerivedEventSource = 'event' | 'document' | 'dynamic-field' | 'preventive'
 
 export interface DerivedAssetEvent {
   id: string
@@ -16,6 +16,7 @@ interface RelatedEvent {
   title: string
   date: Date
   type: string
+  completedAt?: Date | null
 }
 
 interface RelatedDocument {
@@ -32,16 +33,30 @@ interface DateFieldValue {
   definition: {
     id: number
     fieldName: string
-    eventTitle: string | null
+    eventTitle?: string | null
     fieldType: string
     isActive: boolean
   }
+}
+
+interface DateSchedule {
+  id: number
+  definition: { fieldName: string }
+  occurrences: Array<{ id: number; scheduledDate: Date; completedAt: Date | null }>
+}
+
+interface PreventivePlan {
+  id: number
+  name: string
+  executions: Array<{ id: number; scheduledDate: Date; completedAt: Date | null; tasks: Array<{ completedAt: Date | null }> }>
 }
 
 export interface AssetEventRelations {
   events: RelatedEvent[]
   documents: RelatedDocument[]
   dynamicFieldValues: DateFieldValue[]
+  dateSchedules?: DateSchedule[]
+  preventivePlans?: PreventivePlan[]
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -98,7 +113,7 @@ function toDerivedEvent(
 }
 
 export function deriveAssetEvents(relations: AssetEventRelations, now = new Date()): DerivedAssetEvent[] {
-  const derived: DerivedAssetEvent[] = relations.events.map((event) =>
+  const derived: DerivedAssetEvent[] = relations.events.filter((event) => !event.completedAt).map((event) =>
     toDerivedEvent(`event:${event.id}`, event.title, event.date, 'event', event.type, now),
   )
 
@@ -115,19 +130,33 @@ export function deriveAssetEvents(relations: AssetEventRelations, now = new Date
     ))
   }
 
-  for (const value of relations.dynamicFieldValues) {
+  for (const schedule of relations.dateSchedules ?? []) {
+    const occurrence = schedule.occurrences.find((entry) => !entry.completedAt)
+    if (!occurrence) continue
+    derived.push(toDerivedEvent(`dynamic-date:${occurrence.id}`, schedule.definition.fieldName, occurrence.scheduledDate, 'dynamic-field', 'Fecha', now))
+  }
+
+  // Legacy fallback for databases which have not yet run the migration.
+  if ((relations.dateSchedules?.length ?? 0) === 0) for (const value of relations.dynamicFieldValues) {
     const definition = value.definition
     if (!definition.isActive || definition.fieldType !== 'DATE') continue
     const date = parseRelationDate(value.dateValue)
     if (!date) continue
     derived.push(toDerivedEvent(
       `dynamic-field:${value.id}`,
-      definition.eventTitle ?? definition.fieldName,
+      definition.fieldName,
       date,
       'dynamic-field',
       'Campo dinámico',
       now,
     ))
+  }
+
+  for (const plan of relations.preventivePlans ?? []) {
+    const execution = plan.executions.find((entry) => !entry.completedAt)
+    if (!execution) continue
+    const completed = execution.tasks.filter((task) => task.completedAt).length
+    derived.push(toDerivedEvent(`preventive:${execution.id}`, plan.name, execution.scheduledDate, 'preventive', `${completed}/${execution.tasks.length} tareas`, now))
   }
 
   return derived.sort((left, right) => {

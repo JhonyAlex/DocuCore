@@ -23,6 +23,7 @@ interface DynamicFieldInputProps {
 const inputClass = 'w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 disabled:opacity-60'
 
 export default function DynamicFieldInput({ field, value, onChange, disabled = false }: DynamicFieldInputProps) {
+  if (field.fieldType === 'PREVENTIVE') return <div className="rounded-lg border border-dashed border-brand-200 bg-brand-50/50 px-3 py-2 text-xs text-brand-700 dark:border-brand-800 dark:bg-brand-950/30 dark:text-brand-300">Se configurará como plan periódico desde la ficha del activo.</div>
   if (field.fieldType === 'TEXTAREA') {
     return <textarea aria-label={field.fieldName} value={typeof value === 'string' ? value : ''} onChange={(event) => onChange(event.target.value)} required={field.required} disabled={disabled} rows={3} maxLength={5000} placeholder={field.placeholder ?? undefined} className={inputClass} />
   }

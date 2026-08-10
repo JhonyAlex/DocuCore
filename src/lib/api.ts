@@ -57,11 +57,11 @@ export interface ApiAssetEvent {
   date: string
   daysUntil: number
   urgency: 'amber' | 'red' | 'slate'
-  source: 'event' | 'document' | 'dynamic-field'
+  source: 'event' | 'document' | 'dynamic-field' | 'preventive'
   sourceLabel: string
 }
 
-export type DynamicFieldType = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'MULTISELECT' | 'BOOLEAN'
+export type DynamicFieldType = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'MULTISELECT' | 'BOOLEAN' | 'PREVENTIVE'
 
 export interface ApiDynamicFieldOption {
   id: number
@@ -82,9 +82,7 @@ export interface DynamicFieldDefinitionInput {
   minValue?: number | null
   maxValue?: number | null
   decimalPlaces?: number | null
-  periodicity?: DocumentPeriodicity | null
-  periodicityMode?: DocumentPeriodicityMode | null
-  eventTitle?: string | null
+  taskIds: number[]
   sortOrder?: number
   isActive?: boolean
   assetTypeIds: number[]
@@ -97,6 +95,7 @@ export interface ApiDynamicFieldDefinition extends DynamicFieldDefinitionInput {
   key: string
   assetTypes: ApiAssetType[]
   options: ApiDynamicFieldOption[]
+  tasks?: ApiTask[]
   usageCount: number
   createdAt: string
   updatedAt: string
@@ -115,12 +114,11 @@ export interface ApiAssetDynamicField {
   minValue: number | null
   maxValue: number | null
   decimalPlaces: number | null
-  periodicity: DocumentPeriodicity | null
-  periodicityMode: DocumentPeriodicityMode | null
-  eventTitle: string | null
   sortOrder: number
   options: ApiDynamicFieldOption[]
+  tasks?: ApiTask[]
   value: unknown
+  dateSchedule?: { periodicity: DocumentPeriodicity | null; periodicityMode: DocumentPeriodicityMode | null; occurrenceId: number | null; date: string | null } | null
 }
 
 export interface DynamicFieldValueInput {
@@ -175,7 +173,14 @@ export interface ApiAsset {
   location?: ApiLocationRef
   responsible?: ApiUserRef
   dynamicFields?: ApiAssetDynamicField[]
+  preventivePlans?: ApiPreventivePlan[]
 }
+
+export interface ApiTask { id: number; projectId: number; code: string; name: string; isActive: boolean }
+export interface ApiPreventiveExecutionTask { id: number; code: string; name: string; completedAt: string | null }
+export interface ApiPreventiveExecution { id: number; scheduledDate: string; completedAt: string | null; tasks: ApiPreventiveExecutionTask[] }
+export interface ApiPreventivePlan { id: number; definitionId: number; name: string; periodicity: DocumentPeriodicity; periodicityMode: DocumentPeriodicityMode; executions: ApiPreventiveExecution[] }
+export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
 
 export interface ApiLocation {
   id: number
@@ -452,6 +457,10 @@ export function archiveDynamicFieldDefinition(projectId: number, id: number): Pr
   return request<void>(`/projects/${projectId}/dynamic-fields/${id}`, { method: 'DELETE' })
 }
 
+export function fetchTasks(projectId: number, includeInactive = false): Promise<ApiTask[]> { return request<ApiTask[]>(`/projects/${projectId}/tasks${includeInactive ? '?includeInactive=true' : ''}`) }
+export function createTask(projectId: number, input: Pick<ApiTask, 'code' | 'name'>): Promise<ApiTask> { return request(`/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(input) }) }
+export function updateTask(projectId: number, id: number, input: Partial<Pick<ApiTask, 'code' | 'name' | 'isActive'>>): Promise<ApiTask> { return request(`/projects/${projectId}/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(input) }) }
+
 export function updateAssetDynamicFields(assetId: number, values: DynamicFieldValueInput[]): Promise<ApiAsset> {
   return request<ApiAsset>(`/assets/${assetId}/dynamic-fields`, { method: 'PUT', body: JSON.stringify({ values }) })
 }
@@ -459,6 +468,11 @@ export function updateAssetDynamicFields(assetId: number, values: DynamicFieldVa
 export function completeAssetDynamicDate(assetId: number, definitionId: number, performedDate: string): Promise<ApiAsset> {
   return request<ApiAsset>(`/assets/${assetId}/dynamic-fields/${definitionId}/complete`, { method: 'POST', body: JSON.stringify({ performedDate }) })
 }
+
+export function fetchAssetEventHistory(assetId: number): Promise<ApiAssetEventHistory[]> { return request(`/assets/${assetId}/events`) }
+export function completeAssetEvent(assetId: number, source: ApiAssetEventHistory['source'], id: number, performedDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/events/complete`, { method: 'POST', body: JSON.stringify({ source, id, performedDate }) }) }
+export function createAssetPreventive(assetId: number, input: { definitionId: number; name: string; scheduledDate: string; periodicity: DocumentPeriodicity; periodicityMode: DocumentPeriodicityMode; taskIds?: number[] }): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives`, { method: 'POST', body: JSON.stringify(input) }) }
+export function completePreventiveTask(assetId: number, executionId: number, taskId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/${taskId}/complete`, { method: 'POST' }) }
 
 export function fetchStatuses(): Promise<ApiStatus[]> {
   return request<ApiStatus[]>('/statuses')

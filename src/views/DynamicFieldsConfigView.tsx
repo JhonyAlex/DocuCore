@@ -6,9 +6,9 @@ import DynamicFieldFormModal from '@/components/DynamicFieldFormModal'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useSelection } from '@/hooks/useSelection'
 import { useSession } from '@/contexts/SessionContext'
-import { archiveDynamicFieldDefinition, createDynamicFieldDefinition, fetchAssetTypes, fetchDynamicFieldDefinitions, updateDynamicFieldDefinition, type ApiAssetType, type ApiDynamicFieldDefinition, type DynamicFieldDefinitionInput } from '@/lib/api'
+import { archiveDynamicFieldDefinition, createDynamicFieldDefinition, fetchAssetTypes, fetchDynamicFieldDefinitions, fetchTasks, updateDynamicFieldDefinition, type ApiAssetType, type ApiDynamicFieldDefinition, type ApiTask, type DynamicFieldDefinitionInput } from '@/lib/api'
 
-const typeLabels = { TEXT: 'Texto corto', TEXTAREA: 'Texto largo', NUMBER: 'Número', DATE: 'Fecha', SELECT: 'Selección única', MULTISELECT: 'Selección múltiple', BOOLEAN: 'Sí / No' }
+const typeLabels = { TEXT: 'Texto corto', TEXTAREA: 'Texto largo', NUMBER: 'Número', DATE: 'Fecha', SELECT: 'Selección única', MULTISELECT: 'Selección múltiple', BOOLEAN: 'Sí / No', PREVENTIVE: 'Preventivo' }
 
 export default function DynamicFieldsConfigView() {
   const navigate = useNavigate()
@@ -17,6 +17,7 @@ export default function DynamicFieldsConfigView() {
   const selection = useSelection<number>()
   const [fields, setFields] = useState<ApiDynamicFieldDefinition[]>([])
   const [types, setTypes] = useState<ApiAssetType[]>([])
+  const [tasks, setTasks] = useState<ApiTask[]>([])
   const [typeFilter, setTypeFilter] = useState(0)
   const [showInactive, setShowInactive] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -33,9 +34,10 @@ export default function DynamicFieldsConfigView() {
     setLoading(true)
     setError(null)
     try {
-      const [nextFields, nextTypes] = await Promise.all([fetchDynamicFieldDefinitions(projectId, { assetTypeId: typeFilter || undefined, includeInactive: showInactive }), fetchAssetTypes(projectId)])
+      const [nextFields, nextTypes, nextTasks] = await Promise.all([fetchDynamicFieldDefinitions(projectId, { assetTypeId: typeFilter || undefined, includeInactive: showInactive }), fetchAssetTypes(projectId), fetchTasks(projectId)])
       setFields(nextFields)
       setTypes(nextTypes)
+      setTasks(nextTasks)
     } catch {
       setError('No se pudieron cargar los campos dinámicos.')
     } finally {
@@ -86,10 +88,10 @@ export default function DynamicFieldsConfigView() {
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}><button type="button" onClick={() => setArchiveIds(selection.selectedIds)} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white">Archivar</button></BulkActionBar>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         {loading ? <div className="p-8 text-center text-sm text-slate-500">Cargando campos…</div> : error ? <div role="alert" className="p-8 text-center text-sm text-red-600">{error}</div> : fields.length === 0 ? <div className="p-8 text-center"><p className="text-sm text-slate-500">No hay campos dinámicos con estos filtros.</p><button type="button" onClick={() => setFormField(null)} className="mt-2 text-sm font-medium text-brand-600">Crear el primero</button></div> : (
-          <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50"><tr><th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Seleccionar todos los campos" checked={selection.allSelected(ids)} ref={(node) => { if (node) node.indeterminate = selection.someSelected(ids) }} onChange={() => selection.toggleAll(ids)} /></th><th className="px-4 py-3 text-left">Campo</th><th className="px-4 py-3 text-left">Tipo</th><th className="px-4 py-3 text-left">Tipos de activo</th><th className="px-4 py-3 text-left">Periodicidad</th><th className="px-4 py-3 text-left">Uso</th><th className="w-14 px-4 py-3" /></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{fields.map((field) => <tr key={field.id} className={!field.isActive ? 'opacity-55' : ''}><td className="px-4 py-3"><input type="checkbox" aria-label={`Seleccionar ${field.fieldName}`} checked={selection.isSelected(field.id)} onChange={() => selection.toggle(field.id)} /></td><td className="px-4 py-3"><div className="font-medium">{field.fieldName}{field.required && <span className="ml-1 text-red-500">*</span>}</div><div className="text-xs text-slate-400">{field.groupName} · {field.key}</div></td><td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{typeLabels[field.fieldType]}</span></td><td className="max-w-xs px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{field.assetTypes.map((type) => type.name).join(', ')}</td><td className="px-4 py-3 text-xs">{field.periodicity ? `${field.periodicity} · ${field.periodicityMode === 'Calendario' ? 'Calendario' : 'Realización'}` : '—'}</td><td className="px-4 py-3 text-xs">{field.usageCount} activos</td><td className="px-4 py-3"><RowActionsMenu ariaLabel={`Acciones de ${field.fieldName}`} items={[{ label: 'Editar', onSelect: () => { setFormError(null); setFormField(field) } }, ...(field.isActive ? [{ label: 'Archivar', variant: 'danger' as const, onSelect: () => setArchiveIds([field.id]) }] : [])]} /></td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50"><tr><th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Seleccionar todos los campos" checked={selection.allSelected(ids)} ref={(node) => { if (node) node.indeterminate = selection.someSelected(ids) }} onChange={() => selection.toggleAll(ids)} /></th><th className="px-4 py-3 text-left">Campo</th><th className="px-4 py-3 text-left">Tipo</th><th className="px-4 py-3 text-left">Tipos de activo</th><th className="px-4 py-3 text-left">Tareas</th><th className="px-4 py-3 text-left">Uso</th><th className="w-14 px-4 py-3" /></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{fields.map((field) => <tr key={field.id} className={!field.isActive ? 'opacity-55' : ''}><td className="px-4 py-3"><input type="checkbox" aria-label={`Seleccionar ${field.fieldName}`} checked={selection.isSelected(field.id)} onChange={() => selection.toggle(field.id)} /></td><td className="px-4 py-3"><div className="font-medium">{field.fieldName}{field.required && <span className="ml-1 text-red-500">*</span>}</div><div className="text-xs text-slate-400">{field.groupName} · {field.key}</div></td><td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{typeLabels[field.fieldType]}</span></td><td className="max-w-xs px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{field.assetTypes.map((type) => type.name).join(', ')}</td><td className="px-4 py-3 text-xs">{field.fieldType === 'PREVENTIVE' ? `${field.taskIds.length} tareas` : '—'}</td><td className="px-4 py-3 text-xs">{field.usageCount} activos</td><td className="px-4 py-3"><RowActionsMenu ariaLabel={`Acciones de ${field.fieldName}`} items={[{ label: 'Editar', onSelect: () => { setFormError(null); setFormField(field) } }, ...(field.isActive ? [{ label: 'Archivar', variant: 'danger' as const, onSelect: () => setArchiveIds([field.id]) }] : [])]} /></td></tr>)}</tbody></table></div>
         )}
       </div>
-      {formField !== undefined && <DynamicFieldFormModal field={formField} types={types} busy={saving} error={formError} onClose={() => setFormField(undefined)} onSubmit={(input) => void submit(input)} />}
+      {formField !== undefined && <DynamicFieldFormModal field={formField} types={types} tasks={tasks} busy={saving} error={formError} onClose={() => setFormField(undefined)} onSubmit={(input) => void submit(input)} />}
       <ConfirmDialog open={archiveIds.length > 0} title="Archivar campos dinámicos" message={<>Los campos dejarán de mostrarse en los activos, pero sus valores se conservarán para auditoría. ¿Archivar {archiveIds.length === 1 ? 'este campo' : `estos ${archiveIds.length} campos`}?</>} confirmLabel="Archivar" busy={archiving} busyLabel="Archivando…" error={archiveError} onConfirm={() => void archive()} onCancel={() => { setArchiveIds([]); setArchiveError(null) }} />
     </section>
   )

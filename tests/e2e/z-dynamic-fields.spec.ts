@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures'
 
 test.describe('CFG-DYN-01 campos dinámicos', () => {
-  test('configures a periodic date, edits it in Características and advances its event', async ({ page, consoleIssues }) => {
+  test('configures a date characteristic, assigns recurrence on the asset and advances its event', async ({ page, consoleIssues }) => {
     const fieldName = `Próxima inspección QA ${Date.now()}`
 
     await page.goto('/config')
@@ -12,9 +12,6 @@ test.describe('CFG-DYN-01 campos dinámicos', () => {
     await form.getByLabel('Nombre').fill(fieldName)
     await form.getByLabel('Grupo').fill('Inspecciones QA')
     await form.getByLabel('Tipo').selectOption('DATE')
-    await form.getByLabel('Título del evento').fill('Inspección periódica QA')
-    await form.getByLabel('Periodicidad').selectOption('Trimestral')
-    await form.getByLabel('Modo').selectOption('Calendario')
     await form.getByRole('button', { name: 'Crear campo' }).click()
     await expect(page.getByRole('row').filter({ hasText: fieldName })).toBeVisible()
 
@@ -25,12 +22,15 @@ test.describe('CFG-DYN-01 campos dinámicos', () => {
     await expect(assetDialog.getByText(fieldName, { exact: true })).toBeVisible()
     await assetDialog.getByRole('button', { name: 'Editar características' }).click()
     await assetDialog.getByLabel(fieldName).fill('2026-09-15')
+    const dateEditor = assetDialog.getByLabel(fieldName).locator('xpath=..')
+    await dateEditor.getByLabel('Periodicidad de la fecha').selectOption('Trimestral')
+    await dateEditor.getByLabel('Modo de cálculo de la fecha').selectOption('Calendario')
     await assetDialog.getByRole('button', { name: 'Guardar características' }).click()
     await expect(assetDialog.getByText('15/9/2026')).toBeVisible()
 
     await assetDialog.getByRole('button', { name: /^Eventos/ }).click()
-    await expect(assetDialog.getByText('Inspección periódica QA', { exact: true })).toBeVisible()
-    await expect(assetDialog.getByText(/15\/09\/2026 · Característica/)).toBeVisible()
+    await expect(assetDialog.getByText(fieldName, { exact: true })).toBeVisible()
+    await expect(assetDialog.getByText(/15\/09\/2026 · Fecha/)).toBeVisible()
 
     await assetDialog.getByRole('button', { name: 'Características' }).click()
     await assetDialog.getByRole('button', { name: 'Completar y programar siguiente →' }).click()

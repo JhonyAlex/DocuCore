@@ -48,7 +48,7 @@ export interface AssetNextEvent {
   label: string
   date: string
   urgency: 'amber' | 'red' | 'slate'
-  source: 'event' | 'document' | 'dynamic-field'
+  source: 'event' | 'document' | 'dynamic-field' | 'preventive'
   sourceLabel: string
 }
 

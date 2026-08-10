@@ -1,30 +1,25 @@
-import type { ApiAsset } from '@/lib/api'
-import { formatApiDate, mapApiAssetEventToDisplay } from '@/lib/assetMappers'
+import { useEffect as lifecycleEffect, useState } from 'react'
+import { completeAssetEvent, fetchAssetEventHistory, type ApiAsset, type ApiAssetEventHistory } from '@/lib/api'
+import { formatApiDate } from '@/lib/assetMappers'
 
-const cardStyles = {
-  amber: 'border-amber-100 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-900/20',
-  red: 'border-red-100 bg-red-50/70 dark:border-red-900/50 dark:bg-red-900/20',
-  slate: 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50',
+const day = () => new Date().toISOString().slice(0, 10)
+
+function status(row: ApiAssetEventHistory): string {
+  if (row.completedAt) return `Completado · ${formatApiDate(row.completedDate ?? row.completedAt)}`
+  const difference = Math.floor((Date.parse(row.date) - Date.parse(`${day()}T00:00:00.000Z`)) / 86_400_000)
+  return difference < 0 ? 'Vencido' : difference === 0 ? 'Hoy' : difference <= 21 ? 'Próximo' : 'Pendiente'
 }
 
-const sourceLabels = { event: 'Evento', document: 'Documento', 'dynamic-field': 'Característica' }
-
-export default function AssetEventsPanel({ asset }: { asset: ApiAsset }) {
-  const events = asset.nextEvents.map((event) => ({ ...mapApiAssetEventToDisplay(event), calendarDate: formatApiDate(event.date), sourceLabel: event.sourceLabel }))
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">
-      <div className="mb-3"><h4 className="font-medium">Eventos del activo</h4><p className="text-xs text-slate-500 dark:text-slate-400">Generados desde eventos, documentos y características con fecha.</p></div>
-      {events.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 p-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">Sin eventos programados.</div> : (
-        <div className="space-y-2">
-          {events.map((event) => (
-            <div key={event.id} className={`flex items-center gap-3 rounded-lg border p-3 ${cardStyles[event.urgency]}`}>
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-brand-600 shadow-sm dark:bg-slate-900"><svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
-              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{event.label}</div><div className="text-xs text-slate-500 dark:text-slate-400">{event.calendarDate} · {sourceLabels[event.source]} · {event.sourceLabel}</div></div>
-              <span className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">{event.date}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+export default function AssetEventsPanel({ asset, onChanged }: { asset: ApiAsset; onChanged: (asset: ApiAsset) => void }) {
+  const [rows, setRows] = useState<ApiAssetEventHistory[]>([])
+  const [performedDate, setPerformedDate] = useState(day)
+  const [busy, setBusy] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const load = async () => { try { setRows(await fetchAssetEventHistory(asset.id)) } catch { setError('No se pudo cargar el historial de eventos.') } }
+  lifecycleEffect(() => { void load() }, [asset.id])
+  const complete = async (row: ApiAssetEventHistory) => {
+    setBusy(row.id); setError(null)
+    try { onChanged(await completeAssetEvent(asset.id, row.source, row.id, performedDate)); await load() } catch (reason) { setError(reason instanceof Error && reason.message.includes('409') ? 'Completa antes todas las tareas del preventivo.' : 'No se pudo completar el evento.') } finally { setBusy(null) }
+  }
+  return <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin"><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-medium">Historial de eventos</h4><p className="text-xs text-slate-500 dark:text-slate-400">Pendientes, próximos, vencidos y completados de todas las fuentes.</p></div><label className="text-xs text-slate-500">Fecha de realización<input type="date" value={performedDate} onChange={(event) => setPerformedDate(event.target.value)} className="ml-2 rounded border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-800" /></label></div>{error && <p role="alert" className="mb-3 text-xs text-red-600">{error}</p>}{rows.length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 p-5 text-sm text-slate-500 dark:border-slate-700">Sin eventos registrados.</div> : <div className="space-y-2">{rows.map((row) => <div key={`${row.source}:${row.id}`} className={`flex items-center gap-3 rounded-lg border p-3 ${row.completedAt ? 'border-slate-200 bg-slate-50 opacity-70 dark:border-slate-700 dark:bg-slate-800/50' : status(row) === 'Vencido' ? 'border-red-100 bg-red-50/70 dark:border-red-900/50 dark:bg-red-900/20' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'}`}><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{row.title}</div><div className="text-xs text-slate-500 dark:text-slate-400">{formatApiDate(row.date)} · {row.sourceLabel}{row.progress ? ` · ${row.progress.completed}/${row.progress.total} tareas` : ''}</div></div><span className="text-xs font-medium text-slate-500">{status(row)}</span>{!row.completedAt && <button type="button" onClick={() => void complete(row)} disabled={busy === row.id} className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-brand-600 dark:border-slate-700 dark:bg-slate-900 disabled:opacity-40">{busy === row.id ? 'Completando…' : row.source === 'preventive' ? 'Completar preventivo' : 'Completar'}</button>}</div>)}</div>}</div>
 }
