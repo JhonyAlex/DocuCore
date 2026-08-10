@@ -108,3 +108,50 @@ describe('document metadata schemas', () => {
     })).toThrow()
   })
 })
+
+describe('document periodicity schemas', () => {
+  it('accepts a periodicity with its mode when creating', () => {
+    const parsed = createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01',
+      periodicity: 'Trimestral', periodicityMode: 'Calendario',
+    })
+
+    expect(parsed.periodicity).toBe('Trimestral')
+    expect(parsed.periodicityMode).toBe('Calendario')
+  })
+
+  it('treats an empty periodicity as not sent (multipart compatible)', () => {
+    const parsed = createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01', periodicity: '', periodicityMode: '',
+    })
+
+    expect(parsed.periodicity).toBeUndefined()
+    expect(parsed.periodicityMode).toBeUndefined()
+  })
+
+  it('rejects a periodicity mode without a periodicity when creating', () => {
+    expect(() => createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01', periodicityMode: 'Subida',
+    })).toThrow()
+  })
+
+  it('rejects an unknown periodicity value', () => {
+    expect(() => createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01', periodicity: 'Semanal',
+    })).toThrow()
+  })
+
+  it('accepts null to remove the periodicity when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ periodicity: null, periodicityMode: null })
+
+    expect(parsed.periodicity).toBeNull()
+    expect(parsed.periodicityMode).toBeNull()
+  })
+
+  it('accepts a new periodicity and mode when updating', () => {
+    const parsed = updateDocumentMetadataSchema.parse({ periodicity: 'Anual', periodicityMode: 'Subida' })
+
+    expect(parsed.periodicity).toBe('Anual')
+    expect(parsed.periodicityMode).toBe('Subida')
+  })
+})

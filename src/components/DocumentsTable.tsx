@@ -57,14 +57,15 @@ export default function DocumentsTable({ documents, loading, error, selectedIds,
               <th className="text-left px-4 py-3">Versión</th>
               <th className="text-left px-4 py-3">Emisión</th>
               <th className="text-left px-4 py-3">Vencimiento</th>
+              <th className="text-left px-4 py-3">Periodicidad</th>
               <th className="text-left px-4 py-3">Estado</th>
               <th className="text-right px-4 py-3">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {loading && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Cargando documentos…</td></tr>}
-            {!loading && error && <tr><td colSpan={9} className="px-4 py-8 text-center"><p role="alert" className="text-red-600">{error}</p><button type="button" onClick={onRetry} className="mt-2 text-sm text-brand-600">Reintentar</button></td></tr>}
-            {!loading && !error && documents.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No hay documentos todavía.</td></tr>}
+            {loading && <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500">Cargando documentos…</td></tr>}
+            {!loading && error && <tr><td colSpan={10} className="px-4 py-8 text-center"><p role="alert" className="text-red-600">{error}</p><button type="button" onClick={onRetry} className="mt-2 text-sm text-brand-600">Reintentar</button></td></tr>}
+            {!loading && !error && documents.length === 0 && <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500">No hay documentos todavía.</td></tr>}
             {!loading && !error && documents.map((document) => {
               const version = document.currentVersion
               const format = version?.originalName.split('.').pop()?.toUpperCase() ?? 'DOC'
@@ -91,6 +92,7 @@ export default function DocumentsTable({ documents, loading, error, selectedIds,
                   <td className="px-4 py-3 font-mono text-xs">{version ? `v${version.version}` : '—'}</td>
                   <td className="px-4 py-3 text-xs">{version ? formatApiDate(version.issueDate) : '—'}</td>
                   <td className="px-4 py-3 text-xs">{version?.expiryDate ? formatApiDate(version.expiryDate) : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-3 text-xs">{document.periodicity ? `${document.periodicity} · ${document.periodicityMode}` : <span className="text-slate-400">—</span>}</td>
                   <td className="px-4 py-3"><span className={`chip ${statusClasses[document.status]}`}>{document.status}</span></td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <RowActionsMenu items={items} ariaLabel={`Acciones de ${document.name}`} />

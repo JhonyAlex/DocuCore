@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures'
+import { minimalPdf } from './pdf'
 
 // Acciones masivas (bulk): selección múltiple en tablas de Activos y Documentos.
 // Las acciones del menú ⋯ de una fila deben estar también disponibles como acción masiva.
@@ -29,7 +30,7 @@ async function createAsset(page: import('@playwright/test').Page, code: string, 
 }
 
 async function createDocument(page: import('@playwright/test').Page, name: string): Promise<{ id: number }> {
-  const bytes = Buffer.from('DOCUCORE-BULK-TEST-BYTES')
+  const bytes = minimalPdf()
   const response = await page.request.post('/api/documents', {
     multipart: {
       name,

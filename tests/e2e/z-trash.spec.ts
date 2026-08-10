@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { minimalPdf } from './pdf'
 
 // ITEM-05: papelera por UI — eliminar desde la ficha y desde el menú de fila,
 // restaurar y eliminar definitivamente (con confirmación). UX-02: el modal de
@@ -121,7 +122,7 @@ test.describe.serial('trash and modal fixes', () => {
 
   test('renders the asset picker listbox in a portal so the modal never clips it', async ({ page }) => {
     const asset = await createAsset(page, 'QA-PIK-ONE', 'QA-PIK-ONE-SN')
-    const bytes = Buffer.from('DOCUCORE-PORTAL-KNOWN-BYTES')
+    const bytes = minimalPdf()
     const created = await page.request.post('/api/documents', {
       multipart: {
         name: 'Documento portal QA',

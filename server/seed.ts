@@ -263,11 +263,11 @@ async function main(): Promise<void> {
   }
 
   const documentData = [
-    { assetCode: 'VH-014', name: 'Certificado ITV 2025', eventTitle: 'ITV', type: 'Certificado', issueDate: '14/07/2025', expiryDate: '13/07/2026', fileName: 'certificado-itv-2025.pdf', content: 'ITV 2025', sizeBytes: 2_400_000 },
-    { assetCode: 'MG-203', name: 'Certificado calibración WIKA', eventTitle: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', fileName: 'calibracion-wika.pdf', content: 'CALIBRACION WIKA', sizeBytes: 1_100_000 },
-    { assetCode: 'CNC-05', name: 'Manual técnico Haas ST-20', type: 'Manual', issueDate: '02/03/2024', expiryDate: null, fileName: 'manual-haas-st20.pdf', content: 'MANUAL HAAS ST-20', sizeBytes: 4_800_000, previous: { issueDate: '02/03/2023', expiryDate: null, fileName: 'manual-haas-st20-v2.pdf', content: 'MANUAL HAAS V2' } },
-    { assetCode: 'EXT-A12', name: 'Acta revisión extintor A12', eventTitle: 'Revisión anual', type: 'Acta', issueDate: '24/07/2025', expiryDate: '24/07/2026', fileName: 'acta-extintor-a12.pdf', content: 'ACTA EXTINTOR A12', sizeBytes: 840_000 },
-    { assetCode: 'CP-02', name: 'Contrato servicio Limpiezas Veloz', type: 'Contrato', issueDate: '12/08/2025', expiryDate: '12/08/2026', fileName: 'contrato-limpiezas.pdf', content: 'CONTRATO LIMPIEZAS', sizeBytes: 620_000 },
+    { assetCode: 'VH-014', name: 'Certificado ITV 2025', eventTitle: 'ITV', type: 'Certificado', issueDate: '14/07/2025', expiryDate: '13/07/2026', periodicity: 'Anual', periodicityMode: 'Calendario', fileName: 'certificado-itv-2025.pdf', content: 'ITV 2025', sizeBytes: 2_400_000 },
+    { assetCode: 'MG-203', name: 'Certificado calibración WIKA', eventTitle: 'Calibración anual', type: 'Calibración', issueDate: '19/07/2025', expiryDate: '19/07/2026', periodicity: 'Anual', periodicityMode: 'Calendario', fileName: 'calibracion-wika.pdf', content: 'CALIBRACION WIKA', sizeBytes: 1_100_000 },
+    { assetCode: 'CNC-05', name: 'Manual técnico Haas ST-20', type: 'Manual', issueDate: '02/03/2024', expiryDate: null, periodicity: null, periodicityMode: null, fileName: 'manual-haas-st20.pdf', content: 'MANUAL HAAS ST-20', sizeBytes: 4_800_000, previous: { issueDate: '02/03/2023', expiryDate: null, fileName: 'manual-haas-st20-v2.pdf', content: 'MANUAL HAAS V2' } },
+    { assetCode: 'EXT-A12', name: 'Acta revisión extintor A12', eventTitle: 'Revisión anual', type: 'Acta', issueDate: '24/07/2025', expiryDate: '24/07/2026', periodicity: 'Anual', periodicityMode: 'Calendario', fileName: 'acta-extintor-a12.pdf', content: 'ACTA EXTINTOR A12', sizeBytes: 840_000 },
+    { assetCode: 'CP-02', name: 'Contrato servicio Limpiezas Veloz', type: 'Contrato', issueDate: '12/08/2025', expiryDate: '12/08/2026', periodicity: 'Anual', periodicityMode: 'Subida', fileName: 'contrato-limpiezas.pdf', content: 'CONTRATO LIMPIEZAS', sizeBytes: 620_000 },
   ]
   for (const [index, document] of documentData.entries()) {
     const logicalDocument = await prisma.document.create({
@@ -275,6 +275,8 @@ async function main(): Promise<void> {
         name: document.name,
         eventTitle: document.eventTitle,
         type: document.type,
+        periodicity: document.periodicity,
+        periodicityMode: document.periodicityMode,
         createdAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         updatedAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         project: { connect: { code: PROJECT_CODE } },

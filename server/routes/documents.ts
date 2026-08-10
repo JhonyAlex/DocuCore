@@ -4,7 +4,8 @@ import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentFile } from '../lib/documentStorage'
-import { createDocumentMetadataSchema, documentListQuerySchema, updateDocumentMetadataSchema } from '../lib/validate'
+import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
+import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 
 const router: Router = Router()
 const ACTOR_USER_ID = 1
@@ -55,6 +56,8 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
     project: document.project,
+    periodicity: document.periodicity ?? null,
+    periodicityMode: document.periodicityMode ?? null,
     currentVersion: currentVersion ? {
       id: currentVersion.id,
       version: currentVersion.version,
@@ -167,6 +170,15 @@ router.post('/', asyncHandler(async (req, res) => {
   const input = createDocumentMetadataSchema.parse(req.body)
   const assetIds = input.assetIds ?? []
   await assertDocumentAssets(input.projectId, assetIds)
+  // DOC-03: con periodicidad y sin vencimiento explícito, la primera versión
+  // nace con el vencimiento calculado desde la emisión (no hay vencimiento previo).
+  const periodicity = input.periodicity ?? null
+  const periodicityMode = input.periodicityMode ?? 'Calendario'
+  const expiryDate = input.expiryDate
+    ? new Date(input.expiryDate)
+    : periodicity
+      ? calculateNextExpiry(null, new Date(input.issueDate), periodicityMode, periodicity)
+      : null
   const storageKey = await storeDocumentFile(req.file)
   try {
     const created = await prisma.$transaction(async (tx) => {
@@ -175,11 +187,13 @@ router.post('/', asyncHandler(async (req, res) => {
           name: input.name,
           type: input.type,
           projectId: input.projectId,
+          periodicity,
+          periodicityMode: periodicity ? periodicityMode : null,
           assets: { create: assetIds.map((assetId) => ({ asset: { connect: { id: assetId } } })) },
         },
       })
       await tx.documentVersion.create({
-        data: { documentId: document.id, version: 1, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate: input.expiryDate ? new Date(input.expiryDate) : null },
+        data: { documentId: document.id, version: 1, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate },
       })
       await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Documento subido', entityId: String(document.id), detail: `${input.name} · v1` } })
       return tx.document.findUniqueOrThrow({ where: { id: document.id }, include: documentInclude })
@@ -196,14 +210,24 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   await uploadSingle(req, res)
   if (!req.file) return res.status(400).json({ error: 'A document file is required' })
-  const input = createDocumentMetadataSchema.pick({ issueDate: true, expiryDate: true }).parse(req.body)
-  await assertDocumentExists(id)
+  const input = documentVersionMetadataSchema.parse(req.body)
+  const before = await assertDocumentExists(id)
+  // DOC-03: con periodicidad y sin vencimiento explícito, el nuevo vencimiento
+  // se calcula según el modo ('Calendario' salta desde el vigente, 'Subida'
+  // desde la emisión de la nueva versión).
+  const periodicity = before.periodicity as DocumentPeriodicity | null
+  const periodicityMode = before.periodicityMode as DocumentPeriodicityMode | null
+  const expiryDate = input.expiryDate
+    ? new Date(input.expiryDate)
+    : periodicity && periodicityMode
+      ? calculateNextExpiry(before.versions[0]?.expiryDate ?? null, new Date(input.issueDate), periodicityMode, periodicity)
+      : null
   const storageKey = await storeDocumentFile(req.file)
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const lastVersion = await tx.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' }, select: { version: true } })
       const version = (lastVersion?.version ?? 0) + 1
-      await tx.documentVersion.create({ data: { documentId: id, version, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate: input.expiryDate ? new Date(input.expiryDate) : null } })
+      await tx.documentVersion.create({ data: { documentId: id, version, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate } })
       await tx.document.update({ where: { id }, data: {} })
       await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida` } })
       return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
@@ -221,6 +245,11 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   const input = updateDocumentMetadataSchema.parse(req.body)
   const before = await assertDocumentExists(id)
   if (input.assetIds !== undefined) await assertDocumentAssets(input.projectId ?? before.projectId, input.assetIds ?? [])
+  // DOC-03: el modo requiere periodicidad (actual o entrante); null quita la regla.
+  const periodicity = input.periodicity
+  if (input.periodicityMode !== undefined && input.periodicityMode !== null && (periodicity ?? before.periodicity) === null) {
+    return res.status(400).json({ error: 'periodicityMode requires periodicity' })
+  }
   const versionMetadataChanged = input.issueDate !== undefined || input.expiryDate !== undefined
   const currentVersion = before.versions[0]
   if (versionMetadataChanged && !currentVersion) {
@@ -235,6 +264,8 @@ router.patch('/:id', asyncHandler(async (req, res) => {
         name: input.name,
         type: input.type,
         projectId: input.projectId,
+        periodicity,
+        periodicityMode: periodicity === null ? null : input.periodicityMode,
         assets: input.assetIds === undefined ? undefined : {
           deleteMany: {},
           create: (input.assetIds ?? []).map((assetId) => ({ asset: { connect: { id: assetId } } })),
@@ -254,21 +285,40 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     const previousAssetIds = before.assets.map((link) => link.asset.id).sort((left, right) => left - right)
     const nextAssetIds = (input.assetIds ?? previousAssetIds).slice().sort((left, right) => left - right)
     const relationChanged = JSON.stringify(previousAssetIds) !== JSON.stringify(nextAssetIds)
+    const periodicityChanged = periodicity !== undefined
     const action = relationChanged && versionMetadataChanged
       ? 'Documento y relación actualizados'
       : relationChanged
         ? 'Relación documento-activo actualizada'
         : versionMetadataChanged
           ? 'Fechas de documento actualizadas'
-          : 'Metadatos de documento actualizados'
+          : periodicityChanged
+            ? 'Periodicidad de documento actualizada'
+            : 'Metadatos de documento actualizados'
     const detail = [
       relationChanged ? `Activos ${assetCodes(before)} → ${assetCodes(document)}` : null,
       versionMetadataChanged ? `Fechas de v${currentVersion?.version ?? 1} actualizadas` : null,
+      periodicityChanged ? `Periodicidad ${before.periodicity ?? 'Sin'} → ${periodicity ?? 'Sin'} · modo ${input.periodicityMode === null ? '—' : (input.periodicityMode ?? before.periodicityMode ?? '—')}` : null,
     ].filter(Boolean).join(' · ') || 'Nombre, tipo o proyecto actualizado'
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action, entityId: String(id), detail } })
     return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
   })
   res.json(serializeDocument(updated))
+}))
+
+// Vista previa de la versión actual: sirve el fichero inline (Content-Disposition
+// inline) para que el navegador lo muestre (iframe/PDF, <img> en imágenes); la
+// descarga sigue usando los endpoints /download con attachment.
+router.get('/:id/preview', asyncHandler(async (req, res) => {
+  const id = parseId(req.params.id)
+  if (!id) return res.status(400).json({ error: 'Invalid id' })
+  const version = await prisma.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' } })
+  if (!version) return res.status(404).json({ error: 'Document version not found' })
+  const bytes = await readDocumentFile(version.storageKey)
+  res.setHeader('Content-Type', version.mimeType)
+  res.setHeader('Content-Length', String(bytes.length))
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(version.originalName)}`)
+  res.send(bytes)
 }))
 
 router.get('/:id/download', asyncHandler(async (req, res) => {

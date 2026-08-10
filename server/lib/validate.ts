@@ -66,11 +66,30 @@ const nullableOptionalAssetIds = z.preprocess((value) => {
   return parsed
 }, z.array(z.number().int().positive()).max(20).nullable().optional())
 
+// DOC-03: periodicidad y modo viajan como strings en FormData (multipart) o
+// JSON; '' equivale a no enviado y null (solo update, JSON) quita la regla.
+const optionalPeriodicity = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual']).optional())
+const optionalPeriodicityMode = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(['Calendario', 'Subida']).optional())
+const nullableOptionalPeriodicity = optionalPeriodicity.nullable()
+const nullableOptionalPeriodicityMode = optionalPeriodicityMode.nullable()
+
 export const createDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160),
   type: z.string().trim().min(1).max(80),
   projectId: z.preprocess((value) => Number(value), z.number().int().positive()),
   assetIds: optionalAssetIds,
+  issueDate: isoDateSchema,
+  expiryDate: optionalDateSchema,
+  periodicity: optionalPeriodicity,
+  periodicityMode: optionalPeriodicityMode,
+}).strict().refine((value) => !value.periodicityMode || value.periodicity !== undefined, {
+  message: 'periodicityMode requires periodicity',
+  path: ['periodicityMode'],
+})
+
+// Fechas de una versión nueva (POST /documents/:id/versions): el resto de
+// metadatos del documento no se reescribe al subir una versión.
+export const documentVersionMetadataSchema = z.object({
   issueDate: isoDateSchema,
   expiryDate: optionalDateSchema,
 }).strict()
@@ -82,6 +101,8 @@ export const updateDocumentMetadataSchema = z.object({
   assetIds: nullableOptionalAssetIds,
   issueDate: optionalDateSchema,
   expiryDate: nullableOptionalDateSchema,
+  periodicity: nullableOptionalPeriodicity,
+  periodicityMode: nullableOptionalPeriodicityMode,
 }).strict()
 
 export const documentListQuerySchema = z.object({

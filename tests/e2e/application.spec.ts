@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
+import { minimalPdf } from './pdf'
 
 type AssetType = { id: number; name: string }
 type Status = { id: number; name: string }
@@ -374,8 +375,8 @@ test.describe('DocuCore application', () => {
   })
 
   test('uploads, versions, downloads, persists, and detaches a document from an asset', async ({ page, consoleIssues }) => {
-    const firstBytes = Buffer.from('DOCUCORE-DOCUMENT-V1-KNOWN-BYTES')
-    const secondBytes = Buffer.from('DOCUCORE-DOCUMENT-V2-KNOWN-BYTES')
+    const firstBytes = minimalPdf()
+    const secondBytes = minimalPdf()
     const asset = await page.request.get('/api/assets?search=AST-001&limit=1')
     const assetBody = await asset.json()
     const assetId = assetBody.data[0].id as number
@@ -450,7 +451,7 @@ test.describe('DocuCore application', () => {
   test('links an existing document and creates a new one from the asset ficha', async ({ page, consoleIssues }) => {
     const docName = `E2E Vincular ${Date.now()}`
     const newDocName = `${docName} nuevo`
-    const bytes = Buffer.from('DOCUCORE-LINK-KNOWN-BYTES')
+    const bytes = minimalPdf()
     const asset = await page.request.get('/api/assets?search=AST-001&limit=1')
     const assetBody = await asset.json()
     const assetId = assetBody.data[0].id as number
@@ -512,7 +513,7 @@ test.describe('DocuCore application', () => {
 
     const createResponse = await page.request.post('/api/documents', {
       multipart: {
-        file: { name: 'editable-expiry.pdf', mimeType: 'application/pdf', buffer: Buffer.from('DOCUCORE-EDITABLE-EXPIRY') },
+        file: { name: 'editable-expiry.pdf', mimeType: 'application/pdf', buffer: minimalPdf() },
         name: documentName,
         type: 'Certificado',
         projectId: 1,
@@ -554,7 +555,7 @@ test.describe('DocuCore application', () => {
 
   test('associates a document with multiple assets, opens it from the whole row, and keeps the other link when removing one', async ({ page, consoleIssues }) => {
     const documentName = `Multi activo ${Date.now()}`
-    const bytes = Buffer.from('DOCUCORE-MULTI-ASSET')
+    const bytes = minimalPdf()
     const firstAsset = await page.request.get('/api/assets?search=AST-001&limit=1')
     const firstAssetId = ((await firstAsset.json()).data[0].id) as number
     const secondAsset = await page.request.get('/api/assets?search=CNC-05&limit=1')
@@ -600,6 +601,86 @@ test.describe('DocuCore application', () => {
     expect((await removedAsset.json()).documents.some((document: { id: number }) => document.id === created.id)).toBe(false)
     const keptAsset = await page.request.get(`/api/assets/${firstAssetId}`)
     expect((await keptAsset.json()).documents.some((document: { id: number }) => document.id === created.id)).toBe(true)
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('calculates the document expiry from the periodicity and advances it when uploading a new version', async ({ page, consoleIssues }) => {
+    const documentName = `Periodicidad calendario ${Date.now()}`
+
+    await page.goto('/docs')
+    await page.getByRole('button', { name: 'Subir documento', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Subir documento' })
+    await dialog.getByLabel('Nombre').fill(documentName)
+    await dialog.getByLabel('Tipo').selectOption({ label: 'Certificado' })
+    await dialog.getByLabel('Emisión').fill('2026-07-15')
+    await dialog.getByLabel('Periodicidad').selectOption({ label: 'Trimestral' })
+    await expect(dialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-10-15')
+    await expect(dialog.getByText('Automático: trimestral · según vencimiento vigente')).toBeVisible()
+    await dialog.getByLabel('Fichero').setInputFiles({ name: 'periodicidad-v1.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
+    await dialog.getByRole('button', { name: 'Subir documento', exact: true }).last().click()
+    expect((await createResponse).status()).toBe(201)
+
+    const row = page.locator('tbody tr').filter({ hasText: documentName })
+    await expect(row).toContainText('Trimestral · Calendario')
+    await expect(row).toContainText('15/10/2026')
+    const documentsResponse = await page.request.get(`/api/documents?search=${encodeURIComponent(documentName)}`)
+    const created = (await documentsResponse.json()).data[0] as { id: number; periodicity: string; periodicityMode: string; currentVersion: { expiryDate: string } }
+    expect(created.periodicity).toBe('Trimestral')
+    expect(created.periodicityMode).toBe('Calendario')
+    expect(created.currentVersion.expiryDate).toBe('2026-10-15T00:00:00.000Z')
+
+    await row.click()
+    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${created.id}/versions`))
+    await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'periodicidad-v2.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
+    expect((await versionResponse).status()).toBe(201)
+    await expect(manageDialog.getByText('v2 · periodicidad-v2.pdf', { exact: true })).toBeVisible()
+    const afterVersion = await (await page.request.get(`/api/documents/${created.id}`)).json() as { currentVersion: { version: number; expiryDate: string } }
+    expect(afterVersion.currentVersion.version).toBe(2)
+    expect(afterVersion.currentVersion.expiryDate).toBe('2027-01-15T00:00:00.000Z')
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('computes the expiry from the issue date in Subida mode and keeps a manual edit', async ({ page, consoleIssues }) => {
+    const documentName = `Periodicidad subida ${Date.now()}`
+
+    await page.goto('/docs')
+    await page.getByRole('button', { name: 'Subir documento', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Subir documento' })
+    await dialog.getByLabel('Nombre').fill(documentName)
+    await dialog.getByLabel('Emisión').fill('2026-07-15')
+    await dialog.getByLabel('Periodicidad').selectOption({ label: 'Trimestral' })
+    await dialog.getByLabel('Modo').selectOption({ label: 'Según subida' })
+    await expect(dialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-10-15')
+    await dialog.getByLabel('Fichero').setInputFiles({ name: 'subida-v1.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
+    await dialog.getByRole('button', { name: 'Subir documento', exact: true }).last().click()
+    expect((await createResponse).status()).toBe(201)
+    const documentsResponse = await page.request.get(`/api/documents?search=${encodeURIComponent(documentName)}`)
+    const created = (await documentsResponse.json()).data[0] as { id: number; currentVersion: { expiryDate: string } }
+    expect(created.currentVersion.expiryDate).toBe('2026-10-15T00:00:00.000Z')
+
+    await page.locator('tbody tr').filter({ hasText: documentName }).click()
+    let manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await manageDialog.getByLabel('Vencimiento (opcional)').fill('2026-11-20')
+    const updateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${created.id}`))
+    await manageDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
+    expect((await updateResponse).status()).toBe(200)
+    const edited = await (await page.request.get(`/api/documents/${created.id}`)).json() as { currentVersion: { expiryDate: string } }
+    expect(edited.currentVersion.expiryDate).toBe('2026-11-20T00:00:00.000Z')
+
+    await page.locator('tbody tr').filter({ hasText: documentName }).click()
+    manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await manageDialog.getByLabel('Emisión').fill('2026-08-05')
+    await expect(manageDialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-11-05')
+    const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${created.id}/versions`))
+    await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'subida-v2.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
+    expect((await versionResponse).status()).toBe(201)
+    const afterVersion = await (await page.request.get(`/api/documents/${created.id}`)).json() as { currentVersion: { version: number; issueDate: string; expiryDate: string } }
+    expect(afterVersion.currentVersion.version).toBe(2)
+    expect(afterVersion.currentVersion.issueDate).toBe('2026-08-05T00:00:00.000Z')
+    expect(afterVersion.currentVersion.expiryDate).toBe('2026-11-05T00:00:00.000Z')
     expect(consoleIssues).toEqual([])
   })
 

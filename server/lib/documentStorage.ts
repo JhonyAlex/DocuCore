@@ -9,6 +9,10 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = new Map<string, string>([
   ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'],
   ['application/vnd.ms-excel', '.xls'],
   ['text/plain', '.txt'],
+  ['image/png', '.png'],
+  ['image/jpeg', '.jpg'],
+  ['image/webp', '.webp'],
+  ['image/gif', '.gif'],
 ])
 
 // Marcador propio que identifica un directorio como almacenamiento de DocuCore.
@@ -93,7 +97,7 @@ export async function assertValidStorage(): Promise<string> {
 
 // Clave de almacenamiento gestionada: UUID canónico (versión 4 y variant
 // 8/9/a/b) con extensión permitida. Solo estos nombres se crean y se eliminan.
-const MANAGED_STORAGE_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(pdf|xlsx|xls|txt)$/i
+const MANAGED_STORAGE_KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(pdf|xlsx|xls|txt|png|jpg|jpeg|webp|gif)$/i
 
 function isManagedStorageKey(storageKey: string): boolean {
   return path.basename(storageKey) === storageKey && MANAGED_STORAGE_KEY_PATTERN.test(storageKey)

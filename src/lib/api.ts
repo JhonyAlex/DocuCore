@@ -1,3 +1,5 @@
+import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
+
 const API_BASE = '/api'
 
 export interface ApiAssetType {
@@ -162,6 +164,8 @@ export interface ApiDocument {
   assets: Array<{ id: number; code: string; name: string }>
   projectId: number
   project: { id: number; code: string; name: string }
+  periodicity: DocumentPeriodicity | null
+  periodicityMode: DocumentPeriodicityMode | null
   currentVersion: ApiDocumentVersion | null
   status: 'Vigente' | 'Por vencer' | 'Vencido'
 }
@@ -194,6 +198,8 @@ export interface DocumentMetadataInput {
   assetIds?: number[]
   issueDate: string
   expiryDate?: string | null
+  periodicity?: DocumentPeriodicity | null
+  periodicityMode?: DocumentPeriodicityMode | null
 }
 
 export interface ApiAssetListResponse {
@@ -249,6 +255,10 @@ function documentFormData(input: DocumentMetadataInput, file: File): FormData {
   if (input.assetIds?.length) body.set('assetIds', JSON.stringify(input.assetIds))
   body.set('issueDate', input.issueDate)
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
+  if (input.periodicity) {
+    body.set('periodicity', input.periodicity)
+    body.set('periodicityMode', input.periodicityMode ?? 'Calendario')
+  }
   body.set('file', file)
   return body
 }
@@ -369,12 +379,18 @@ export function createDocumentVersion(id: number, input: Pick<DocumentMetadataIn
   return request(`/documents/${id}/versions`, { method: 'POST', body })
 }
 
-export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'assetIds' | 'issueDate' | 'expiryDate'>>): Promise<ApiDocument> {
+export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'assetIds' | 'issueDate' | 'expiryDate' | 'periodicity' | 'periodicityMode'>>): Promise<ApiDocument> {
   return request(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
 }
 
 export function deleteDocument(id: number): Promise<void> {
   return request(`/documents/${id}`, { method: 'DELETE' })
+}
+
+export async function fetchDocumentPreview(id: number): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/documents/${id}/preview`)
+  if (!response.ok) throw new Error(`API ${response.status}: preview failed`)
+  return response.blob()
 }
 
 export async function downloadDocument(id: number, version?: number): Promise<void> {
