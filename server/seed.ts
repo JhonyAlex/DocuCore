@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import { StorageMarkerError, cleanDocumentStorage } from './lib/documentStorage'
 import { storeDocumentBuffer } from './lib/documentStorage'
+import { fieldKey } from './lib/dynamicFields'
 
 const prisma = new PrismaClient()
 
@@ -132,15 +133,10 @@ async function main(): Promise<void> {
     ],
   })
 
-  console.log('  • Asset types (5)')
+  console.log('  • Asset types (5 por proyecto)')
+  const defaultAssetTypeNames = ['Máquina', 'Extintor', 'Vehículo', 'Servidor', 'Instrumento']
   await prisma.assetType.createMany({
-    data: [
-      { name: 'Máquina' },
-      { name: 'Extintor' },
-      { name: 'Vehículo' },
-      { name: 'Servidor' },
-      { name: 'Instrumento' },
-    ],
+    data: [1, 2, 3, 4, 5].flatMap((projectId) => defaultAssetTypeNames.map((name, sortOrder) => ({ projectId, name, sortOrder }))),
   })
 
   console.log('  • Statuses (5)')
@@ -202,7 +198,7 @@ async function main(): Promise<void> {
         serialNumber: asset.serialNumber,
         installDate: isoFromEu(asset.installDate),
         initials: asset.initials,
-        type: { connect: { name: asset.typeName } },
+        type: { connect: { projectId_name: { projectId: 1, name: asset.typeName } } },
         status: { connect: { name: asset.statusName } },
         location: { connect: { code: asset.locationCode } },
         project: { connect: { code: PROJECT_CODE } },
@@ -212,7 +208,7 @@ async function main(): Promise<void> {
   }
 
   const [machineType, activeStatus, responsible] = await Promise.all([
-    prisma.assetType.findUniqueOrThrow({ where: { name: 'Máquina' }, select: { id: true } }),
+    prisma.assetType.findUniqueOrThrow({ where: { projectId_name: { projectId: 1, name: 'Máquina' } }, select: { id: true } }),
     prisma.status.findUniqueOrThrow({ where: { name: 'Activo' }, select: { id: true } }),
     prisma.user.findUniqueOrThrow({ where: { email: 'jr@docucore.local' }, select: { id: true } }),
   ])
@@ -240,6 +236,76 @@ async function main(): Promise<void> {
         }
       }),
     })
+  }
+
+  console.log('  • Dynamic fields (24)')
+  const dynamicSeeds: Array<{
+    typeName: string
+    name: string
+    fieldType: 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'BOOLEAN'
+    group: string
+    required?: boolean
+    unit?: string
+    options?: string[]
+    periodicity?: string
+    periodicityMode?: string
+  }> = [
+    { typeName: 'Máquina', name: 'Fabricante', fieldType: 'TEXT', group: 'Identificación' },
+    { typeName: 'Máquina', name: 'Modelo', fieldType: 'TEXT', group: 'Identificación' },
+    { typeName: 'Máquina', name: 'Potencia', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'kW' },
+    { typeName: 'Máquina', name: 'Tensión', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'V' },
+    { typeName: 'Máquina', name: 'Próximo mantenimiento', fieldType: 'DATE', group: 'Mantenimiento', periodicity: 'Trimestral', periodicityMode: 'Calendario' },
+    { typeName: 'Máquina', name: 'Zona ATEX', fieldType: 'BOOLEAN', group: 'Seguridad' },
+    { typeName: 'Máquina', name: 'Criticidad', fieldType: 'SELECT', group: 'Seguridad', options: ['Baja', 'Media', 'Alta', 'Crítica'] },
+    { typeName: 'Máquina', name: 'Observaciones técnicas', fieldType: 'TEXTAREA', group: 'General' },
+    { typeName: 'Instrumento', name: 'Marca', fieldType: 'TEXT', group: 'Identificación' },
+    { typeName: 'Instrumento', name: 'Rango de medida', fieldType: 'TEXT', group: 'Metrología' },
+    { typeName: 'Instrumento', name: 'Precisión', fieldType: 'NUMBER', group: 'Metrología', unit: '%' },
+    { typeName: 'Instrumento', name: 'Próxima calibración', fieldType: 'DATE', group: 'Metrología', periodicity: 'Anual', periodicityMode: 'Calendario' },
+    { typeName: 'Instrumento', name: 'Laboratorio habitual', fieldType: 'SELECT', group: 'Metrología', options: ['Interno', 'ENAC externo', 'Fabricante'] },
+    { typeName: 'Extintor', name: 'Agente extintor', fieldType: 'SELECT', group: 'Especificaciones', options: ['CO2', 'Polvo ABC', 'Agua', 'Espuma'] },
+    { typeName: 'Extintor', name: 'Capacidad', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'kg' },
+    { typeName: 'Extintor', name: 'Próxima revisión', fieldType: 'DATE', group: 'Mantenimiento', periodicity: 'Anual', periodicityMode: 'Calendario' },
+    { typeName: 'Extintor', name: 'Fecha de retimbrado', fieldType: 'DATE', group: 'Mantenimiento' },
+    { typeName: 'Vehículo', name: 'Matrícula', fieldType: 'TEXT', group: 'Identificación', required: true },
+    { typeName: 'Vehículo', name: 'Kilometraje', fieldType: 'NUMBER', group: 'Uso', unit: 'km' },
+    { typeName: 'Vehículo', name: 'Combustible', fieldType: 'SELECT', group: 'Especificaciones', options: ['Diésel', 'Gasolina', 'Eléctrico', 'Híbrido'] },
+    { typeName: 'Vehículo', name: 'Próxima ITV', fieldType: 'DATE', group: 'Mantenimiento', periodicity: 'Anual', periodicityMode: 'Calendario' },
+    { typeName: 'Servidor', name: 'Sistema operativo', fieldType: 'TEXT', group: 'Sistema' },
+    { typeName: 'Servidor', name: 'Dirección IP', fieldType: 'TEXT', group: 'Red' },
+    { typeName: 'Servidor', name: 'Próximo backup verificado', fieldType: 'DATE', group: 'Continuidad', periodicity: 'Mensual', periodicityMode: 'Subida' },
+  ]
+  const project = await prisma.project.findUniqueOrThrow({ where: { code: PROJECT_CODE }, select: { id: true } })
+  for (const [index, definition] of dynamicSeeds.entries()) {
+    const assetType = await prisma.assetType.findUniqueOrThrow({ where: { projectId_name: { projectId: project.id, name: definition.typeName } }, select: { id: true } })
+    await prisma.dynamicFieldDefinition.create({
+      data: {
+        projectId: project.id,
+        key: `${fieldKey(definition.name)}-${index + 1}`,
+        fieldName: definition.name,
+        fieldType: definition.fieldType,
+        groupName: definition.group,
+        required: definition.required ?? false,
+        unit: definition.unit,
+        periodicity: definition.periodicity,
+        periodicityMode: definition.periodicity ? (definition.periodicityMode ?? 'Calendario') : null,
+        sortOrder: index,
+        assetTypes: { create: { assetTypeId: assetType.id } },
+        options: { create: (definition.options ?? []).map((label, optionIndex) => ({ key: `${fieldKey(label)}-${optionIndex + 1}`, label, sortOrder: optionIndex })) },
+      },
+    })
+  }
+  const cnc = await prisma.asset.findUniqueOrThrow({ where: { code: 'CNC-05' }, select: { id: true } })
+  const cncValues = [
+    { name: 'Fabricante', textValue: 'Haas Automation' },
+    { name: 'Modelo', textValue: 'ST-20' },
+    { name: 'Potencia', numberValue: 14.9 },
+    { name: 'Tensión', numberValue: 400 },
+    { name: 'Zona ATEX', booleanValue: false },
+  ]
+  for (const value of cncValues) {
+    const definition = await prisma.dynamicFieldDefinition.findFirstOrThrow({ where: { projectId: project.id, fieldName: value.name }, select: { id: true } })
+    await prisma.assetDynamicFieldValue.create({ data: { assetId: cnc.id, definitionId: definition.id, textValue: 'textValue' in value ? value.textValue : undefined, numberValue: 'numberValue' in value ? value.numberValue : undefined, booleanValue: 'booleanValue' in value ? value.booleanValue : undefined } })
   }
 
   console.log('  • Related events (4) + document versions (207 logical documents)')

@@ -7,6 +7,8 @@ import assetsRouter from './routes/assets'
 import documentsRouter from './routes/documents'
 import locationsRouter from './routes/locations'
 import metaRouter from './routes/meta'
+import dynamicFieldsRouter from './routes/dynamicFields'
+import assetTypesRouter from './routes/assetTypes'
 import { errorHandler } from './middleware/error'
 
 const app = express()
@@ -20,6 +22,8 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/assets', assetsRouter)
 app.use('/api/documents', documentsRouter)
 app.use('/api/locations', locationsRouter)
+app.use('/api/projects/:projectId/dynamic-fields', dynamicFieldsRouter)
+app.use('/api/projects/:projectId/asset-types', assetTypesRouter)
 app.use('/api', metaRouter)
 
 app.use('/api', (_req, res) => {

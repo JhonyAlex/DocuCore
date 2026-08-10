@@ -28,9 +28,14 @@ router.get(
 
 router.get(
   '/asset-types',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
+    const projectId = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
+      ? requestedProjectId!
+      : (await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })).id
     const types = await prisma.assetType.findMany({
-      orderBy: { id: 'asc' },
+      where: { projectId, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       select: { id: true, name: true },
     })
     res.json(types)

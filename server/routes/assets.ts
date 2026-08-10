@@ -6,6 +6,8 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { deriveAssetEvents } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
+import { completeDynamicDateSchema, dynamicFieldValuesSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
+import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
 
 const router: Router = Router()
 
@@ -54,8 +56,12 @@ const assetInclude = {
       id: true,
       name: true,
       fieldDefinitions: {
-        where: { fieldType: 'DATE' as const },
-        select: { id: true, fieldName: true },
+        where: { definition: { isActive: true } },
+        include: {
+          definition: {
+            include: { options: { orderBy: { sortOrder: 'asc' } } },
+          },
+        },
       },
     },
   },
@@ -84,6 +90,11 @@ const assetInclude = {
       },
     },
   },
+  dynamicFieldValues: {
+    include: {
+      definition: { select: { id: true, fieldName: true, eventTitle: true, fieldType: true, isActive: true } },
+    },
+  },
 } satisfies Prisma.AssetInclude
 
 type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
@@ -98,11 +109,37 @@ function withDerivedEvents(asset: AssetWithRelations) {
   const nextEvents = deriveAssetEvents({ ...asset, documents }, derivedEventClock())
   // IMG-01: la clave interna de storage no se expone (como en documentos); el
   // frontend recibe una URL servida por el propio API.
-  const { events: _events, documentAssets: _documentAssets, type, imageStorageKey: _imageStorageKey, ...base } = asset
+  const definitions = asset.type.fieldDefinitions.map((link) => link.definition).filter((definition) => definition.projectId === asset.projectId)
+  const values = new Map(asset.dynamicFieldValues.map((value) => [value.definitionId, value]))
+  const dynamicFields = definitions.map((definition) => {
+    const value = values.get(definition.id)
+    return {
+      definitionId: definition.id,
+      key: definition.key,
+      fieldName: definition.fieldName,
+      description: definition.description,
+      groupName: definition.groupName,
+      fieldType: definition.fieldType,
+      required: definition.required,
+      placeholder: definition.placeholder,
+      unit: definition.unit,
+      minValue: definition.minValue,
+      maxValue: definition.maxValue,
+      decimalPlaces: definition.decimalPlaces,
+      periodicity: definition.periodicity,
+      periodicityMode: definition.periodicityMode,
+      eventTitle: definition.eventTitle,
+      sortOrder: definition.sortOrder,
+      options: definition.options.filter((option) => option.isActive).map(({ id, key, label, sortOrder }) => ({ id, key, label, sortOrder })),
+      value: value ? storedValue(definition.fieldType, value) : null,
+    }
+  })
+  const { events: _events, documentAssets: _documentAssets, dynamicFieldValues: _dynamicFieldValues, type, imageStorageKey: _imageStorageKey, ...base } = asset
   return {
     ...base,
     imageUrl: _imageStorageKey ? `/api/assets/${base.id}/image` : null,
     type: { id: type.id, name: type.name },
+    dynamicFields,
     documentCount: documents.length,
     documents: documents.map((document) => ({
       id: document.id,
@@ -129,18 +166,50 @@ function toNumberId(value: string | undefined): number | null {
 // validan los cuatro ids recibidos; en PUT se valida el estado final
 // (existentes + cambios), de modo que modificar solo una relación nunca deja
 // las demás incoherentes con el proyecto.
-async function assertAssetRelationsValid(projectId: number, locationId: number, responsibleId: number): Promise<void> {
-  const invalid = new Error('Location and responsible must belong to the asset project')
+async function assertAssetRelationsValid(projectId: number, typeId: number, locationId: number, responsibleId: number): Promise<void> {
+  const invalid = new Error('Type, location and responsible must belong to the asset project')
   ;(invalid as Error & { status?: number }).status = 400
-  const [location, responsible] = await Promise.all([
+  const [type, location, responsible] = await Promise.all([
+    prisma.assetType.findFirst({ where: { id: typeId, projectId, isActive: true }, select: { id: true } }),
     prisma.location.findUnique({ where: { id: locationId }, select: { projectId: true } }),
     prisma.user.findUnique({
       where: { id: responsibleId },
       select: { memberships: { where: { projectId }, select: { id: true } } },
     }),
   ])
-  if (!location || location.projectId !== projectId) throw invalid
+  if (!type || !location || location.projectId !== projectId) throw invalid
   if (!responsible || responsible.memberships.length === 0) throw invalid
+}
+
+type DynamicInput = Array<{ definitionId: number; value?: unknown }>
+
+async function replaceDynamicValues(
+  tx: Prisma.TransactionClient,
+  assetId: number,
+  projectId: number,
+  typeId: number,
+  inputs: DynamicInput,
+): Promise<void> {
+  const uniqueIds = new Set(inputs.map((input) => input.definitionId))
+  if (uniqueIds.size !== inputs.length) throw Object.assign(new Error('Duplicate dynamic field value'), { status: 400 })
+  const definitions = await tx.dynamicFieldDefinition.findMany({
+    where: { projectId, isActive: true, assetTypes: { some: { assetTypeId: typeId } } },
+    include: { options: { orderBy: { sortOrder: 'asc' } } },
+  })
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]))
+  if (inputs.some((input) => !byId.has(input.definitionId))) throw Object.assign(new Error('Dynamic field does not apply to this asset'), { status: 400 })
+  const supplied = new Map(inputs.map((input) => [input.definitionId, input.value]))
+  for (const definition of definitions) {
+    if (definition.required && !supplied.has(definition.id)) throw Object.assign(new Error(`Required dynamic field is missing: ${definition.fieldName}`), { status: 400 })
+  }
+
+  await tx.assetDynamicFieldValue.deleteMany({ where: { assetId, definitionId: { in: definitions.map((definition) => definition.id) } } })
+  for (const input of inputs) {
+    const definition = byId.get(input.definitionId)!
+    const data = parseDynamicValue(definition, input.value)
+    if (!data) continue
+    await tx.assetDynamicFieldValue.create({ data: { assetId, definitionId: definition.id, ...data } })
+  }
 }
 
 // Filtrar por una ubicación incluye los activos de toda su rama jerárquica.
@@ -265,6 +334,52 @@ router.get(
   }),
 )
 
+router.put(
+  '/:id/dynamic-fields',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) return res.status(400).json({ error: 'Invalid id' })
+    const input = dynamicFieldValuesSchema.parse(req.body)
+    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true, typeId: true } })
+    if (!asset) return res.status(404).json({ error: 'Not found' })
+    const updated = await prisma.$transaction(async (tx) => {
+      await replaceDynamicValues(tx, id, asset.projectId, asset.typeId, input.values)
+      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Actualización', entityId: asset.code, detail: 'Características dinámicas actualizadas', timestamp: new Date() } })
+      return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+    })
+    res.json(withDerivedEvents(updated))
+  }),
+)
+
+router.post(
+  '/:id/dynamic-fields/:definitionId/complete',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    const definitionId = toNumberId(req.params.definitionId)
+    if (id === null || definitionId === null) return res.status(400).json({ error: 'Invalid id' })
+    const { performedDate } = completeDynamicDateSchema.parse(req.body)
+    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true, typeId: true } })
+    if (!asset) return res.status(404).json({ error: 'Not found' })
+    const definition = await prisma.dynamicFieldDefinition.findFirst({
+      where: { id: definitionId, projectId: asset.projectId, isActive: true, fieldType: 'DATE', assetTypes: { some: { assetTypeId: asset.typeId } } },
+      include: { values: { where: { assetId: id }, take: 1 } },
+    })
+    if (!definition) return res.status(404).json({ error: 'Dynamic date field not found' })
+    if (!definition.periodicity || !definition.periodicityMode) return res.status(409).json({ error: 'Dynamic date field has no periodicity' })
+    const current = definition.values[0]
+    if (!current?.dateValue) return res.status(409).json({ error: 'Dynamic date field has no current date' })
+    const performed = new Date(`${performedDate}T00:00:00.000Z`)
+    if (Number.isNaN(performed.getTime()) || performed.toISOString().slice(0, 10) !== performedDate) return res.status(400).json({ error: 'Invalid performed date' })
+    const next = calculateNextExpiry(current.dateValue, performed, definition.periodicityMode as DocumentPeriodicityMode, definition.periodicity as DocumentPeriodicity)
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.assetDynamicFieldValue.update({ where: { id: current.id }, data: { dateValue: next } })
+      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Realización', entityId: asset.code, detail: `${definition.fieldName}: ${current.dateValue!.toISOString().slice(0, 10)} → ${next.toISOString().slice(0, 10)} · ${definition.periodicity} · ${definition.periodicityMode === 'Calendario' ? 'según calendario' : `realizado ${performedDate}`}`, timestamp: new Date() } })
+      return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+    })
+    res.json(withDerivedEvents(updated))
+  }),
+)
+
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -287,7 +402,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const parsed = createAssetSchema.parse(req.body)
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
-    await assertAssetRelationsValid(projectId, locationId, responsibleId)
+    await assertAssetRelationsValid(projectId, typeId, locationId, responsibleId)
     const data: Prisma.AssetCreateInput = {
       ...rest,
       installDate: new Date(installDate),
@@ -296,11 +411,11 @@ router.post(
       location: { connect: { id: locationId } },
       project: { connect: { id: projectId } },
       responsible: { connect: { id: responsibleId } },
-      dynamicFields: dynamicFields ? (dynamicFields as Prisma.InputJsonValue) : undefined,
     }
-    const [created] = await prisma.$transaction([
-      prisma.asset.create({ data, include: assetInclude }),
-      prisma.auditLog.create({
+    const created = await prisma.$transaction(async (tx) => {
+      const base = await tx.asset.create({ data })
+      await replaceDynamicValues(tx, base.id, projectId, typeId, dynamicFields ?? [])
+      await tx.auditLog.create({
         data: {
           userId: ACTOR_USER_ID,
           action: 'Creación',
@@ -308,8 +423,9 @@ router.post(
           detail: `Nuevo activo "${parsed.name}" creado`,
           timestamp: new Date(),
         },
-      }),
-    ])
+      })
+      return tx.asset.findUniqueOrThrow({ where: { id: base.id }, include: assetInclude })
+    })
     res.status(201).json(withDerivedEvents(created))
   }),
 )
@@ -326,7 +442,7 @@ router.put(
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
     const existing = await prisma.asset.findFirst({
       where: { id, deletedAt: null },
-      select: { projectId: true, locationId: true, responsibleId: true },
+      select: { projectId: true, typeId: true, locationId: true, responsibleId: true },
     })
     if (!existing) {
       res.status(404).json({ error: 'Not found' })
@@ -336,6 +452,7 @@ router.put(
     // lo existente, para que las relaciones no tocadas sigan siendo válidas.
     await assertAssetRelationsValid(
       projectId ?? existing.projectId,
+      typeId ?? existing.typeId,
       locationId ?? existing.locationId,
       responsibleId ?? existing.responsibleId,
     )
@@ -347,11 +464,19 @@ router.put(
       location: locationId ? { connect: { id: locationId } } : undefined,
       project: projectId ? { connect: { id: projectId } } : undefined,
       responsible: responsibleId ? { connect: { id: responsibleId } } : undefined,
-      dynamicFields: dynamicFields ? (dynamicFields as Prisma.InputJsonValue) : undefined,
     }
-    const [updated] = await prisma.$transaction([
-      prisma.asset.update({ where: { id }, data, include: assetInclude }),
-      prisma.auditLog.create({
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.asset.update({ where: { id }, data })
+      const finalProjectId = projectId ?? existing.projectId
+      const finalTypeId = typeId ?? existing.typeId
+      if (dynamicFields !== undefined) {
+        await replaceDynamicValues(tx, id, finalProjectId, finalTypeId, dynamicFields)
+      } else if (typeId && typeId !== existing.typeId) {
+        await tx.assetDynamicFieldValue.deleteMany({
+          where: { assetId: id, definition: { assetTypes: { none: { assetTypeId: finalTypeId } } } },
+        })
+      }
+      await tx.auditLog.create({
         data: {
           userId: ACTOR_USER_ID,
           action: 'Actualización',
@@ -359,8 +484,9 @@ router.put(
           detail: 'Activo actualizado',
           timestamp: new Date(),
         },
-      }),
-    ])
+      })
+      return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+    })
     res.json(withDerivedEvents(updated))
   }),
 )

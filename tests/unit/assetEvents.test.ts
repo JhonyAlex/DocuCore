@@ -5,8 +5,7 @@ function relations(overrides: Partial<AssetEventRelations> = {}): AssetEventRela
   return {
     events: [],
     documents: [],
-    dynamicFields: null,
-    type: { fieldDefinitions: [] },
+    dynamicFieldValues: [],
     ...overrides,
   }
 }
@@ -48,22 +47,15 @@ describe('deriveAssetEvents', () => {
 
   it('derives dates from dynamic DATE definitions and ignores unrelated or invalid values', () => {
     const result = deriveAssetEvents(relations({
-      dynamicFields: {
-        'Próxima calibración': '2026-08-06',
-        Observaciones: 'Sin fecha',
-        'Fecha inválida': '2026-02-30',
-      },
-      type: {
-        fieldDefinitions: [
-          { id: 7, fieldName: 'Próxima calibración' },
-          { id: 8, fieldName: 'Fecha inválida' },
-        ],
-      },
+      dynamicFieldValues: [
+        { id: 17, dateValue: new Date('2026-08-06T00:00:00.000Z'), definition: { id: 7, fieldName: 'Próxima calibración', eventTitle: null, fieldType: 'DATE', isActive: true } },
+        { id: 18, dateValue: null, definition: { id: 8, fieldName: 'Fecha inválida', eventTitle: null, fieldType: 'DATE', isActive: true } },
+      ],
     }), now)
 
     expect(result).toEqual([
       expect.objectContaining({
-        id: 'dynamic-field:7',
+        id: 'dynamic-field:17',
         title: 'Próxima calibración',
         daysUntil: 0,
         urgency: 'amber',

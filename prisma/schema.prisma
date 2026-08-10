@@ -14,9 +14,11 @@ enum ProjectStatus {
 
 enum FieldType {
   TEXT
+  TEXTAREA
   NUMBER
   DATE
   SELECT
+  MULTISELECT
   BOOLEAN
 }
 
@@ -37,24 +39,26 @@ model User {
 }
 
 model Project {
-  id            Int            @id @default(autoincrement())
-  code          String         @unique
+  id            Int           @id @default(autoincrement())
+  code          String        @unique
   name          String
   description   String
-  status        ProjectStatus  @default(ACTIVE)
+  status        ProjectStatus @default(ACTIVE)
   gradient      String
-  assetCount    Int            @default(0)
-  userCount     Int            @default(0)
-  locationCount Int            @default(0)
+  assetCount    Int           @default(0)
+  userCount     Int           @default(0)
+  locationCount Int           @default(0)
   docCount      Int?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  assets     Asset[]
-  members    ProjectMember[]
-  documents  Document[]
-  events     Event[]
-  locations  Location[]
+  assets           Asset[]
+  members          ProjectMember[]
+  documents        Document[]
+  events           Event[]
+  locations        Location[]
+  assetTypes       AssetType[]
+  fieldDefinitions DynamicFieldDefinition[]
 }
 
 model ProjectMember {
@@ -73,60 +77,130 @@ model ProjectMember {
 
 model AssetType {
   id        Int      @id @default(autoincrement())
-  name      String   @unique
+  projectId Int
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  project          Project                           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assets           Asset[]
-  fieldDefinitions DynamicFieldDefinition[]
+  fieldDefinitions DynamicFieldDefinitionAssetType[]
+
+  @@unique([projectId, name])
+  @@index([projectId, isActive, sortOrder])
 }
 
 model DynamicFieldDefinition {
-  id          Int       @id @default(autoincrement())
-  assetTypeId Int
-  fieldName   String
-  fieldType   FieldType @default(TEXT)
-  required    Boolean   @default(false)
-  options     String[]
-  createdAt   DateTime  @default(now())
+  id              Int       @id @default(autoincrement())
+  projectId       Int
+  key             String
+  fieldName       String
+  description     String?
+  groupName       String    @default("General")
+  fieldType       FieldType @default(TEXT)
+  required        Boolean   @default(false)
+  placeholder     String?
+  unit            String?
+  minValue        Float?
+  maxValue        Float?
+  decimalPlaces   Int?
+  defaultValue    Json?
+  periodicity     String?
+  periodicityMode String?
+  eventTitle      String?
+  sortOrder       Int       @default(0)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  assetType AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+  project    Project                           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assetTypes DynamicFieldDefinitionAssetType[]
+  options    DynamicFieldOption[]
+  values     AssetDynamicFieldValue[]
 
+  @@unique([projectId, key])
+  @@index([projectId, isActive, sortOrder])
+}
+
+model DynamicFieldDefinitionAssetType {
+  definitionId Int
+  assetTypeId  Int
+
+  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  assetType  AssetType              @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+
+  @@id([definitionId, assetTypeId])
   @@index([assetTypeId])
 }
 
+model DynamicFieldOption {
+  id           Int     @id @default(autoincrement())
+  definitionId Int
+  key          String
+  label        String
+  sortOrder    Int     @default(0)
+  isActive     Boolean @default(true)
+
+  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, key])
+  @@index([definitionId, sortOrder])
+}
+
+model AssetDynamicFieldValue {
+  id           Int       @id @default(autoincrement())
+  assetId      Int
+  definitionId Int
+  textValue    String?
+  numberValue  Float?
+  dateValue    DateTime? @db.Date
+  booleanValue Boolean?
+  jsonValue    Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, definitionId])
+  @@index([definitionId])
+  @@index([dateValue])
+}
+
 model Asset {
-  id            Int       @id @default(autoincrement())
-  code          String    @unique
-  name          String
-  serialNumber  String    @unique
-  installDate   DateTime
-  typeId        Int
-  statusId      Int
-  locationId    Int
-  projectId     Int
-  responsibleId Int
-  initials      String
-  dynamicFields Json?
+  id              Int       @id @default(autoincrement())
+  code            String    @unique
+  name            String
+  serialNumber    String    @unique
+  installDate     DateTime
+  typeId          Int
+  statusId        Int
+  locationId      Int
+  projectId       Int
+  responsibleId   Int
+  initials        String
   // ITEM-05: papelera — deletedAt != null significa que el activo está
   // eliminado (recuperable 30 días); la purga lo borra físicamente.
-  deletedAt DateTime? @db.Timestamptz(6)
+  deletedAt       DateTime? @db.Timestamptz(6)
   // IMG-01: imagen del activo — el binario vive en el storage gestionado de
   // DocuCore; aquí solo la clave (nombre UUID), el MIME y el tamaño en bytes.
-  imageStorageKey String? @unique
+  imageStorageKey String?   @unique
   imageMimeType   String?
   imageSizeBytes  Int?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  type           AssetType        @relation(fields: [typeId], references: [id])
-  status         Status           @relation(fields: [statusId], references: [id])
-  location       Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  responsible    User             @relation("AssetResponsible", fields: [responsibleId], references: [id])
-  documentAssets DocumentItem[]
-  events         Event[]
-  markers        FloorPlanMarker[]
+  type               AssetType                @relation(fields: [typeId], references: [id])
+  status             Status                   @relation(fields: [statusId], references: [id])
+  location           Location                 @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  project            Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible        User                     @relation("AssetResponsible", fields: [responsibleId], references: [id])
+  documentAssets     DocumentItem[]
+  events             Event[]
+  markers            FloorPlanMarker[]
+  dynamicFieldValues AssetDynamicFieldValue[]
 
   @@index([typeId])
   @@index([statusId])
@@ -146,19 +220,19 @@ model Status {
 }
 
 model Document {
-  id               Int      @id @default(autoincrement())
-  name             String
-  eventTitle       String?
-  type             String
+  id              Int      @id @default(autoincrement())
+  name            String
+  eventTitle      String?
+  type            String
   // DOC-03: periodicidad opcional basada en el vencimiento. periodicity es la
   // regla ('Mensual'…'Anual', null = sin periodicidad) y periodicityMode la base
   // del cálculo al subir una versión ('Calendario' = salta desde el vencimiento
   // vigente, 'Subida' = desde la emisión de la nueva versión).
   periodicity     String?
   periodicityMode String?
-  projectId        Int
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  projectId       Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   assets   DocumentItem[]
   project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -180,16 +254,16 @@ model DocumentItem {
 }
 
 model DocumentVersion {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   documentId   Int
   version      Int
   originalName String
-  storageKey   String   @unique
+  storageKey   String    @unique
   mimeType     String
   sizeBytes    Int
   issueDate    DateTime
   expiryDate   DateTime?
-  uploadedAt   DateTime @default(now())
+  uploadedAt   DateTime  @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -209,7 +283,7 @@ model Event {
   createdAt   DateTime  @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  asset   Asset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset   Asset?  @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@index([projectId])
   @@index([assetId])
@@ -239,15 +313,15 @@ model Location {
 }
 
 model FloorPlan {
-  id          Int      @id @default(autoincrement())
-  name        String
-  locationId  Int      @unique
-  imageUrl    String
-  version     String
-  uploadedAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  name       String
+  locationId Int      @unique
+  imageUrl   String
+  version    String
+  uploadedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
-  location Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
   markers  FloorPlanMarker[]
 }
 

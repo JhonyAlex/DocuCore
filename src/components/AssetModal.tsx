@@ -5,6 +5,8 @@ import AssetImageBox, { AssetImageViewer } from '@/components/AssetImageBox'
 import AssetDocuments from '@/components/AssetDocuments'
 import AssetActionConfirmDialog, { type AssetConfirmedAction } from '@/components/AssetActionConfirmDialog'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
+import AssetCharacteristics from '@/components/AssetCharacteristics'
+import AssetEventsPanel from '@/components/AssetEventsPanel'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
@@ -307,6 +309,12 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
           </div>
         )}
 
+        {activeTab === 1 && (
+          <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">
+            <AssetCharacteristics asset={asset} onChanged={onImageChanged} />
+          </div>
+        )}
+
         {activeTab === 2 && (
           <div className="min-h-0 flex-1 p-5 overflow-y-auto scrollbar-thin">
             <div className="flex items-center justify-between mb-3">
@@ -326,6 +334,8 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
           </div>
         )}
+
+        {activeTab === 3 && <AssetEventsPanel asset={asset} />}
 
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>

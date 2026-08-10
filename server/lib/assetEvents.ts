@@ -1,5 +1,3 @@
-import { Prisma } from '@prisma/client'
-
 export type DerivedEventUrgency = 'amber' | 'red' | 'slate'
 export type DerivedEventSource = 'event' | 'document' | 'dynamic-field'
 
@@ -28,18 +26,22 @@ interface RelatedDocument {
   versions: Array<{ expiryDate: Date | null }>
 }
 
-interface DateFieldDefinition {
+interface DateFieldValue {
   id: number
-  fieldName: string
+  dateValue: Date | null
+  definition: {
+    id: number
+    fieldName: string
+    eventTitle: string | null
+    fieldType: string
+    isActive: boolean
+  }
 }
 
 export interface AssetEventRelations {
   events: RelatedEvent[]
   documents: RelatedDocument[]
-  dynamicFields: Prisma.JsonValue | null
-  type: {
-    fieldDefinitions: DateFieldDefinition[]
-  }
+  dynamicFieldValues: DateFieldValue[]
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -95,11 +97,6 @@ function toDerivedEvent(
   }
 }
 
-function dynamicFieldValues(value: Prisma.JsonValue | null): Record<string, unknown> {
-  if (!value || Array.isArray(value) || typeof value !== 'object') return {}
-  return value
-}
-
 export function deriveAssetEvents(relations: AssetEventRelations, now = new Date()): DerivedAssetEvent[] {
   const derived: DerivedAssetEvent[] = relations.events.map((event) =>
     toDerivedEvent(`event:${event.id}`, event.title, event.date, 'event', event.type, now),
@@ -118,13 +115,14 @@ export function deriveAssetEvents(relations: AssetEventRelations, now = new Date
     ))
   }
 
-  const values = dynamicFieldValues(relations.dynamicFields)
-  for (const definition of relations.type.fieldDefinitions) {
-    const date = parseRelationDate(values[definition.fieldName])
+  for (const value of relations.dynamicFieldValues) {
+    const definition = value.definition
+    if (!definition.isActive || definition.fieldType !== 'DATE') continue
+    const date = parseRelationDate(value.dateValue)
     if (!date) continue
     derived.push(toDerivedEvent(
-      `dynamic-field:${definition.id}`,
-      definition.fieldName,
+      `dynamic-field:${value.id}`,
+      definition.eventTitle ?? definition.fieldName,
       date,
       'dynamic-field',
       'Campo dinámico',
