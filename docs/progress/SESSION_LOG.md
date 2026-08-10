@@ -1,5 +1,15 @@
 # SESSION_LOG — Fase 4
 
+## 2026-08-10 — PREV (WIP publicado): planes preventivos, calendarios de fecha y catálogo de tareas
+
+- **Publicación del working tree** (petición expresa de commit+push de «lo actual»; el usuario continúa desarrollando — **WIP, sin cerrar módulo ni cambiar estados**). Redesplegado el stack local sin pérdida de datos (la migración es aditiva y conservadora: los DATE existentes pasan a `AssetDateSchedule` con su primera ocurrencia pendiente).
+- **Modelo**: `Task` (por proyecto, código único, `PreventivePlanTask` N-N ordenada), `AssetDateSchedule`/`AssetDateOccurrence` (la periodicidad de los campos DATE deja de vivir en `DynamicFieldDefinition` — se eliminan `periodicity`/`periodicityMode`/`eventTitle` — y pasa a la asignación del activo), `AssetPreventivePlan`/`PreventiveExecution`/`PreventiveExecutionTask` (ejecuciones con checklist e historial independiente) y `AssetEventAcknowledgement` (migración `20260810170000_asset_dates_preventives`, aplicada en el redeploy); `FieldType` gana `PREVENTIVE`.
+- **API**: catálogo `GET/POST/PATCH /api/projects/:projectId/tasks`; `server/lib/assetSchedules.ts` (cambiar fecha/periodicidad del schedule, completar ocurrencia con salto según `calculateNextExpiry`, crear ejecuciones de preventivo con el checklist congelado); `server/routes/assets.ts` gestiona schedules/planes/ejecuciones con auditoría y acuses.
+- **Eventos derivados** (`server/lib/assetEvents.ts`): nueva fuente `preventive` (progreso `completadas/total` de la ejecución pendiente), `dynamic-date` desde la ocurrencia pendiente del schedule (fallback legacy si la migración no se ha aplicado), y los eventos manuales filtran `completedAt`.
+- **UI**: `TasksConfigView` (catálogo en `/config/tasks`), `AssetPreventivesPanel` (crear plan desde un campo `PREVENTIVE`, checklist de tareas, «Completar preventivo» con validación de tareas completas y vencido «Al día»), `DynamicFieldFormModal` con `taskIds` para campos preventivos; ruta y accesos en `ConfigView`/`App`.
+- **Validación en esta sesión**: lint ✅, typecheck ✅. Unit/API y E2E **no re-ejecutados** (el usuario sigue en desarrollo); el `SESSION_LOG` anterior declaraba verde en los módulos previos, este working tree pendiente no debe asumirse verde.
+- **Pendiente (fuera de esta petición)**: cerrar el módulo con su doc de progreso, manual test y matriz de validación completa cuando el usuario lo decida.
+
 ## 2026-08-10 — IMG-01: imagen del activo (ficha y alta)
 
 - **Petición del usuario**: el cuadro que se ve dentro de cada activo al abrir su ficha (el contenedor `rounded-lg … aspect-square` con el ícono, idéntico al HTML de referencia) debe permitir **añadir una imagen del activo**, y esa imagen también debe poder **subirse al añadir el activo desde cero**.
