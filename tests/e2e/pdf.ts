@@ -1,13 +1,14 @@
-// PDF mínimo válido (página en blanco) para las subidas de documentos en E2E.
-// La vista previa incrustada carga los PDFs en un iframe del visor nativo de
-// Chromium (PDFium): los bytes arbitrarios harían fallar la carga y podrían
-// emitir errores de consola; un PDF estructuralmente válido renderiza limpio.
-export function minimalPdf(): Buffer {
+// PDF mínimo válido (páginas en blanco) para las subidas de documentos en E2E.
+// La vista previa lo renderiza pdf.js (canvas propios, sin el visor nativo):
+// los bytes arbitrarios harían fallar la carga y podrían emitir errores de
+// consola; un PDF estructuralmente válido renderiza limpio.
+export function minimalPdf(pageCount = 1): Buffer {
   const header = '%PDF-1.4\n'
+  const pages = Array.from({ length: pageCount }, () => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>')
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>',
+    `<< /Type /Pages /Kids [${pages.map((_, index) => `${index + 3} 0 R`).join(' ')}] /Count ${pageCount} >>`,
+    ...pages,
   ]
   let offset = Buffer.byteLength(header, 'ascii')
   const offsets: number[] = []

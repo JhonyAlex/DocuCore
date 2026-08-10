@@ -2,11 +2,12 @@ import { expect, test } from './fixtures'
 import { minimalPdf } from './pdf'
 
 // DOC-03: vista previa de documentos. Al abrir «Gestionar documento», la
-// versión actual se muestra incrustada justo debajo del campo Emisión (PDF en
-// iframe, imágenes en <img>, texto plano en <pre>) sin botón previo; al tocar
-// la vista previa se abre el visor ampliado. Los formatos sin visor nativo
-// (xlsx/xls) muestran el área deshabilitada. Escape cierra solo el visor, sin
-// cerrar el modal padre.
+// versión actual se muestra incrustada justo debajo del campo Emisión (PDF
+// renderizado con pdf.js en canvas propios — sin la barra del visor nativo y
+// siempre desde arriba —, imágenes en <img>, texto plano en <pre>) sin botón
+// previo; al tocar la vista previa se abre el visor ampliado. Los formatos sin
+// visor nativo (xlsx/xls) muestran el área deshabilitada. Escape cierra solo
+// el visor, sin cerrar el modal padre.
 
 // PNG 1x1 válido.
 const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082', 'hex')
@@ -59,10 +60,10 @@ test.describe.serial('document preview', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('embeds a pdf in an iframe and disables the preview area for xlsx', async ({ page, consoleIssues }) => {
+  test('renders a pdf with canvas previews and disables the preview area for xlsx', async ({ page, consoleIssues }) => {
     const pdfName = `E2E Preview PDF ${Date.now()}`
     const xlsxName = `E2E Preview XLSX ${Date.now()}`
-    const pdf = await createDocument(page, pdfName, 'application/pdf', minimalPdf(), 'plano-e2e.pdf')
+    const pdf = await createDocument(page, pdfName, 'application/pdf', minimalPdf(3), 'plano-e2e.pdf')
     const xlsx = await createDocument(page, xlsxName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', XLSX_BYTES, 'tabla-e2e.xlsx')
     expect(pdf.id).toBeGreaterThan(0)
     expect(xlsx.id).toBeGreaterThan(0)
@@ -70,10 +71,25 @@ test.describe.serial('document preview', () => {
     await page.goto('/docs')
     await page.getByText(pdfName, { exact: true }).click()
     const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
-    await expect(manageDialog.locator('iframe')).toBeVisible()
+    // La vista previa del PDF se renderiza con pdf.js (canvas propios, sin el
+    // visor nativo): cada página pinta un canvas.
+    await expect(manageDialog.locator('.pdf-preview canvas')).toHaveCount(3, { timeout: 10_000 })
     await manageDialog.getByRole('button', { name: `Abrir vista previa de ${pdfName}` }).click()
     const pdfPreview = page.getByRole('dialog', { name: `Vista previa de ${pdfName}` })
-    await expect(pdfPreview.locator('iframe')).toBeVisible()
+    const viewer = pdfPreview.locator('.pdf-preview')
+    await expect(viewer.locator('canvas')).toHaveCount(3, { timeout: 10_000 })
+    // El visor abre siempre arriba (el scroll es del contenedor propio; cada
+    // montaje renderiza desde la página 1 y arranca en 0).
+    expect(await viewer.evaluate((element) => element.scrollTop)).toBe(0)
+    await viewer.evaluate((element) => { element.scrollTop = 400 })
+    expect(await viewer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+    await page.keyboard.press('Escape')
+    await expect(pdfPreview).toBeHidden()
+    // Al reabrir el visor, el documento vuelve a empezar arriba (no conserva
+    // la posición de scroll de la apertura anterior).
+    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${pdfName}` }).click()
+    await expect(viewer.locator('canvas')).toHaveCount(3, { timeout: 10_000 })
+    expect(await viewer.evaluate((element) => element.scrollTop)).toBe(0)
     await page.keyboard.press('Escape')
     await expect(pdfPreview).toBeHidden()
     await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()

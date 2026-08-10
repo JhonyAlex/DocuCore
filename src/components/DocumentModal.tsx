@@ -53,9 +53,11 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const previewOpenRef = useRef(false)
   // Contenido de la vista previa incrustada: se carga al abrir el documento y
   // se comparte con el visor (no se vuelve a pedir el fichero al ampliar).
-  const [preview, setPreview] = useState<{ objectUrl: string | null; text: string | null } | null>(null)
+  // PDF guarda el blob (lo renderiza PdfPreview en canvas); imagen y texto
+  // conservan objectUrl/text como antes.
+  const [preview, setPreview] = useState<{ objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
   const [previewError, setPreviewError] = useState(false)
-  const [historyPreview, setHistoryPreview] = useState<{ version: number; mimeType: string; objectUrl: string | null; text: string | null } | null>(null)
+  const [historyPreview, setHistoryPreview] = useState<{ version: number; mimeType: string; objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
   const [previewingVersion, setPreviewingVersion] = useState<number | null>(null)
   // `current` es el documento con la versión vigente: al subir una nueva
   // versión se refresca para que la vista previa incrustada, el área según
@@ -84,9 +86,11 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       .then((blob) => {
         if (!active) return
         if (blob.type.startsWith('text/')) {
-          void blob.text().then((text) => { if (active) setPreview({ objectUrl: null, text }) })
+          void blob.text().then((text) => { if (active) setPreview({ objectUrl: null, text, blob: null }) })
+        } else if (blob.type === 'application/pdf') {
+          setPreview({ objectUrl: null, text: null, blob })
         } else {
-          setPreview({ objectUrl: URL.createObjectURL(blob), text: null })
+          setPreview({ objectUrl: URL.createObjectURL(blob), text: null, blob: null })
         }
       })
       .catch(() => { if (active) setPreviewError(true) })
@@ -126,12 +130,14 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     try {
       let objectUrl: string | null = null
       let text: string | null = null
+      let blob: Blob | null = null
       const previewableVersion = historicalVersion.mimeType === 'application/pdf' || historicalVersion.mimeType.startsWith('image/') || historicalVersion.mimeType.startsWith('text/')
       if (previewableVersion) {
-        const blob = await fetchDocumentPreview(document.id, historicalVersion.version)
+        const previewBlob = await fetchDocumentPreview(document.id, historicalVersion.version)
         if (requestId !== previewRequestRef.current) return
-        if (blob.type.startsWith('text/')) text = await blob.text()
-        else objectUrl = URL.createObjectURL(blob)
+        if (previewBlob.type.startsWith('text/')) text = await previewBlob.text()
+        else if (previewBlob.type === 'application/pdf') blob = previewBlob
+        else objectUrl = URL.createObjectURL(previewBlob)
       }
       if (requestId !== previewRequestRef.current) {
         if (objectUrl) URL.revokeObjectURL(objectUrl)
@@ -139,7 +145,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       }
       if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
       historyPreviewUrlRef.current = objectUrl
-      setHistoryPreview({ version: historicalVersion.version, mimeType: historicalVersion.mimeType, objectUrl, text })
+      setHistoryPreview({ version: historicalVersion.version, mimeType: historicalVersion.mimeType, objectUrl, text, blob })
       previewOpenRef.current = true
       setPreviewOpen(true)
     } catch {
@@ -251,7 +257,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }
 
   const modalPreview = historyPreview ?? (current?.currentVersion && preview
-    ? { version: current.currentVersion.version, mimeType: current.currentVersion.mimeType, objectUrl: preview.objectUrl, text: preview.text }
+    ? { version: current.currentVersion.version, mimeType: current.currentVersion.mimeType, objectUrl: preview.objectUrl, text: preview.text, blob: preview.blob }
     : null)
 
   return (
@@ -277,7 +283,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
             {previewable ? (
               preview ? (
                 <div role="button" tabIndex={0} aria-label={`Abrir vista previa de ${current.name}`} onClick={openPreview} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPreview() } }} className="cursor-pointer overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 hover:ring-2 hover:ring-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                  <DocumentPreviewBody name={current.name} mimeType={current.currentVersion.mimeType} objectUrl={preview.objectUrl} text={preview.text} compact />
+                  <DocumentPreviewBody name={current.name} mimeType={current.currentVersion.mimeType} objectUrl={preview.objectUrl} text={preview.text} blob={preview.blob} compact />
                 </div>
               ) : previewError ? (
                 <p role="alert" className="text-sm text-red-600 dark:text-red-400">No se pudo cargar la vista previa.</p>
@@ -294,7 +300,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         </div>
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cancelar</button><button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button></div>
       </div>
-      {previewOpen && modalPreview && current && <DocumentPreviewModal name={current.name} version={modalPreview.version} mimeType={modalPreview.mimeType} objectUrl={modalPreview.objectUrl} text={modalPreview.text} onClose={closePreview} />}
+      {previewOpen && modalPreview && current && <DocumentPreviewModal name={current.name} version={modalPreview.version} mimeType={modalPreview.mimeType} objectUrl={modalPreview.objectUrl} text={modalPreview.text} blob={modalPreview.blob} onClose={closePreview} />}
     </div>
   )
 }

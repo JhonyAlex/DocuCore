@@ -1,22 +1,30 @@
 import { useEffect, useRef } from 'react'
+import PdfPreview from '@/components/PdfPreview'
 
-// Cuerpo de la vista previa: PDF en iframe nativo, imágenes en <img> y texto
-// plano en <pre>. Los formatos sin vista previa del navegador (xlsx/xls) se
-// resuelven antes de llegar aquí (el área de vista previa queda deshabilitada
-// en el modal); el mensaje se mantiene como respaldo por si llega otro MIME.
-// `compact` es el modo incrustado del modal (alturas pequeñas, sin interacción
-// interna: el clic abre el visor); el visor usa el modo completo.
-export function DocumentPreviewBody({ name, mimeType, objectUrl, text, compact = false }: {
+// Cuerpo de la vista previa: PDF renderizado con pdf.js en canvas propios
+// (PdfPreview: sin la barra del visor nativo y siempre desde arriba), imágenes
+// en <img> y texto plano en <pre>. El iframe queda solo como respaldo si el
+// PDF llegara sin blob (no ocurre en el flujo normal). Los formatos sin vista
+// previa del navegador (xlsx/xls) se resuelven antes de llegar aquí (el área
+// de vista previa queda deshabilitada en el modal); el mensaje se mantiene
+// como respaldo por si llega otro MIME. `compact` es el modo incrustado del
+// modal (alturas pequeñas, sin interacción interna: el clic abre el visor);
+// el visor usa el modo completo.
+export function DocumentPreviewBody({ name, mimeType, objectUrl, text, blob, compact = false }: {
   name: string
   mimeType: string
   objectUrl: string | null
   text: string | null
+  blob: Blob | null
   compact?: boolean
 }) {
   const isPdf = mimeType === 'application/pdf'
   const isImage = mimeType.startsWith('image/')
   const isText = mimeType.startsWith('text/')
 
+  if (isPdf && blob) {
+    return <PdfPreview blob={blob} name={name} compact={compact} />
+  }
   if (isPdf && objectUrl) {
     return <iframe title={`Vista previa de ${name}`} src={objectUrl} className={compact ? 'pointer-events-none h-56 w-full' : 'h-[70vh] w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800'} />
   }
@@ -35,6 +43,7 @@ type DocumentPreviewModalProps = {
   mimeType: string
   objectUrl: string | null
   text: string | null
+  blob: Blob | null
   onClose: () => void
 }
 
@@ -42,7 +51,7 @@ type DocumentPreviewModalProps = {
 // completo el contenido ya cargado por el modal padre (no vuelve a pedir el
 // fichero). Escape/backdrop/✕ cierran solo el visor; el modal padre guarda
 // su propio Escape mientras está abierto.
-export default function DocumentPreviewModal({ name, version, mimeType, objectUrl, text, onClose }: DocumentPreviewModalProps) {
+export default function DocumentPreviewModal({ name, version, mimeType, objectUrl, text, blob, onClose }: DocumentPreviewModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -66,7 +75,7 @@ export default function DocumentPreviewModal({ name, version, mimeType, objectUr
           <button type="button" aria-label="Cerrar vista previa" onClick={onClose} className="shrink-0 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">×</button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-4">
-          <DocumentPreviewBody name={name} mimeType={mimeType} objectUrl={objectUrl} text={text} />
+          <DocumentPreviewBody name={name} mimeType={mimeType} objectUrl={objectUrl} text={text} blob={blob} />
         </div>
       </div>
     </div>
