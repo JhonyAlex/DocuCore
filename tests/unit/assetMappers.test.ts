@@ -15,6 +15,9 @@ function apiAsset(overrides: Partial<ApiAsset>): ApiAsset {
     projectId: 1,
     responsibleId: 2,
     initials: 'CN',
+    imageUrl: null,
+    imageMimeType: null,
+    imageSizeBytes: null,
     nextEvents: [{
       id: 'event:1',
       title: 'Mant. preventivo',

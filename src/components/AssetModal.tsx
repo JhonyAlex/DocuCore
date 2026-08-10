@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
+import AssetImageBox from '@/components/AssetImageBox'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
 import { downloadDocument, fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, formatDocumentSize, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
@@ -43,9 +44,11 @@ interface AssetModalProps {
   onChangeStatus: (statusId: number) => Promise<void>
   onDelete: (asset: ApiAsset) => void | Promise<void>
   onDocumentsChanged: () => void | Promise<void>
+  // IMG-01: la ficha actualiza el activo tras subir/quitar su imagen.
+  onImageChanged: (asset: ApiAsset) => void
 }
 
-export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged }: AssetModalProps) {
+export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged, onImageChanged }: AssetModalProps) {
   const [activeTab, setActiveTab] = useState(0)
   const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -248,9 +251,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                     <div className="mt-1 text-sm font-medium">{displayAsset.installDate}</div>
                 </div>
               </div>
-              <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center aspect-square">
-                <svg className="w-20 h-20 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
-              </div>
+              <AssetImageBox asset={asset} onChanged={onImageChanged} />
             </div>
 
             <h4 className="font-medium mb-3">Próximos eventos</h4>

@@ -1,9 +1,11 @@
-import { Router } from 'express'
+import { Router, type Request, type Response } from 'express'
 import { Prisma } from '@prisma/client'
+import multer from 'multer'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { deriveAssetEvents } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
+import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
 
 const router: Router = Router()
 
@@ -12,6 +14,39 @@ const ACTOR_USER_ID = 1
 // ITEM-05: un activo en la papelera se puede recuperar hasta 30 días después
 // de su eliminación; pasada esa ventana, la purga lo borra físicamente.
 const TRASH_RETENTION_DAYS = 30
+
+// IMG-01: la imagen del activo viaja como multipart (campo `image`), se guarda
+// en el storage gestionado de DocuCore y en BD solo queda la clave + MIME + tamaño.
+const ASSET_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+
+const uploadImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!ASSET_IMAGE_MIME_TYPES.has(file.mimetype)) return callback(new Error('Unsupported image type'))
+    callback(null, true)
+  },
+})
+
+// IMG-01: promisifica `upload.single('image')` y traduce el límite de tamaño a
+// un mensaje de imagen (el global de MulterError habla de documentos).
+function uploadSingleImage(req: Request, res: Response): Promise<void> {
+  return new Promise((resolve, reject) => {
+    uploadImage.single('image')(req, res, (error) => {
+      if (!error) {
+        resolve()
+        return
+      }
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        const translated = new Error('Image exceeds the 10 MB limit') as Error & { status?: number }
+        translated.status = 400
+        reject(translated)
+        return
+      }
+      reject(error)
+    })
+  })
+}
 
 const assetInclude = {
   type: {
@@ -61,9 +96,12 @@ function derivedEventClock(): Date {
 function withDerivedEvents(asset: AssetWithRelations) {
   const documents = asset.documentAssets.map((link) => link.document)
   const nextEvents = deriveAssetEvents({ ...asset, documents }, derivedEventClock())
-  const { events: _events, documentAssets: _documentAssets, type, ...base } = asset
+  // IMG-01: la clave interna de storage no se expone (como en documentos); el
+  // frontend recibe una URL servida por el propio API.
+  const { events: _events, documentAssets: _documentAssets, type, imageStorageKey: _imageStorageKey, ...base } = asset
   return {
     ...base,
+    imageUrl: _imageStorageKey ? `/api/assets/${base.id}/image` : null,
     type: { id: type.id, name: type.name },
     documentCount: documents.length,
     documents: documents.map((document) => ({
@@ -130,7 +168,7 @@ async function purgeExpiredTrashedAssets(now = derivedEventClock()): Promise<voi
   const cutoff = new Date(now.getTime() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
   const expired = await prisma.asset.findMany({
     where: { deletedAt: { not: null, lt: cutoff } },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, imageStorageKey: true },
   })
   if (expired.length === 0) return
   await prisma.$transaction([
@@ -145,6 +183,8 @@ async function purgeExpiredTrashedAssets(now = derivedEventClock()): Promise<voi
       },
     })),
   ])
+  // IMG-01: sin huérfanos — la imagen del activo se borra del storage con él.
+  await Promise.all(expired.filter((asset) => asset.imageStorageKey).map((asset) => removeDocumentFile(asset.imageStorageKey as string)))
 }
 
 router.get(
@@ -402,7 +442,7 @@ router.post(
     }
     const asset = await prisma.asset.findFirst({
       where: { id, deletedAt: { not: null } },
-      select: { id: true, code: true, name: true },
+      select: { id: true, code: true, name: true, imageStorageKey: true },
     })
     if (!asset) {
       const notTrashed = await prisma.asset.findUnique({ where: { id }, select: { id: true } })
@@ -425,6 +465,8 @@ router.post(
         },
       }),
     ])
+    // IMG-01: la imagen no se queda huérfana al purgar el activo.
+    if (asset.imageStorageKey) await removeDocumentFile(asset.imageStorageKey)
     res.status(204).end()
   }),
 )
@@ -470,6 +512,144 @@ router.patch(
       }),
     ])
     res.json(withDerivedEvents(updated))
+  }),
+)
+
+// IMG-01: sube o reemplaza la imagen del activo. La nueva se guarda primero en
+// el storage gestionado; si la BD falla se deshace el fichero (patrón de
+// documentos) y la anterior solo se borra tras el éxito.
+router.post(
+  '/:id/image',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const existing = await prisma.asset.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, code: true, name: true, imageStorageKey: true },
+    })
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await uploadSingleImage(req, res)
+    if (!req.file) {
+      res.status(400).json({ error: 'Image file is required' })
+      return
+    }
+    let storageKey: string
+    try {
+      storageKey = await storeDocumentBuffer(req.file.buffer, req.file.mimetype)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (message === 'Unsupported document type') throw new Error('Unsupported image type')
+      if (message === 'Invalid document size') throw new Error('Invalid image size')
+      throw error
+    }
+    let updated: AssetWithRelations
+    try {
+      ;[updated] = await prisma.$transaction([
+        prisma.asset.update({
+          where: { id },
+          data: {
+            imageStorageKey: storageKey,
+            imageMimeType: req.file.mimetype,
+            imageSizeBytes: req.file.size,
+          },
+          include: assetInclude,
+        }),
+        prisma.auditLog.create({
+          data: {
+            userId: ACTOR_USER_ID,
+            action: 'Imagen de activo',
+            entityId: existing.code,
+            detail: `Imagen subida para "${existing.name}" (${req.file.size} bytes)`,
+            timestamp: new Date(),
+          },
+        }),
+      ])
+    } catch (error) {
+      await removeDocumentFile(storageKey)
+      throw error
+    }
+    if (existing.imageStorageKey) await removeDocumentFile(existing.imageStorageKey)
+    res.json(withDerivedEvents(updated))
+  }),
+)
+
+// IMG-01: elimina la imagen del activo (sin confirmación: es recuperable
+// volviendo a subirla).
+router.delete(
+  '/:id/image',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const existing = await prisma.asset.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, code: true, name: true, imageStorageKey: true },
+    })
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await prisma.$transaction([
+      prisma.asset.update({
+        where: { id },
+        data: { imageStorageKey: null, imageMimeType: null, imageSizeBytes: null },
+      }),
+      prisma.auditLog.create({
+        data: {
+          userId: ACTOR_USER_ID,
+          action: 'Imagen de activo eliminada',
+          entityId: existing.code,
+          detail: `Imagen de "${existing.name}" eliminada`,
+          timestamp: new Date(),
+        },
+      }),
+    ])
+    if (existing.imageStorageKey) await removeDocumentFile(existing.imageStorageKey)
+    res.status(204).end()
+  }),
+)
+
+// IMG-01: sirve la imagen del activo inline para `<img>` (con el MIME
+// almacenado; nunca se adivina por extensión).
+router.get(
+  '/:id/image',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const asset = await prisma.asset.findFirst({
+      where: { id, deletedAt: null },
+      select: { imageStorageKey: true, imageMimeType: true },
+    })
+    if (!asset?.imageStorageKey || !asset.imageMimeType) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    let bytes: Buffer
+    try {
+      bytes = await readDocumentFile(asset.imageStorageKey)
+    } catch (error) {
+      // Fichero referenciado pero ausente del storage: tratado como 404.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.status(404).json({ error: 'Not found' })
+        return
+      }
+      throw error
+    }
+    res.setHeader('Content-Type', asset.imageMimeType)
+    res.setHeader('Content-Length', String(bytes.length))
+    res.setHeader('Cache-Control', 'private, max-age=3600')
+    res.send(bytes)
   }),
 )
 

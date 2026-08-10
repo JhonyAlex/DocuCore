@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { changeAssetStatus, deleteAsset, fetchAsset, updateAsset, type ApiAsset } from '@/lib/api'
+import { changeAssetStatus, deleteAsset, fetchAsset, updateAsset, uploadAssetImage, type ApiAsset } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import type { AssetFormValues } from '@/components/AssetFormModal'
 
@@ -30,6 +30,13 @@ export function useAssetFicha(options: {
     latestRequest.current += 1
     setAsset(null)
     setFormMode(null)
+  }, [])
+
+  // IMG-01: la ficha entrega el activo ya actualizado tras subir/quitar la
+  // imagen; se aplica directamente (invalidando fetches pendientes).
+  const replaceAsset = useCallback((next: ApiAsset) => {
+    latestRequest.current += 1
+    setAsset(next)
   }, [])
 
   const refresh = useCallback(() => {
@@ -64,16 +71,26 @@ export function useAssetFicha(options: {
     }
   }, [close, onAssetChanged])
 
-  const save = useCallback(async (values: AssetFormValues) => {
+  const save = useCallback(async (values: AssetFormValues, imageFile: File | null) => {
     if (!asset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
+    let saved: ApiAsset
     try {
-      const updated = await updateAsset(asset.id, values)
-      setAsset(updated)
-      setFormMode(null)
-      await onAssetChanged()
+      saved = await updateAsset(asset.id, values)
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
+    // IMG-01: la imagen se sube tras guardar; si falla, el activo ya está
+    // actualizado y el error invita a subirla desde la ficha.
+    if (imageFile) {
+      try {
+        saved = await uploadAssetImage(saved.id, imageFile)
+      } catch {
+        throw new Error('El activo se actualizó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.')
+      }
+    }
+    setAsset(saved)
+    setFormMode(null)
+    await onAssetChanged()
   }, [asset, onAssetChanged])
 
   // Tras vincular o crear un documento la ficha recarga el activo completo
@@ -93,6 +110,7 @@ export function useAssetFicha(options: {
     changeStatus,
     remove,
     save,
+    replaceAsset,
     documentsChanged,
   }
 }

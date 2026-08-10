@@ -15,7 +15,7 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return
   }
 
-  if (err instanceof Error && (err.message === 'Unsupported document type' || err.message === 'Invalid document size' || err.message === 'Invalid document storage key')) {
+  if (err instanceof Error && (err.message === 'Unsupported document type' || err.message === 'Invalid document size' || err.message === 'Invalid document storage key' || err.message === 'Unsupported image type' || err.message === 'Invalid image size')) {
     res.status(400).json({ error: err.message })
     return
   }

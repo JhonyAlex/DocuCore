@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus, ApiUserRef } from '@/lib/api'
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
 import SuggestInput from '@/components/SuggestInput'
+import AssetImagePicker from '@/components/AssetImagePicker'
 import { buildAssetSuggestionSearch } from '@/lib/assetSuggestions'
 
 // UX-03: valor especial del select de ubicación que abre el alta rápida de ubicación.
@@ -35,7 +36,8 @@ interface AssetFormModalProps {
   onCreateLocation: (values: LocationFormValues) => Promise<ApiLocation>
   optionsError: boolean
   onClose: () => void
-  onSubmit: (values: AssetFormValues) => Promise<void>
+  // IMG-01: la imagen solo se selecciona aquí; el caller la sube al guardar.
+  onSubmit: (values: AssetFormValues, imageFile: File | null) => Promise<void>
 }
 
 function dateForInput(value: string): string {
@@ -86,6 +88,9 @@ export default function AssetFormModal({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showLocationForm, setShowLocationForm] = useState(false)
+  // IMG-01: fichero elegido (no se sube hasta guardar). El duplicado (ITEM-04)
+  // no hereda la imagen del origen: arranca sin imagen como un activo nuevo.
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const codeInputRef = useRef<HTMLInputElement>(null)
   const onCloseRef = useRef(onClose)
   const savingRef = useRef(saving)
@@ -117,6 +122,7 @@ export default function AssetFormModal({
 
   useEffect(() => {
     setValues(initialValues(asset, mode, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
+    setImageFile(null)
     setError(null)
   }, [asset, mode, projectId, responsibleId, statuses, types])
 
@@ -145,7 +151,7 @@ export default function AssetFormModal({
     setError(null)
     setSaving(true)
     try {
-      await onSubmit(values)
+      await onSubmit(values, imageFile)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'No se pudo guardar el activo. Inténtalo de nuevo.')
     } finally {
@@ -220,6 +226,9 @@ export default function AssetFormModal({
               <div>
                 <FieldLabel htmlFor="asset-responsible">Responsable</FieldLabel>
                 <input id="asset-responsible" value={responsibleName} readOnly className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400" />
+              </div>
+              <div className="md:col-span-2">
+                <AssetImagePicker asset={mode === 'edit' ? asset : null} value={imageFile} onChange={setImageFile} />
               </div>
             </div>
           </div>

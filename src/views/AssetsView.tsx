@@ -9,7 +9,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import type { AssetFormValues } from '@/components/AssetFormModal'
 import type { LocationFormValues } from '@/components/LocationFormModal'
-import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
+import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImage, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
@@ -145,22 +145,36 @@ export default function AssetsView() {
     fallback: 'No se pudo guardar el activo. Inténtalo de nuevo.',
   })
 
-  const saveAsset = async (values: AssetFormValues) => {
+  // IMG-01: la subida de imagen ocurre tras guardar el activo; si falla, el
+  // activo queda creado/actualizado y el error lo dice (recuperable desde la ficha).
+  const saveAsset = async (values: AssetFormValues, imageFile: File | null) => {
+    let saved: ApiAsset
     try {
       if (formMode === 'edit') {
         if (!selectedAsset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
-        const updated = await updateAsset(selectedAsset.id, values)
-        setSelectedAsset(updated)
+        saved = await updateAsset(selectedAsset.id, values)
       } else {
-        const created = await createAsset(values)
-        if (formMode === 'duplicate') setSelectedAsset(created)
+        saved = await createAsset(values)
+        if (formMode === 'duplicate') setSelectedAsset(saved)
       }
-      await loadAssets()
-      reloadSession()
-      setFormMode(null)
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
+    if (imageFile) {
+      try {
+        saved = await uploadAssetImage(saved.id, imageFile)
+      } catch {
+        throw new Error(formMode === 'edit'
+          ? 'El activo se actualizó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.'
+          : 'El activo se creó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.')
+      }
+    }
+    // Solo en edición/duplicado se refresca la ficha abierta; al crear el
+    // activo la lista se recarga y el formulario se cierra sin abrir ficha.
+    if (formMode === 'edit' || formMode === 'duplicate') setSelectedAsset(saved)
+    await loadAssets()
+    reloadSession()
+    setFormMode(null)
   }
 
   const toLocationUserError = (writeError: unknown) => toUserWriteError(writeError, {
@@ -192,6 +206,13 @@ export default function AssetsView() {
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
+  }
+
+  // IMG-01: tras subir/quitar la imagen en la ficha, el activo se actualiza en
+  // el estado de la ficha y en la lista (para que persista al reabrir).
+  const handleImageChanged = (updated: ApiAsset) => {
+    setSelectedAsset(updated)
+    setAssets((current) => current.map((asset) => asset.id === updated.id ? updated : asset))
   }
 
   // ITEM-05: eliminar mueve a la papelera; se refresca lista, contador y sesión.
@@ -348,7 +369,7 @@ export default function AssetsView() {
         onPageChange={handlePageChange}
         onRetry={() => void loadAssets()}
       />
-      <AssetModal asset={selectedAsset} statuses={statuses} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={(asset) => void handleDelete(asset)} onDocumentsChanged={loadAssets} />
+      <AssetModal asset={selectedAsset} statuses={statuses} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={(asset) => void handleDelete(asset)} onDocumentsChanged={loadAssets} onImageChanged={handleImageChanged} />
       {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
       <ConfirmDialog
         open={purgeTarget !== null}

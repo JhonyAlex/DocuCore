@@ -491,6 +491,7 @@ export default function LocationsView() {
         onChangeStatus={ficha.changeStatus}
         onDelete={(asset) => void ficha.remove(asset)}
         onDocumentsChanged={ficha.documentsChanged}
+        onImageChanged={ficha.replaceAsset}
       />
       {ficha.formMode && ficha.asset && catalog && (
         <AssetFormModal

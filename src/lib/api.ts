@@ -84,6 +84,10 @@ export interface ApiAsset {
   responsibleId: number
   initials: string
   deletedAt?: string | null
+  // IMG-01: imagen del activo — URL servida por el API (null si no tiene).
+  imageUrl: string | null
+  imageMimeType: string | null
+  imageSizeBytes: number | null
   nextEvents: ApiAssetEvent[]
   documentCount: number
   documents?: ApiAssetDocument[]
@@ -315,6 +319,18 @@ export function restoreAsset(id: number): Promise<ApiAsset> {
 
 export function purgeAsset(id: number): Promise<void> {
   return request<void>(`/assets/${id}/purge`, { method: 'POST' })
+}
+
+// IMG-01: sube o reemplaza la imagen del activo (multipart, campo `image`);
+// devuelve el activo actualizado con su nueva imageUrl.
+export function uploadAssetImage(id: number, file: File): Promise<ApiAsset> {
+  const body = new FormData()
+  body.set('image', file)
+  return request<ApiAsset>(`/assets/${id}/image`, { method: 'POST', body })
+}
+
+export function deleteAssetImage(id: number): Promise<void> {
+  return request<void>(`/assets/${id}/image`, { method: 'DELETE' })
 }
 
 export function fetchAssetTypes(): Promise<ApiAssetType[]> {
