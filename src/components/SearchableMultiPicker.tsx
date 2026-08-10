@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchableOption } from '@/components/SearchablePicker'
 import PortalListbox from '@/components/PortalListbox'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 export type SelectedValue = { id: number; label: string }
 
@@ -23,6 +24,7 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
   const [options, setOptions] = useState<SearchableOption[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<SelectedValue | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchSeqRef = useRef(0)
@@ -60,12 +62,22 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
   const toggle = (option: SearchableOption) => {
     const id = Number(option.value)
     const exists = values.some((selected) => selected.id === id)
-    onChange(exists ? values.filter((selected) => selected.id !== id) : [...values, { id, label: option.label }])
+    if (exists) {
+      setRemoveTarget(values.find((selected) => selected.id === id) ?? { id, label: option.label })
+    } else {
+      onChange([...values, { id, label: option.label }])
+    }
     close()
   }
 
   const remove = (selected: SelectedValue) => {
-    onChange(values.filter((value) => value.id !== selected.id))
+    setRemoveTarget(selected)
+  }
+
+  const confirmRemove = () => {
+    if (!removeTarget) return
+    onChange(values.filter((value) => value.id !== removeTarget.id))
+    setRemoveTarget(null)
   }
 
   const selectedValueIds = new Set(values.map((value) => value.id))
@@ -116,6 +128,15 @@ export default function SearchableMultiPicker({ values, placeholder, ariaLabel, 
           </ul>
         </PortalListbox>
       )}
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title="Quitar activo asociado"
+        message={<>El activo <span className="font-medium text-slate-900 dark:text-slate-100">{removeTarget?.label}</span> se quitará de la selección. El cambio se aplicará al guardar el documento. ¿Continuar?</>}
+        confirmLabel="Quitar asociación"
+        onConfirm={confirmRemove}
+        onCancel={() => setRemoveTarget(null)}
+        variant="danger"
+      />
     </div>
   )
 }

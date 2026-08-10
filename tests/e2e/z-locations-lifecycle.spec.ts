@@ -314,8 +314,18 @@ test.describe('Locations lifecycle', () => {
     // Raíz tiene hijos: bloqueado aunque no tenga activos propios.
     expect((await page.request.delete(`/api/locations/${root.id}`)).status()).toBe(409)
 
-    // El nieto está vacío y sin hijos: se puede borrar.
-    expect((await page.request.delete(`/api/locations/${grandchild.id}`)).status()).toBe(204)
+    // El nieto está vacío y sin hijos: la UI exige confirmación y permite borrarlo.
+    await goToLocations(page)
+    await page.locator('summary', { hasText: child.name }).click()
+    await page.locator('a', { hasText: grandchild.name }).click()
+    await expect(page.getByRole('heading', { name: grandchild.name, exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Eliminar ubicación' }).click()
+    const deleteDialog = page.getByRole('dialog', { name: 'Eliminar ubicación' })
+    await expect(deleteDialog).toBeVisible()
+    const deleteResponse = page.waitForResponse((response) => response.request().method() === 'DELETE' && response.url().endsWith(`/api/locations/${grandchild.id}`))
+    await deleteDialog.getByRole('button', { name: 'Eliminar ubicación' }).click()
+    expect((await deleteResponse).status()).toBe(204)
+    await expect(deleteDialog).toBeHidden()
   })
 
   test('no inaccessible locations remain and persistence survives reload', async ({ page }) => {

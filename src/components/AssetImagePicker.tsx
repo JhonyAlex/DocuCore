@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ApiAsset } from '@/lib/api'
 import { AssetImagePlaceholder } from '@/components/AssetImageBox'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface AssetImagePickerProps {
   asset: ApiAsset | null
@@ -13,6 +14,7 @@ interface AssetImagePickerProps {
 // del fichero elegido o, en edición sin fichero nuevo, la imagen actual.
 export default function AssetImagePicker({ asset, value, onChange }: AssetImagePickerProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [discardRequested, setDiscardRequested] = useState(false)
 
   useEffect(() => {
     if (!value) {
@@ -44,14 +46,23 @@ export default function AssetImagePicker({ asset, value, onChange }: AssetImageP
             {hasPreview ? 'Cambiar imagen' : 'Elegir imagen'}
             <input id="asset-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={(event) => onChange(event.target.files?.[0] ?? null)} />
           </label>
-          {hasPreview && (
-            <button type="button" onClick={() => onChange(null)} className="w-fit px-3 py-1 rounded-lg text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
-              Quitar imagen
+          {value && (
+            <button type="button" onClick={() => setDiscardRequested(true)} className="w-fit px-3 py-1 rounded-lg text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+              Descartar selección
             </button>
           )}
           <p className="text-xs text-slate-500 dark:text-slate-400">PNG, JPG, WebP o GIF · máx. 10 MB</p>
         </div>
       </div>
+      <ConfirmDialog
+        open={discardRequested}
+        title="Descartar imagen seleccionada"
+        message="La imagen elegida se quitará del formulario y no se subirá al guardar. ¿Continuar?"
+        confirmLabel="Descartar selección"
+        onConfirm={() => { onChange(null); setDiscardRequested(false) }}
+        onCancel={() => setDiscardRequested(false)}
+        variant="danger"
+      />
     </div>
   )
 }

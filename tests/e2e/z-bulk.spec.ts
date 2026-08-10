@@ -72,6 +72,9 @@ test.describe.serial('bulk actions', () => {
 
     // Acción masiva: Eliminar (soft delete → papelera).
     await page.getByRole('button', { name: 'Eliminar', exact: true }).click()
+    const deleteDialog = page.getByRole('dialog', { name: 'Eliminar activo' })
+    await expect(deleteDialog).toBeVisible()
+    await deleteDialog.getByRole('button', { name: 'Eliminar', exact: true }).click()
     await expect(page.locator('tbody tr', { hasText: 'QA-BK-ONE' })).toHaveCount(0)
     await expect(page.locator('tbody tr', { hasText: 'QA-BK-TWO' })).toHaveCount(0)
 

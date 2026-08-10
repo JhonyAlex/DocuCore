@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { deleteAssetImage, uploadAssetImage, type ApiAsset } from '@/lib/api'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 // IMG-01: placeholder del HTML de referencia (mismo SVG de la ficha del activo).
 export function AssetImagePlaceholder({ className = 'w-20 h-20 text-slate-300' }: { className?: string }) {
@@ -58,6 +59,7 @@ interface AssetImageBoxProps {
 export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBoxProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [removeRequested, setRemoveRequested] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const pick = (file: File | null) => {
@@ -83,6 +85,7 @@ export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBo
     try {
       await deleteAssetImage(asset.id)
       onChanged({ ...asset, imageUrl: null, imageMimeType: null, imageSizeBytes: null })
+      setRemoveRequested(false)
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : 'No se pudo quitar la imagen.')
     } finally {
@@ -120,7 +123,7 @@ export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBo
               {hasImage ? 'Cambiar foto' : 'Subir foto'}
             </button>
             {hasImage && (
-              <button type="button" onClick={(event) => { event.stopPropagation(); void remove() }} className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs">
+              <button type="button" onClick={(event) => { event.stopPropagation(); setError(null); setRemoveRequested(true) }} className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs">
                 Quitar
               </button>
             )}
@@ -128,7 +131,19 @@ export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBo
         )}
         <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Subir imagen del activo" className="sr-only" onChange={(event) => { pick(event.target.files?.[0] ?? null); event.target.value = '' }} />
       </div>
-      {error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && !removeRequested && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      <ConfirmDialog
+        open={removeRequested}
+        title="Quitar foto"
+        message={<>La foto de <span className="font-medium text-slate-900 dark:text-slate-100">{asset.name}</span> se eliminará del activo. ¿Continuar?</>}
+        confirmLabel="Quitar foto"
+        busyLabel="Quitando…"
+        busy={busy}
+        error={error}
+        onConfirm={() => void remove()}
+        onCancel={() => { setRemoveRequested(false); setError(null) }}
+        variant="danger"
+      />
     </div>
   )
 }

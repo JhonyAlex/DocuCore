@@ -21,6 +21,7 @@ import { mapApiLocationAssetToDisplay } from '@/lib/assetMappers'
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
 import AssetModal from '@/components/AssetModal'
 import AssetFormModal from '@/components/AssetFormModal'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useSession } from '@/contexts/SessionContext'
 
@@ -430,16 +431,7 @@ export default function LocationsView() {
 
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-medium text-sm">Activos en esta ubicación</h3>
-                {!confirmDelete ? (
-                  <button type="button" onClick={() => { setConfirmDelete(true); setDeleteError(null) }} className="text-xs text-red-600 hover:text-red-700">Eliminar ubicación</button>
-                ) : (
-                  <div className="flex items-center gap-2 text-xs">
-                    {deleteError && <span role="alert" className="text-red-600 dark:text-red-400">{deleteError}</span>}
-                    <span className="text-slate-500 dark:text-slate-400">¿Eliminar «{detail.name}»?</span>
-                    <button type="button" onClick={() => void removeLocation()} disabled={deleting} className="px-2 py-1 rounded-md bg-red-600 text-white disabled:opacity-40">Sí, eliminar</button>
-                    <button type="button" onClick={() => { setConfirmDelete(false); setDeleteError(null) }} disabled={deleting} className="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 disabled:opacity-40">Cancelar</button>
-                  </div>
-                )}
+                <button type="button" onClick={() => { setConfirmDelete(true); setDeleteError(null) }} className="text-xs text-red-600 hover:text-red-700">Eliminar ubicación</button>
               </div>
               <div className="space-y-2">
                 {previewAssets.map((asset) => (
@@ -489,7 +481,7 @@ export default function LocationsView() {
         onClose={ficha.close}
         onEdit={ficha.onEdit}
         onChangeStatus={ficha.changeStatus}
-        onDelete={(asset) => void ficha.remove(asset)}
+        onDelete={ficha.remove}
         onDocumentsChanged={ficha.documentsChanged}
         onImageChanged={ficha.replaceAsset}
       />
@@ -511,6 +503,18 @@ export default function LocationsView() {
           onSubmit={ficha.save}
         />
       )}
+      <ConfirmDialog
+        open={confirmDelete && detail !== null}
+        title="Eliminar ubicación"
+        message={<>La ubicación <span className="font-medium text-slate-900 dark:text-slate-100">{detail?.name}</span> se eliminará de forma permanente. La operación se bloqueará si contiene activos o ubicaciones hijas. ¿Continuar?</>}
+        confirmLabel="Eliminar ubicación"
+        busyLabel="Eliminando…"
+        busy={deleting}
+        error={deleteError}
+        onConfirm={() => void removeLocation()}
+        onCancel={() => { setConfirmDelete(false); setDeleteError(null) }}
+        variant="danger"
+      />
     </section>
   )
 }

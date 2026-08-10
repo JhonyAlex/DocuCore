@@ -102,6 +102,9 @@ test.describe.serial('asset image', () => {
     // que el clic va forzado contra el botón siempre presente en el DOM.
     const removeResponse = page.waitForResponse((response) => response.request().method() === 'DELETE' && /\/api\/assets\/\d+\/image$/.test(response.url()))
     await assetDialog.getByRole('button', { name: 'Quitar' }).click({ force: true })
+    const removeDialog = page.getByRole('dialog', { name: 'Quitar foto' })
+    await expect(removeDialog).toBeVisible()
+    await removeDialog.getByRole('button', { name: 'Quitar foto' }).click()
     expect((await removeResponse).status()).toBe(204)
     await expect(assetImage).toHaveCount(0)
 

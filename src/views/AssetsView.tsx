@@ -17,9 +17,10 @@ import { useAssetCreateRequest } from '@/contexts/AssetCreateContext'
 
 const LIMIT = 6
 
-interface PurgeTarget {
+interface RemovalTarget {
   ids: number[]
   label: string
+  kind: 'trash' | 'purge'
 }
 
 export default function AssetsView() {
@@ -50,8 +51,9 @@ export default function AssetsView() {
   const [trashMode, setTrashMode] = useState(false)
   const [trashCount, setTrashCount] = useState(0)
   const [trashSearch, setTrashSearch] = useState('')
-  const [purgeTarget, setPurgeTarget] = useState<PurgeTarget | null>(null)
-  const [purgeError, setPurgeError] = useState<string | null>(null)
+  const [removalTarget, setRemovalTarget] = useState<RemovalTarget | null>(null)
+  const [removalError, setRemovalError] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
   const latestLoadRequest = useRef(0)
 
   const loadAssets = useCallback(async () => {
@@ -145,6 +147,11 @@ export default function AssetsView() {
     fallback: 'No se pudo guardar el activo. Inténtalo de nuevo.',
   })
 
+  const toUserDeleteError = (writeError: unknown) => toUserWriteError(writeError, {
+    notFound: 'El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
+    fallback: 'No se pudo eliminar el activo. Inténtalo de nuevo.',
+  })
+
   // IMG-01: la subida de imagen ocurre tras guardar el activo; si falla, el
   // activo queda creado/actualizado y el error lo dice (recuperable desde la ficha).
   const saveAsset = async (values: AssetFormValues, imageFile: File | null) => {
@@ -223,7 +230,7 @@ export default function AssetsView() {
       await Promise.all([loadAssets(), refreshTrashCount()])
       reloadSession()
     } catch (writeError) {
-      throw new Error(toUserError(writeError))
+      throw new Error(toUserDeleteError(writeError))
     }
   }
 
@@ -234,19 +241,6 @@ export default function AssetsView() {
       reloadSession()
     } catch (writeError) {
       throw new Error(toUserError(writeError))
-    }
-  }
-
-  // Acciones masivas: Promise.all sobre los ids seleccionados.
-  // Reusa la auditoría, validaciones y guards 404/409 de los endpoints individuales.
-  const handleBulkDelete = async () => {
-    try {
-      await Promise.all(selection.selectedIds.map((id) => deleteAsset(id)))
-      selection.clear()
-      await Promise.all([loadAssets(), refreshTrashCount()])
-      reloadSession()
-    } catch (writeError) {
-      setError(toUserError(writeError))
     }
   }
 
@@ -264,20 +258,35 @@ export default function AssetsView() {
   const requestBulkPurge = () => {
     const ids = selection.selectedIds
     if (ids.length === 0) return
-    setPurgeError(null)
-    setPurgeTarget({ ids, label: `${ids.length} ${ids.length === 1 ? 'activo' : 'activos'}` })
+    setRemovalError(null)
+    setRemovalTarget({ ids, label: `${ids.length} ${ids.length === 1 ? 'activo' : 'activos'}`, kind: 'purge' })
   }
 
-  const handlePurge = async () => {
-    if (!purgeTarget) return
-    setPurgeError(null)
+  const requestBulkDelete = () => {
+    const ids = selection.selectedIds
+    if (ids.length === 0) return
+    setRemovalError(null)
+    setRemovalTarget({ ids, label: `${ids.length} ${ids.length === 1 ? 'activo' : 'activos'}`, kind: 'trash' })
+  }
+
+  // La confirmación cubre tanto el soft delete como la purga definitiva.
+  const handleConfirmedRemoval = async () => {
+    if (!removalTarget) return
+    const target = removalTarget
+    setRemovalError(null)
+    setRemoving(true)
     try {
-      await Promise.all(purgeTarget.ids.map((id) => purgeAsset(id)))
+      await Promise.all(target.ids.map((id) => target.kind === 'purge' ? purgeAsset(id) : deleteAsset(id)))
       selection.clear()
-      setPurgeTarget(null)
+      setRemovalTarget(null)
       await Promise.all([loadAssets(), refreshTrashCount()])
-    } catch {
-      setPurgeError('No se pudo eliminar definitivamente. Inténtalo de nuevo.')
+      if (target.kind === 'trash') reloadSession()
+    } catch (writeError) {
+      setRemovalError(target.kind === 'purge'
+        ? 'No se pudo eliminar definitivamente. Inténtalo de nuevo.'
+        : toUserDeleteError(writeError))
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -330,7 +339,7 @@ export default function AssetsView() {
             <button type="button" onClick={requestBulkPurge} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar definitivamente</button>
           </>
         ) : (
-          <button type="button" onClick={() => void handleBulkDelete()} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
+          <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
         )}
       </BulkActionBar>
 
@@ -363,25 +372,31 @@ export default function AssetsView() {
           setSelectedAsset(assets.find((apiAsset) => apiAsset.id === asset.id) ?? null)
           setFormMode('duplicate')
         }}
-        onDelete={(asset) => { void handleDelete(asset).catch((writeError: unknown) => setError(writeError instanceof Error ? writeError.message : 'No se pudo eliminar el activo.')) }}
+        onDelete={(asset) => { setRemovalError(null); setRemovalTarget({ ids: [asset.id], label: `${asset.code} · ${asset.name}`, kind: 'trash' }) }}
         onRestore={(asset) => { void handleRestore(asset).catch((writeError: unknown) => setError(writeError instanceof Error ? writeError.message : 'No se pudo restaurar el activo.')) }}
-        onPurge={(asset) => { setPurgeError(null); setPurgeTarget({ ids: [asset.id], label: `${asset.code} · ${asset.name}` }) }}
+        onPurge={(asset) => { setRemovalError(null); setRemovalTarget({ ids: [asset.id], label: `${asset.code} · ${asset.name}`, kind: 'purge' }) }}
         onPageChange={handlePageChange}
         onRetry={() => void loadAssets()}
       />
-      <AssetModal asset={selectedAsset} statuses={statuses} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={(asset) => void handleDelete(asset)} onDocumentsChanged={loadAssets} onImageChanged={handleImageChanged} />
+      <AssetModal asset={selectedAsset} statuses={statuses} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={handleDelete} onDocumentsChanged={loadAssets} onImageChanged={handleImageChanged} />
       {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
       <ConfirmDialog
-        open={purgeTarget !== null}
-        title="Eliminar definitivamente"
-        message={purgeTarget && purgeTarget.ids.length > 1
-          ? <>Los <span className="font-medium text-slate-900 dark:text-slate-100">{purgeTarget.label}</span> seleccionados se borrarán de forma permanente y no podrán recuperarse. ¿Continuar?</>
-          : <>El activo <span className="font-medium text-slate-900 dark:text-slate-100">{purgeTarget?.label}</span> se borrará de forma permanente y no podrá recuperarse. ¿Continuar?</>
+        open={removalTarget !== null}
+        title={removalTarget?.kind === 'purge' ? 'Eliminar definitivamente' : 'Eliminar activo'}
+        message={removalTarget?.kind === 'purge'
+          ? removalTarget.ids.length > 1
+            ? <>Los <span className="font-medium text-slate-900 dark:text-slate-100">{removalTarget.label}</span> seleccionados se borrarán de forma permanente y no podrán recuperarse. ¿Continuar?</>
+            : <>El activo <span className="font-medium text-slate-900 dark:text-slate-100">{removalTarget.label}</span> se borrará de forma permanente y no podrá recuperarse. ¿Continuar?</>
+          : removalTarget && removalTarget.ids.length > 1
+            ? <>Los <span className="font-medium text-slate-900 dark:text-slate-100">{removalTarget.label}</span> seleccionados se moverán a la papelera y podrán recuperarse durante 30 días. ¿Continuar?</>
+            : <>El activo <span className="font-medium text-slate-900 dark:text-slate-100">{removalTarget?.label}</span> se moverá a la papelera y podrá recuperarse durante 30 días. ¿Continuar?</>
         }
-        confirmLabel="Eliminar definitivamente"
-        onConfirm={() => void handlePurge()}
-        onCancel={() => setPurgeTarget(null)}
-        error={purgeError}
+        confirmLabel={removalTarget?.kind === 'purge' ? 'Eliminar definitivamente' : 'Eliminar'}
+        busyLabel={removalTarget?.kind === 'purge' ? 'Eliminando…' : 'Moviendo a la papelera…'}
+        busy={removing}
+        onConfirm={() => void handleConfirmedRemoval()}
+        onCancel={() => { setRemovalTarget(null); setRemovalError(null) }}
+        error={removalError}
         variant="danger"
       />
     </section>

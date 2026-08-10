@@ -50,6 +50,11 @@ export function useAssetFicha(options: {
     fallback: 'No se pudo guardar el activo. Inténtalo de nuevo.',
   })
 
+  const toUserDeleteError = (writeError: unknown) => toUserWriteError(writeError, {
+    notFound: 'El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
+    fallback: 'No se pudo eliminar el activo. Inténtalo de nuevo.',
+  })
+
   const changeStatus = useCallback(async (statusId: number) => {
     if (!asset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
     try {
@@ -67,7 +72,7 @@ export function useAssetFicha(options: {
       close()
       await onAssetChanged()
     } catch (writeError) {
-      throw new Error(toUserError(writeError))
+      throw new Error(toUserDeleteError(writeError))
     }
   }, [close, onAssetChanged])
 

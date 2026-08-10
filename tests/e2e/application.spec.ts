@@ -216,6 +216,15 @@ test.describe('DocuCore application', () => {
     const statusListbox = assetDialog.getByRole('listbox', { name: 'Seleccionar estado' })
     await expect(statusListbox).toBeVisible()
     await statusListbox.getByRole('option', { name: 'Fuera de servicio' }).click()
+    const statusConfirm = page.getByRole('dialog', { name: 'Dar de baja el activo' })
+    await expect(statusConfirm).toBeVisible()
+    await expect(assetDialog.getByText('Activo', { exact: true })).toBeVisible()
+    await statusConfirm.getByRole('button', { name: 'Cancelar' }).click()
+    await expect(assetDialog.getByText('Activo', { exact: true })).toBeVisible()
+
+    await assetDialog.getByLabel('Cambiar estado').click()
+    await assetDialog.getByRole('listbox', { name: 'Seleccionar estado' }).getByRole('option', { name: 'Fuera de servicio' }).click()
+    await page.getByRole('dialog', { name: 'Dar de baja el activo' }).getByRole('button', { name: 'Dar de baja' }).click()
     await expect(assetDialog.getByText('Fuera de servicio', { exact: true })).toBeVisible()
     await expect(statusListbox).toHaveCount(0)
 
@@ -223,6 +232,18 @@ test.describe('DocuCore application', () => {
     await assetDialog.getByLabel('Cambiar estado').click()
     await assetDialog.getByRole('listbox', { name: 'Seleccionar estado' }).getByRole('option', { name: 'Activo' }).click()
     await expect(assetDialog.getByText('Activo', { exact: true })).toBeVisible()
+
+    // La edición tampoco puede convertirlo en «Fuera de servicio» sin confirmar.
+    await assetDialog.getByRole('button', { name: 'Editar' }).click()
+    const editDialog = page.getByRole('dialog', { name: 'Editar activo' })
+    await editDialog.getByLabel('Estado').selectOption({ label: 'Fuera de servicio' })
+    await editDialog.getByRole('button', { name: 'Guardar cambios' }).click()
+    const editStatusConfirm = page.getByRole('dialog', { name: 'Dar de baja el activo' })
+    await expect(editStatusConfirm).toBeVisible()
+    await editStatusConfirm.getByRole('button', { name: 'Cancelar' }).click()
+    await expect(editDialog).toBeVisible()
+    await editDialog.getByRole('button', { name: 'Cancelar' }).click()
+    await expect(assetDialog).toBeVisible()
 
     // El modal queda anclado arriba: el borde superior no se mueve al cambiar de pestaña.
     const boxBefore = await assetDialog.boundingBox()
@@ -275,6 +296,9 @@ test.describe('DocuCore application', () => {
 
     const decommissionResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes('/status'))
     await page.getByRole('button', { name: 'Dar de baja', exact: true }).click()
+    const decommissionDialog = page.getByRole('dialog', { name: 'Dar de baja el activo' })
+    await expect(decommissionDialog).toBeVisible()
+    await decommissionDialog.getByRole('button', { name: 'Dar de baja', exact: true }).click()
     expect((await decommissionResponse).status()).toBe(200)
     await expect(page.locator('.fixed.inset-0 span').filter({ hasText: 'Fuera de servicio' })).toBeVisible()
 
@@ -449,6 +473,9 @@ test.describe('DocuCore application', () => {
     await page.getByText('Certificado E2E Documento-Activo', { exact: true }).click()
     const detachDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
     await detachDialog.getByLabel('Quitar AST-001 · Activo industrial 001').click()
+    const detachConfirm = page.getByRole('dialog', { name: 'Quitar activo asociado' })
+    await expect(detachConfirm).toBeVisible()
+    await detachConfirm.getByRole('button', { name: 'Quitar asociación' }).click()
     const detachResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${documentId}`))
     await detachDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
     expect((await detachResponse).status()).toBe(200)
@@ -605,6 +632,9 @@ test.describe('DocuCore application', () => {
     }
 
     await manageDialog.getByLabel('Quitar CNC-05 · Torno CNC Haas ST-20').click()
+    const removeAssociationDialog = page.getByRole('dialog', { name: 'Quitar activo asociado' })
+    await expect(removeAssociationDialog).toBeVisible()
+    await removeAssociationDialog.getByRole('button', { name: 'Quitar asociación' }).click()
     const updateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${created.id}`))
     await manageDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
     expect((await updateResponse).status()).toBe(200)

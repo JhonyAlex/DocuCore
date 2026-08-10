@@ -16,6 +16,7 @@ export default function DocumentsView() {
   const [editing, setEditing] = useState<ApiDocument | null | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<{ ids: number[]; label: string } | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -47,6 +48,7 @@ export default function DocumentsView() {
   const confirmBulkDelete = async () => {
     if (!deleteTarget) return
     setDeleteError(null)
+    setDeleting(true)
     try {
       await Promise.all(deleteTarget.ids.map((id) => deleteDocument(id)))
       selection.clear()
@@ -54,6 +56,8 @@ export default function DocumentsView() {
       await load()
     } catch (writeError) {
       setDeleteError(toUserError(writeError))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -99,6 +103,8 @@ export default function DocumentsView() {
           : <>El documento <span className="font-medium text-slate-900 dark:text-slate-100">{deleteTarget?.label}</span> se eliminará de forma permanente junto con todos sus archivos. ¿Continuar?</>
         }
         confirmLabel="Eliminar"
+        busyLabel="Eliminando…"
+        busy={deleting}
         onConfirm={() => void confirmBulkDelete()}
         onCancel={() => setDeleteTarget(null)}
         error={deleteError}

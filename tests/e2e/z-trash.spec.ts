@@ -43,6 +43,14 @@ test.describe.serial('trash and modal fixes', () => {
     const assetDialog = page.getByRole('dialog', { name: 'Activo papelera QA-TR-ONE' })
     await expect(assetDialog).toBeVisible()
     await assetDialog.getByRole('button', { name: 'Eliminar', exact: true }).click()
+    const trashDialog = page.getByRole('dialog', { name: 'Eliminar activo' })
+    await expect(trashDialog).toBeVisible()
+    await trashDialog.getByRole('button', { name: 'Cancelar' }).click()
+    await expect(assetDialog).toBeVisible()
+    await expect(page.locator('tbody tr', { hasText: 'QA-TR-ONE' })).toHaveCount(1)
+
+    await assetDialog.getByRole('button', { name: 'Eliminar', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Eliminar activo' }).getByRole('button', { name: 'Eliminar', exact: true }).click()
     await expect(assetDialog).toBeHidden()
     await expect(page.locator('tbody tr', { hasText: 'QA-TR-ONE' })).toHaveCount(0)
 
@@ -68,6 +76,9 @@ test.describe.serial('trash and modal fixes', () => {
     await expect(secondRow).toHaveCount(1)
     await secondRow.getByLabel('Acciones de QA-TR-TWO').click()
     await page.getByRole('menuitem', { name: 'Eliminar' }).click()
+    const rowDeleteDialog = page.getByRole('dialog', { name: 'Eliminar activo' })
+    await expect(rowDeleteDialog).toBeVisible()
+    await rowDeleteDialog.getByRole('button', { name: 'Eliminar', exact: true }).click()
     await expect(secondRow).toHaveCount(0)
 
     // Eliminar definitivamente desde la papelera, con confirmación.

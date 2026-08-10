@@ -3,6 +3,7 @@ import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
 import AssetImageBox, { AssetImageViewer } from '@/components/AssetImageBox'
 import AssetDocuments from '@/components/AssetDocuments'
+import AssetActionConfirmDialog, { type AssetConfirmedAction } from '@/components/AssetActionConfirmDialog'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
@@ -46,6 +47,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   const [changingStatus, setChangingStatus] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [confirmedAction, setConfirmedAction] = useState<AssetConfirmedAction | null>(null)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
@@ -68,6 +70,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setShowStatusSelector(false)
     setStatusError(null)
     setDeleteError(null)
+    setConfirmedAction(null)
     setImagePreviewOpen(false)
     imagePreviewOpenRef.current = false
   }, [assetId])
@@ -133,6 +136,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setChangingStatus(true)
     try {
       await onChangeStatus(statusId)
+      setConfirmedAction(null)
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : 'No se pudo actualizar el estado.')
     } finally {
@@ -177,6 +181,25 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     }
   }
 
+  const requestStatusChange = (status: ApiStatus) => {
+    setShowStatusSelector(false)
+    if (status.id === asset.statusId) return
+    setStatusError(null)
+    if (status.name === 'Fuera de servicio') {
+      setConfirmedAction({ kind: 'decommission', statusId: status.id })
+      return
+    }
+    void changeStatus(status.id)
+  }
+
+  const confirmAction = () => {
+    if (confirmedAction?.kind === 'delete') {
+      void handleDelete()
+    } else if (confirmedAction?.kind === 'decommission') {
+      void changeStatus(confirmedAction.statusId)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`asset-dialog-title-${asset.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
@@ -215,7 +238,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                           <ul role="listbox" aria-label="Seleccionar estado" className="absolute left-0 top-full z-10 mt-1 min-w-44 overflow-hidden rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg fade-in">
                             {statuses.map((status) => (
                               <li key={status.id}>
-                                <button type="button" role="option" aria-selected={status.id === asset.statusId} onClick={() => { setShowStatusSelector(false); void changeStatus(status.id) }} disabled={changingStatus} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
+                                <button type="button" role="option" aria-selected={status.id === asset.statusId} onClick={() => requestStatusChange(status)} disabled={changingStatus} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
                                   <span className="flex-1">{status.name}</span>
                                   {status.id === asset.statusId && <span className="text-brand-600" aria-hidden="true">✓</span>}
                                 </button>
@@ -310,10 +333,10 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
               {isDecommissioned ? (
                 <button type="button" onClick={() => activeStatus && void changeStatus(activeStatus.id)} disabled={changingStatus || !activeStatus} className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">Reactivar</button>
               ) : (
-                <button type="button" onClick={() => decommissionedStatus && void changeStatus(decommissionedStatus.id)} disabled={changingStatus || !decommissionedStatus} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
+                <button type="button" onClick={() => decommissionedStatus && requestStatusChange(decommissionedStatus)} disabled={changingStatus || !decommissionedStatus} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
               )}
               {/* ITEM-05: eliminar mueve a la papelera (recuperable 30 días). */}
-              <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Eliminar</button>
+              <button type="button" onClick={() => { setDeleteError(null); setConfirmedAction({ kind: 'delete' }) }} disabled={deleting} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Eliminar</button>
             </div>
             {(statusError || deleteError) && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{statusError ?? deleteError}</div>}
           </div>
@@ -323,6 +346,14 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
           </div>
         </div>
       </div>
+      <AssetActionConfirmDialog
+        asset={asset}
+        action={confirmedAction}
+        busy={confirmedAction?.kind === 'delete' ? deleting : changingStatus}
+        error={confirmedAction?.kind === 'delete' ? deleteError : statusError}
+        onConfirm={confirmAction}
+        onCancel={() => { setConfirmedAction(null); setDeleteError(null); setStatusError(null) }}
+      />
       {linkDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !linking && setLinkDialogOpen(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="link-document-dialog-title" className="flex min-h-0 max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">

@@ -3,6 +3,7 @@ import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus, ApiUserRef } from 
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
 import SuggestInput from '@/components/SuggestInput'
 import AssetImagePicker from '@/components/AssetImagePicker'
+import AssetActionConfirmDialog from '@/components/AssetActionConfirmDialog'
 import { buildAssetSuggestionSearch } from '@/lib/assetSuggestions'
 
 // UX-03: valor especial del select de ubicación que abre el alta rápida de ubicación.
@@ -88,6 +89,7 @@ export default function AssetFormModal({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showLocationForm, setShowLocationForm] = useState(false)
+  const [decommissionRequested, setDecommissionRequested] = useState(false)
   // IMG-01: fichero elegido (no se sube hasta guardar). El duplicado (ITEM-04)
   // no hereda la imagen del origen: arranca sin imagen como un activo nuevo.
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -95,6 +97,12 @@ export default function AssetFormModal({
   const onCloseRef = useRef(onClose)
   const savingRef = useRef(saving)
   const optionsReady = types.length > 0 && statuses.length > 0 && locations.length > 0
+  const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
+  const requiresDecommissionConfirmation = mode === 'edit'
+    && asset !== null
+    && decommissionedStatus !== undefined
+    && asset.statusId !== decommissionedStatus.id
+    && values.statusId === decommissionedStatus.id
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -124,6 +132,7 @@ export default function AssetFormModal({
     setValues(initialValues(asset, mode, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
     setImageFile(null)
     setError(null)
+    setDecommissionRequested(false)
   }, [asset, mode, projectId, responsibleId, statuses, types])
 
   const updateValue = <K extends keyof AssetFormValues>(key: K, value: AssetFormValues[K]) => {
@@ -146,8 +155,7 @@ export default function AssetFormModal({
     setShowLocationForm(false)
   }
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const save = async () => {
     setError(null)
     setSaving(true)
     try {
@@ -157,6 +165,15 @@ export default function AssetFormModal({
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (requiresDecommissionConfirmation) {
+      setDecommissionRequested(true)
+      return
+    }
+    void save()
   }
 
   return (
@@ -251,6 +268,16 @@ export default function AssetFormModal({
           initialResponsibleId={responsibleId}
           onClose={() => setShowLocationForm(false)}
           onSubmit={handleCreateLocation}
+        />
+      )}
+      {asset && decommissionedStatus && (
+        <AssetActionConfirmDialog
+          asset={asset}
+          action={decommissionRequested ? { kind: 'decommission', statusId: decommissionedStatus.id } : null}
+          busy={saving}
+          error={error}
+          onConfirm={() => void save()}
+          onCancel={() => { setDecommissionRequested(false); setError(null) }}
         />
       )}
     </div>
