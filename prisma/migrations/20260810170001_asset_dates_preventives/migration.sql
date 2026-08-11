@@ -1,7 +1,7 @@
--- Dates are configured on the asset assignment. Existing date values preserve
--- their old recurrence by becoming schedules with a first pending occurrence.
-ALTER TYPE "FieldType" ADD VALUE IF NOT EXISTS 'PREVENTIVE';
-
+-- Preventives are standalone (decoupled from dynamic fields): the plan template
+-- owns the recurrence and the task checklist, and the asset assignment references
+-- the template. Existing date values preserve their old recurrence by becoming
+-- schedules with a first pending occurrence.
 CREATE TABLE "Task" (
   "id" SERIAL NOT NULL,
   "projectId" INTEGER NOT NULL,
@@ -16,10 +16,30 @@ CREATE UNIQUE INDEX "Task_projectId_code_key" ON "Task"("projectId", "code");
 CREATE INDEX "Task_projectId_isActive_idx" ON "Task"("projectId", "isActive");
 ALTER TABLE "Task" ADD CONSTRAINT "Task_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
-CREATE TABLE "PreventivePlanTask" ("definitionId" INTEGER NOT NULL, "taskId" INTEGER NOT NULL, "sortOrder" INTEGER NOT NULL DEFAULT 0, CONSTRAINT "PreventivePlanTask_pkey" PRIMARY KEY ("definitionId", "taskId"));
+CREATE TABLE "PreventivePlan" (
+  "id" SERIAL NOT NULL,
+  "projectId" INTEGER NOT NULL,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "periodicity" TEXT NOT NULL,
+  "periodicityMode" TEXT NOT NULL,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "PreventivePlan_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "PreventivePlan_projectId_isActive_idx" ON "PreventivePlan"("projectId", "isActive");
+ALTER TABLE "PreventivePlan" ADD CONSTRAINT "PreventivePlan_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+CREATE TABLE "PreventivePlanTask" ("planId" INTEGER NOT NULL, "taskId" INTEGER NOT NULL, "sortOrder" INTEGER NOT NULL DEFAULT 0, CONSTRAINT "PreventivePlanTask_pkey" PRIMARY KEY ("planId", "taskId"));
 CREATE INDEX "PreventivePlanTask_taskId_idx" ON "PreventivePlanTask"("taskId");
-ALTER TABLE "PreventivePlanTask" ADD CONSTRAINT "PreventivePlanTask_definitionId_fkey" FOREIGN KEY ("definitionId") REFERENCES "DynamicFieldDefinition"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "PreventivePlanTask" ADD CONSTRAINT "PreventivePlanTask_planId_fkey" FOREIGN KEY ("planId") REFERENCES "PreventivePlan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "PreventivePlanTask" ADD CONSTRAINT "PreventivePlanTask_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE TABLE "PreventivePlanAssetType" ("planId" INTEGER NOT NULL, "assetTypeId" INTEGER NOT NULL, CONSTRAINT "PreventivePlanAssetType_pkey" PRIMARY KEY ("planId", "assetTypeId"));
+CREATE INDEX "PreventivePlanAssetType_assetTypeId_idx" ON "PreventivePlanAssetType"("assetTypeId");
+ALTER TABLE "PreventivePlanAssetType" ADD CONSTRAINT "PreventivePlanAssetType_planId_fkey" FOREIGN KEY ("planId") REFERENCES "PreventivePlan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "PreventivePlanAssetType" ADD CONSTRAINT "PreventivePlanAssetType_assetTypeId_fkey" FOREIGN KEY ("assetTypeId") REFERENCES "AssetType"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 CREATE TABLE "AssetDateSchedule" ("id" SERIAL NOT NULL, "assetId" INTEGER NOT NULL, "definitionId" INTEGER NOT NULL, "periodicity" TEXT, "periodicityMode" TEXT, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "AssetDateSchedule_pkey" PRIMARY KEY ("id"));
 CREATE UNIQUE INDEX "AssetDateSchedule_assetId_definitionId_key" ON "AssetDateSchedule"("assetId", "definitionId");
@@ -32,11 +52,11 @@ CREATE TABLE "AssetDateOccurrence" ("id" SERIAL NOT NULL, "scheduleId" INTEGER N
 CREATE INDEX "AssetDateOccurrence_scheduleId_completedAt_scheduledDate_idx" ON "AssetDateOccurrence"("scheduleId", "completedAt", "scheduledDate");
 ALTER TABLE "AssetDateOccurrence" ADD CONSTRAINT "AssetDateOccurrence_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "AssetDateSchedule"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
-CREATE TABLE "AssetPreventivePlan" ("id" SERIAL NOT NULL, "assetId" INTEGER NOT NULL, "definitionId" INTEGER NOT NULL, "name" TEXT NOT NULL, "periodicity" TEXT NOT NULL, "periodicityMode" TEXT NOT NULL, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "AssetPreventivePlan_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "AssetPreventivePlan" ("id" SERIAL NOT NULL, "assetId" INTEGER NOT NULL, "planId" INTEGER, "name" TEXT NOT NULL, "periodicity" TEXT NOT NULL, "periodicityMode" TEXT NOT NULL, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "AssetPreventivePlan_pkey" PRIMARY KEY ("id"));
 CREATE INDEX "AssetPreventivePlan_assetId_isActive_idx" ON "AssetPreventivePlan"("assetId", "isActive");
-CREATE INDEX "AssetPreventivePlan_definitionId_idx" ON "AssetPreventivePlan"("definitionId");
+CREATE INDEX "AssetPreventivePlan_planId_idx" ON "AssetPreventivePlan"("planId");
 ALTER TABLE "AssetPreventivePlan" ADD CONSTRAINT "AssetPreventivePlan_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "AssetPreventivePlan" ADD CONSTRAINT "AssetPreventivePlan_definitionId_fkey" FOREIGN KEY ("definitionId") REFERENCES "DynamicFieldDefinition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "AssetPreventivePlan" ADD CONSTRAINT "AssetPreventivePlan_planId_fkey" FOREIGN KEY ("planId") REFERENCES "PreventivePlan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 CREATE TABLE "PreventiveExecution" ("id" SERIAL NOT NULL, "planId" INTEGER NOT NULL, "scheduledDate" DATE NOT NULL, "completedAt" TIMESTAMP(3), "completedDate" DATE, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "PreventiveExecution_pkey" PRIMARY KEY ("id"));
 CREATE INDEX "PreventiveExecution_planId_completedAt_scheduledDate_idx" ON "PreventiveExecution"("planId", "completedAt", "scheduledDate");
