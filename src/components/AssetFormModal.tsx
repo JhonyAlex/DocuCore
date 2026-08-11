@@ -21,6 +21,7 @@ export interface AssetFormValues {
   projectId: number
   responsibleId: number
   initials: string
+  hasPreventive: boolean
   dynamicFields: DynamicFieldValueInput[]
 }
 
@@ -64,6 +65,7 @@ function initialValues(asset: ApiAsset | null, mode: AssetFormModalProps['mode']
     projectId: asset?.projectId ?? projectId,
     responsibleId: asset?.responsibleId ?? responsibleId,
     initials: asset?.initials ?? '',
+    hasPreventive: asset?.hasPreventive ?? false,
     dynamicFields: asset?.dynamicFields?.map((field) => ({ definitionId: field.definitionId, value: needsNewIdentity && field.fieldType === 'DATE' ? null : field.value })) ?? [],
   }
 }
@@ -246,6 +248,18 @@ export default function AssetFormModal({
               <div>
                 <FieldLabel htmlFor="asset-responsible">Responsable</FieldLabel>
                 <input id="asset-responsible" value={responsibleName} readOnly className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400" />
+              </div>
+              <div className="md:col-span-2 flex items-center gap-2 pt-1">
+                <input
+                  id="asset-has-preventive"
+                  type="checkbox"
+                  checked={values.hasPreventive}
+                  onChange={(event) => updateValue('hasPreventive', event.target.checked)}
+                  className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                />
+                <label htmlFor="asset-has-preventive" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Requiere mantenimiento preventivo
+                </label>
               </div>
               <div className="md:col-span-2">
                 <AssetImagePicker asset={mode === 'edit' ? asset : null} value={imageFile} onChange={setImageFile} />

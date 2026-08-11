@@ -198,9 +198,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     projectId: 1,
     assetIds: assets.map((asset) => asset.id),
     issueDate,
-    expiryDate: expiryDate || null,
-    periodicity,
-    periodicityMode: periodicity ? periodicityMode : null,
+    expiryDate: expiryDate || undefined,
+    periodicity: periodicity || undefined,
+    periodicityMode: periodicity ? periodicityMode : undefined,
   })
 
   const searchAssets = async (query: string): Promise<SearchableOption[]> => {
@@ -214,7 +214,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     setSaving(true)
     try {
       if (isNew && file) await createDocument(metadata(), file)
-      if (!isNew && document) await updateDocument(document.id, { name, type, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || null, periodicity, periodicityMode: periodicity ? periodicityMode : null })
+      if (!isNew && document) await updateDocument(document.id, { name, type, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity || undefined, periodicityMode: periodicity ? periodicityMode : undefined })
       await onChanged()
       onClose()
     } catch {
@@ -237,7 +237,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
         nextExpiry = calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10)
       }
-      await createDocumentVersion(document.id, { issueDate, expiryDate: nextExpiry || null }, nextFile)
+      await createDocumentVersion(document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFile)
       const next = await fetchDocument(document.id)
       setCurrent(next)
       setDetail(next)

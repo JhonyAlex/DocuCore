@@ -12,7 +12,7 @@ import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiS
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
 
-const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Historial', 'Plano']
+const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Preventivos', 'Historial', 'Plano']
 
 const eventCardStyles = {
   amber: 'bg-amber-50/70 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50',
@@ -164,7 +164,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     return res.data.map((document) => ({
       value: String(document.id),
       label: document.name,
-      hint: `v${document.currentVersion?.version ?? 1} · ${document.assets.length > 0 ? document.assets.map((linked) => `${linked.code} · ${linked.name}`).join(', ') : 'Sin activo'}`,
+      hint: `v${document.currentVersion?.version ?? 1} · ${document.assets && document.assets.length > 0 ? document.assets.map((linked) => `${linked.code} · ${linked.name}`).join(', ') : 'Sin activo'}`,
     }))
   }
 
@@ -174,7 +174,8 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setLinking(true)
     try {
       const document = await fetchDocument(Number(option.value))
-      await updateDocument(document.id, { assetIds: [...new Set([...document.assets.map((linked) => linked.id), asset.id])] })
+      const currentAssetIds = document.assets ? document.assets.map((linked) => linked.id) : []
+      await updateDocument(document.id, { assetIds: [...new Set([...currentAssetIds, asset.id])] })
       setLinkDialogOpen(false)
       await onDocumentsChanged()
     } catch {
@@ -338,6 +339,12 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
         )}
 
         {activeTab === 3 && <AssetEventsPanel asset={asset} onChanged={onImageChanged} />}
+
+        {activeTab === 4 && (
+          <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">
+            <AssetPreventivesPanel asset={asset} onChanged={onImageChanged} />
+          </div>
+        )}
 
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>

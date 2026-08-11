@@ -24,6 +24,6 @@ export function mapAssetSuggestion(field: ApiAssetSuggestionField, row: ApiAsset
 export function buildAssetSuggestionSearch(field: ApiAssetSuggestionField, excludeId?: number): (query: string) => Promise<SuggestRow[]> {
   return async (query: string) => {
     const response = await fetchAssetSuggestions(field, query, excludeId)
-    return response.values.map((row) => mapAssetSuggestion(field, row))
+    return response.map((row) => mapAssetSuggestion(field, row))
   }
 }

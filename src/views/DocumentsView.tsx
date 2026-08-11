@@ -11,7 +11,6 @@ export default function DocumentsView() {
   const selection = useSelection<number>()
   const [documents, setDocuments] = useState<ApiDocument[]>([])
   const [kpis, setKpis] = useState({ vigente: 0, porVencer: 0, vencido: 0, total: 0 })
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<ApiDocument | null | undefined>(undefined)
   const [deleteTarget, setDeleteTarget] = useState<{ ids: number[]; label: string } | null>(null)
@@ -19,7 +18,6 @@ export default function DocumentsView() {
   const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
-    setLoading(true)
     setError(null)
     try {
       const [list, nextKpis] = await Promise.all([fetchDocuments({ limit: 5 }), fetchDocumentKpis()])
@@ -28,7 +26,7 @@ export default function DocumentsView() {
     } catch {
       setError('No se pudieron cargar los documentos. Inténtalo de nuevo.')
       setDocuments([])
-    } finally { setLoading(false) }
+    }
   }, [])
 
   useEffect(() => { void load() }, [load])
@@ -82,17 +80,13 @@ export default function DocumentsView() {
         <button type="button" onClick={() => void handleBulkDownload()} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Descargar</button>
         <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
       </BulkActionBar>
+      {error && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div>}
       <DocumentsTable
         documents={documents}
-        loading={loading}
-        error={error}
-        selectedIds={selection.selected}
-        onToggleSelect={selection.toggle}
-        onToggleSelectPage={selection.toggleAll}
+        selection={selection}
         onRowClick={(document) => setEditing(document)}
         onDownload={(document) => void downloadDocument(document.id)}
         onDelete={(document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
-        onRetry={() => void load()}
       />
       {editing !== undefined && <DocumentModal document={editing} onClose={() => setEditing(undefined)} onChanged={load} />}
       <ConfirmDialog

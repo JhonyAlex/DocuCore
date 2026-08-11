@@ -20,7 +20,6 @@ enum FieldType {
   SELECT
   MULTISELECT
   BOOLEAN
-  PREVENTIVE
 }
 
 model User {
@@ -61,6 +60,7 @@ model Project {
   assetTypes       AssetType[]
   fieldDefinitions DynamicFieldDefinition[]
   tasks            Task[]
+  preventivePlans  PreventivePlan[]
 }
 
 model ProjectMember {
@@ -89,38 +89,37 @@ model AssetType {
   project          Project                           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assets           Asset[]
   fieldDefinitions DynamicFieldDefinitionAssetType[]
+  preventivePlans  PreventivePlanAssetType[]
 
   @@unique([projectId, name])
   @@index([projectId, isActive, sortOrder])
 }
 
 model DynamicFieldDefinition {
-  id              Int       @id @default(autoincrement())
-  projectId       Int
-  key             String
-  fieldName       String
-  description     String?
-  groupName       String    @default("General")
-  fieldType       FieldType @default(TEXT)
-  required        Boolean   @default(false)
-  placeholder     String?
-  unit            String?
-  minValue        Float?
-  maxValue        Float?
-  decimalPlaces   Int?
-  defaultValue    Json?
-  sortOrder       Int       @default(0)
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            Int       @id @default(autoincrement())
+  projectId     Int
+  key           String
+  fieldName     String
+  description   String?
+  groupName     String    @default("General")
+  fieldType     FieldType @default(TEXT)
+  required      Boolean   @default(false)
+  placeholder   String?
+  unit          String?
+  minValue      Float?
+  maxValue      Float?
+  decimalPlaces Int?
+  defaultValue  Json?
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  project    Project                           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assetTypes DynamicFieldDefinitionAssetType[]
-  options    DynamicFieldOption[]
-  values     AssetDynamicFieldValue[]
-  planTasks  PreventivePlanTask[]
+  project       Project                           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assetTypes    DynamicFieldDefinitionAssetType[]
+  options       DynamicFieldOption[]
+  values        AssetDynamicFieldValue[]
   dateSchedules AssetDateSchedule[]
-  preventivePlans AssetPreventivePlan[]
 
   @@unique([projectId, key])
   @@index([projectId, isActive, sortOrder])
@@ -163,8 +162,8 @@ model AssetDynamicFieldValue {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  asset        Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  definition   DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
   dateSchedule AssetDateSchedule?
 
   @@unique([assetId, definitionId])
@@ -184,28 +183,25 @@ model Asset {
   projectId       Int
   responsibleId   Int
   initials        String
-  // ITEM-05: papelera — deletedAt != null significa que el activo está
-  // eliminado (recuperable 30 días); la purga lo borra físicamente.
+  hasPreventive   Boolean   @default(false)
   deletedAt       DateTime? @db.Timestamptz(6)
-  // IMG-01: imagen del activo — el binario vive en el storage gestionado de
-  // DocuCore; aquí solo la clave (nombre UUID), el MIME y el tamaño en bytes.
   imageStorageKey String?   @unique
   imageMimeType   String?
   imageSizeBytes  Int?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  type               AssetType                @relation(fields: [typeId], references: [id])
-  status             Status                   @relation(fields: [statusId], references: [id])
-  location           Location                 @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  project            Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  responsible        User                     @relation("AssetResponsible", fields: [responsibleId], references: [id])
-  documentAssets     DocumentItem[]
-  events             Event[]
-  markers            FloorPlanMarker[]
-  dynamicFieldValues AssetDynamicFieldValue[]
-  dateSchedules      AssetDateSchedule[]
-  preventivePlans   AssetPreventivePlan[]
+  type                  AssetType                  @relation(fields: [typeId], references: [id])
+  status                Status                     @relation(fields: [statusId], references: [id])
+  location              Location                   @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  project               Project                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible           User                       @relation("AssetResponsible", fields: [responsibleId], references: [id])
+  documentAssets        DocumentItem[]
+  events                Event[]
+  markers               FloorPlanMarker[]
+  dynamicFieldValues    AssetDynamicFieldValue[]
+  dateSchedules         AssetDateSchedule[]
+  preventivePlans       AssetPreventivePlan[]
   eventAcknowledgements AssetEventAcknowledgement[]
 
   @@index([typeId])
@@ -230,10 +226,6 @@ model Document {
   name            String
   eventTitle      String?
   type            String
-  // DOC-03: periodicidad opcional basada en el vencimiento. periodicity es la
-  // regla ('Mensual'…'Anual', null = sin periodicidad) y periodicityMode la base
-  // del cálculo al subir una versión ('Calendario' = salta desde el vencimiento
-  // vigente, 'Subida' = desde la emisión de la nueva versión).
   periodicity     String?
   periodicityMode String?
   projectId       Int
@@ -247,7 +239,6 @@ model Document {
   @@index([projectId])
 }
 
-// DOC-02: un documento puede estar asociado a varios activos (N-N).
 model DocumentItem {
   documentId Int
   assetId    Int
@@ -305,24 +296,54 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   planTasks PreventivePlanTask[]
 
   @@unique([projectId, code])
   @@index([projectId, isActive])
 }
 
-// Template selected when a dynamic field is configured as a periodic plan.
+// Reusable preventive plan template.
+model PreventivePlan {
+  id              Int      @id @default(autoincrement())
+  projectId       Int
+  name            String
+  description     String?
+  periodicity     String
+  periodicityMode String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project          Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks            PreventivePlanTask[]
+  assetTypes       PreventivePlanAssetType[]
+  assetAssignments AssetPreventivePlan[]
+
+  @@index([projectId, isActive])
+}
+
 model PreventivePlanTask {
-  definitionId Int
-  taskId       Int
-  sortOrder    Int @default(0)
+  planId    Int
+  taskId    Int
+  sortOrder Int @default(0)
 
-  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-  task       Task                   @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  plan PreventivePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  task Task           @relation(fields: [taskId], references: [id], onDelete: Restrict)
 
-  @@id([definitionId, taskId])
+  @@id([planId, taskId])
   @@index([taskId])
+}
+
+model PreventivePlanAssetType {
+  planId      Int
+  assetTypeId Int
+
+  plan      PreventivePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  assetType AssetType      @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+
+  @@id([planId, assetTypeId])
+  @@index([assetTypeId])
 }
 
 // Recurrence is an asset assignment concern, never a field-definition concern.
@@ -358,12 +379,11 @@ model AssetDateOccurrence {
   @@index([scheduleId, completedAt, scheduledDate])
 }
 
-// A configured PREVENTIVE definition becomes a reusable periodic plan when it
-// is assigned to an asset. Each execution snapshots its own checklist.
+// An assigned preventive plan instance on an asset. Each execution snapshots its own checklist.
 model AssetPreventivePlan {
   id              Int      @id @default(autoincrement())
   assetId         Int
-  definitionId    Int
+  planId          Int?
   name            String
   periodicity     String
   periodicityMode String
@@ -371,12 +391,12 @@ model AssetPreventivePlan {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  asset      Asset               @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  plan       PreventivePlan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
   executions PreventiveExecution[]
 
   @@index([assetId, isActive])
-  @@index([definitionId])
+  @@index([planId])
 }
 
 model PreventiveExecution {

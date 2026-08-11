@@ -35,8 +35,20 @@ export async function completeAssetDateOccurrence(tx: Prisma.TransactionClient, 
 }
 
 export async function createPreventiveExecution(tx: Prisma.TransactionClient, planId: number, scheduledDate: Date, taskIds?: number[]): Promise<void> {
-  const plan = await tx.assetPreventivePlan.findUniqueOrThrow({ where: { id: planId }, include: { definition: { include: { planTasks: { include: { task: true }, orderBy: { sortOrder: 'asc' } } } } } })
-  const allowed = plan.definition.planTasks.filter((link) => !taskIds || taskIds.includes(link.taskId))
+  const plan = await tx.assetPreventivePlan.findUniqueOrThrow({
+    where: { id: planId },
+    include: {
+      plan: {
+        include: {
+          tasks: { include: { task: true }, orderBy: { sortOrder: 'asc' } },
+        },
+      },
+    },
+  })
+  const planTasks = plan.plan?.tasks ?? []
+  const allowed = planTasks.filter((link) => !taskIds || taskIds.includes(link.taskId))
   const execution = await tx.preventiveExecution.create({ data: { planId, scheduledDate } })
-  await tx.preventiveExecutionTask.createMany({ data: allowed.map((link) => ({ executionId: execution.id, taskId: link.taskId, code: link.task.code, name: link.task.name, sortOrder: link.sortOrder })) })
+  await tx.preventiveExecutionTask.createMany({
+    data: allowed.map((link) => ({ executionId: execution.id, taskId: link.taskId, code: link.task.code, name: link.task.name, sortOrder: link.sortOrder })),
+  })
 }

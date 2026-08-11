@@ -15,6 +15,7 @@ function apiAsset(overrides: Partial<ApiAsset>): ApiAsset {
     projectId: 1,
     responsibleId: 2,
     initials: 'CN',
+    hasPreventive: false,
     imageUrl: null,
     imageMimeType: null,
     imageSizeBytes: null,

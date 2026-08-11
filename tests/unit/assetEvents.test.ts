@@ -64,6 +64,37 @@ describe('deriveAssetEvents', () => {
     ])
   })
 
+  it('derives pending executions from preventive plans and sorts them against other sources', () => {
+    const result = deriveAssetEvents(relations({
+      events: [{ id: 1, title: 'Revisión futura', date: new Date('2026-09-01T00:00:00.000Z'), type: 'Inspección' }],
+      preventivePlans: [{
+        id: 10,
+        name: 'Mantenimiento Semestral',
+        executions: [
+          { id: 101, scheduledDate: new Date('2026-08-15T00:00:00.000Z'), completedAt: null, tasks: [{ completedAt: null }, { completedAt: new Date() }] },
+          { id: 100, scheduledDate: new Date('2026-02-15T00:00:00.000Z'), completedAt: new Date(), tasks: [] },
+        ],
+      }],
+    }), now)
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'preventive:101',
+        title: 'Mantenimiento Semestral',
+        date: '2026-08-15T00:00:00.000Z',
+        daysUntil: 9,
+        urgency: 'amber',
+        source: 'preventive',
+        sourceLabel: '1/2 tareas',
+      }),
+      expect.objectContaining({
+        id: 'event:1',
+        title: 'Revisión futura',
+        source: 'event',
+      }),
+    ])
+  })
+
   it('returns no invented event when the asset has no valid dated relation', () => {
     expect(deriveAssetEvents(relations({
       documents: [{ id: 1, name: 'Manual', eventTitle: null, versions: [{ expiryDate: null }], type: 'Manual' }],

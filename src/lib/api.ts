@@ -61,7 +61,7 @@ export interface ApiAssetEvent {
   sourceLabel: string
 }
 
-export type DynamicFieldType = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'MULTISELECT' | 'BOOLEAN' | 'PREVENTIVE'
+export type DynamicFieldType = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'MULTISELECT' | 'BOOLEAN'
 
 export interface ApiDynamicFieldOption {
   id: number
@@ -82,7 +82,6 @@ export interface DynamicFieldDefinitionInput {
   minValue?: number | null
   maxValue?: number | null
   decimalPlaces?: number | null
-  taskIds: number[]
   sortOrder?: number
   isActive?: boolean
   assetTypeIds: number[]
@@ -95,7 +94,6 @@ export interface ApiDynamicFieldDefinition extends DynamicFieldDefinitionInput {
   key: string
   assetTypes: ApiAssetType[]
   options: ApiDynamicFieldOption[]
-  tasks?: ApiTask[]
   usageCount: number
   createdAt: string
   updatedAt: string
@@ -116,7 +114,6 @@ export interface ApiAssetDynamicField {
   decimalPlaces: number | null
   sortOrder: number
   options: ApiDynamicFieldOption[]
-  tasks?: ApiTask[]
   value: unknown
   dateSchedule?: { periodicity: DocumentPeriodicity | null; periodicityMode: DocumentPeriodicityMode | null; occurrenceId: number | null; date: string | null } | null
 }
@@ -137,6 +134,7 @@ export interface AssetWriteInput {
   projectId: number
   responsibleId: number
   initials: string
+  hasPreventive?: boolean
   dynamicFields?: DynamicFieldValueInput[]
 }
 
@@ -145,6 +143,13 @@ export interface ApiLocationRef {
   name: string
   code: string
   label: string
+}
+
+export interface ApiAssetDocument {
+  id: number
+  name: string
+  type: string
+  currentVersion: ApiDocumentVersion | null
 }
 
 export interface ApiAsset {
@@ -159,11 +164,11 @@ export interface ApiAsset {
   projectId: number
   responsibleId: number
   initials: string
+  hasPreventive: boolean
   deletedAt?: string | null
-  // IMG-01: imagen del activo — URL servida por el API (null si no tiene).
   imageUrl: string | null
-  imageMimeType: string | null
-  imageSizeBytes: number | null
+  imageMimeType?: string | null
+  imageSizeBytes?: number | null
   nextEvents: ApiAssetEvent[]
   documentCount: number
   documents?: ApiAssetDocument[]
@@ -179,7 +184,37 @@ export interface ApiAsset {
 export interface ApiTask { id: number; projectId: number; code: string; name: string; isActive: boolean }
 export interface ApiPreventiveExecutionTask { id: number; code: string; name: string; completedAt: string | null }
 export interface ApiPreventiveExecution { id: number; scheduledDate: string; completedAt: string | null; tasks: ApiPreventiveExecutionTask[] }
-export interface ApiPreventivePlan { id: number; definitionId: number; name: string; periodicity: DocumentPeriodicity; periodicityMode: DocumentPeriodicityMode; executions: ApiPreventiveExecution[] }
+export interface ApiPreventivePlan { id: number; planId: number | null; name: string; periodicity: DocumentPeriodicity; periodicityMode: DocumentPeriodicityMode; executions: ApiPreventiveExecution[] }
+
+export interface ApiPreventivePlanTask { taskId: number; code: string; name: string; sortOrder: number; isActive: boolean }
+export interface ApiPreventivePlanAssetType { id: number; name: string }
+export interface ApiPreventivePlanTemplate {
+  id: number
+  projectId: number
+  name: string
+  description: string | null
+  periodicity: DocumentPeriodicity
+  periodicityMode: DocumentPeriodicityMode
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  tasks: ApiPreventivePlanTask[]
+  taskIds: number[]
+  assetTypes: ApiPreventivePlanAssetType[]
+  assetTypeIds: number[]
+  assignmentCount: number
+}
+
+export interface PreventivePlanInput {
+  name: string
+  description?: string | null
+  periodicity: DocumentPeriodicity
+  periodicityMode: DocumentPeriodicityMode
+  isActive?: boolean
+  taskIds: number[]
+  assetTypeIds: number[]
+}
+
 export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
 
 export interface ApiLocation {
@@ -197,9 +232,8 @@ export interface ApiLocation {
   hasFloorPlan: boolean
 }
 
-export interface ApiLocationsResponse {
-  project: { id: number; code: string; name: string; assetCount: number }
-  locations: ApiLocation[]
+export interface ApiLocationTreeNode extends ApiLocation {
+  children: ApiLocationTreeNode[]
 }
 
 export interface ApiLocationAsset {
@@ -210,27 +244,38 @@ export interface ApiLocationAsset {
   initials: string
   type: { id: number; name: string }
   status: { id: number; name: string; pulseDot: string | null }
+  typeName?: string
+  statusName?: string
+  responsibleInitials?: string
+  responsibleColor?: string
+  eventCount?: number
+  documentCount?: number
 }
 
 export interface ApiLocationDetail extends ApiLocation {
-  ancestors: Array<{ id: number; name: string }>
-  assets: ApiLocationAsset[]
+  parent: ApiLocationRef | null
+  project: { id: number; name: string; code: string }
+  ancestors: ApiLocationRef[]
+  assets?: ApiLocationAsset[]
+  previewAssets: ApiLocationAsset[]
+  previewAssetCount: number
+}
+
+export interface ApiLocationsResponse {
+  tree: ApiLocationTreeNode[]
+  list: ApiLocation[]
+  locations: ApiLocationTreeNode[]
+  project: { id: number; name: string; code: string }
 }
 
 export interface LocationWriteInput {
   name: string
+  label?: string
   code: string
   surface: string
   parentId: number | null
   responsibleId: number
   projectId: number
-}
-
-export interface ApiAssetDocument {
-  id: number
-  name: string
-  type: string
-  currentVersion: ApiDocumentVersion | null
 }
 
 export interface ApiDocumentVersion {
@@ -247,35 +292,21 @@ export interface ApiDocumentVersion {
 export interface ApiDocument {
   id: number
   name: string
+  eventTitle: string | null
   type: string
-  assets: Array<{ id: number; code: string; name: string }>
+  status?: 'Vigente' | 'Por vencer' | 'Vencido'
   projectId: number
-  project: { id: number; code: string; name: string }
-  periodicity: DocumentPeriodicity | null
-  periodicityMode: DocumentPeriodicityMode | null
+  createdAt: string
+  updatedAt: string
   currentVersion: ApiDocumentVersion | null
-  status: 'Vigente' | 'Por vencer' | 'Vencido'
+  assetIds?: number[]
+  assets?: Array<{ id: number; code: string; name: string }>
+  periodicity?: DocumentPeriodicity | null
+  periodicityMode?: DocumentPeriodicityMode | null
 }
 
 export interface ApiDocumentDetail extends ApiDocument {
   versions: ApiDocumentVersion[]
-}
-
-export interface ApiDocumentListResponse {
-  data: ApiDocument[]
-  total: number
-  page: number
-  totalPages: number
-}
-
-export interface DocumentListParams {
-  page?: number
-  limit?: number
-  search?: string
-  type?: string
-  status?: ApiDocument['status']
-  projectId?: number
-  assetId?: number
 }
 
 export interface DocumentMetadataInput {
@@ -284,19 +315,48 @@ export interface DocumentMetadataInput {
   projectId: number
   assetIds?: number[]
   issueDate: string
-  expiryDate?: string | null
-  periodicity?: DocumentPeriodicity | null
-  periodicityMode?: DocumentPeriodicityMode | null
+  expiryDate?: string
+  periodicity?: DocumentPeriodicity
+  periodicityMode?: DocumentPeriodicityMode
 }
 
-export interface ApiAssetListResponse {
-  data: ApiAsset[]
-  total: number
-  page: number
-  totalPages: number
+export interface DocumentListParams {
+  search?: string
+  type?: string
+  status?: 'Vigente' | 'Por vencer' | 'Vencido'
+  projectId?: number
+  assetId?: number | null
+  page?: number
+  limit?: number
 }
 
-export interface AssetListParams {
+export interface ApiDocumentListResponse {
+  items: ApiDocument[]
+  data: ApiDocument[]
+  meta: {
+    page: number
+    limit: number
+    totalItems: number
+    totalPages: number
+  }
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null
+    throw Object.assign(new Error(payload?.error ?? `API error ${response.status}`), { status: response.status })
+  }
+  if (response.status === 204) return undefined as T
+  return response.json() as Promise<T>
+}
+
+export interface FetchAssetsParams {
   page?: number
   limit?: number
   search?: string
@@ -306,51 +366,18 @@ export interface AssetListParams {
   trashed?: boolean
 }
 
-// UX-04: sugerencias de valores actuales para el formulario de activo.
-export type ApiAssetSuggestionField = 'code' | 'name' | 'initials'
+export type AssetListParams = FetchAssetsParams
 
-export interface ApiAssetSuggestionRow {
-  code: string | null
-  name: string | null
-  initials: string | null
+export interface FetchAssetsResponse {
+  assets: ApiAsset[]
+  data: ApiAsset[]
+  total: number
+  page: number
+  limit: number
+  totalPages: number
 }
 
-export interface ApiAssetSuggestionsResponse {
-  values: ApiAssetSuggestionRow[]
-}
-
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers)
-  if (!(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  const res = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers,
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`API ${res.status}: ${body || res.statusText}`)
-  }
-  if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
-}
-
-function documentFormData(input: DocumentMetadataInput, file: File): FormData {
-  const body = new FormData()
-  body.set('name', input.name)
-  body.set('type', input.type)
-  body.set('projectId', String(input.projectId))
-  if (input.assetIds?.length) body.set('assetIds', JSON.stringify(input.assetIds))
-  body.set('issueDate', input.issueDate)
-  if (input.expiryDate) body.set('expiryDate', input.expiryDate)
-  if (input.periodicity) {
-    body.set('periodicity', input.periodicity)
-    body.set('periodicityMode', input.periodicityMode ?? 'Calendario')
-  }
-  body.set('file', file)
-  return body
-}
-
-export function fetchAssets(params: AssetListParams): Promise<ApiAssetListResponse> {
+export async function fetchAssets(params: FetchAssetsParams = {}): Promise<FetchAssetsResponse> {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))
   if (params.limit) q.set('limit', String(params.limit))
@@ -359,39 +386,60 @@ export function fetchAssets(params: AssetListParams): Promise<ApiAssetListRespon
   if (params.statusId) q.set('statusId', String(params.statusId))
   if (params.locationId) q.set('locationId', String(params.locationId))
   if (params.trashed) q.set('trashed', 'true')
-  return request<ApiAssetListResponse>(`/assets?${q.toString()}`)
+  const res = await request<FetchAssetsResponse>(`/assets?${q.toString()}`)
+  return { ...res, data: res.assets ?? [] }
 }
 
-// UX-04: valores actuales de un campo de activo, excluyendo la papelera y, si
-// se indica, un activo concreto (el que se está editando).
-export function fetchAssetSuggestions(field: ApiAssetSuggestionField, query: string, excludeId?: number): Promise<ApiAssetSuggestionsResponse> {
-  const q = new URLSearchParams()
-  q.set('field', field)
-  if (query.trim() !== '') q.set('q', query)
-  if (excludeId !== undefined) q.set('excludeId', String(excludeId))
-  return request<ApiAssetSuggestionsResponse>(`/assets/suggestions?${q.toString()}`)
+export type ApiAssetSuggestionField = 'code' | 'name' | 'initials'
+export interface ApiAssetSuggestionRow {
+  code: string | null
+  name: string | null
+  initials: string | null
+}
+
+export function fetchAssetSuggestions(field: ApiAssetSuggestionField, q = '', excludeId?: number): Promise<ApiAssetSuggestionRow[]> {
+  const query = new URLSearchParams({ field })
+  if (q.trim()) query.set('q', q.trim())
+  if (excludeId) query.set('excludeId', String(excludeId))
+  return request<ApiAssetSuggestionRow[]>(`/assets/suggestions?${query.toString()}`)
 }
 
 export function fetchAsset(id: number): Promise<ApiAsset> {
   return request<ApiAsset>(`/assets/${id}`)
 }
 
-export function createAsset(data: AssetWriteInput): Promise<ApiAsset> {
-  return request<ApiAsset>('/assets', { method: 'POST', body: JSON.stringify(data) })
+export function createAsset(data: AssetWriteInput, imageFile?: File | null): Promise<ApiAsset> {
+  if (!imageFile) return request<ApiAsset>('/assets', { method: 'POST', body: JSON.stringify(data) })
+  const formData = new FormData()
+  formData.set('data', JSON.stringify(data))
+  formData.set('image', imageFile)
+  return request<ApiAsset>('/assets', { method: 'POST', body: formData })
 }
 
-export function updateAsset(id: number, data: Partial<AssetWriteInput>): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+export function updateAsset(id: number, data: Partial<AssetWriteInput>, imageFile?: File | null): Promise<ApiAsset> {
+  if (!imageFile) return request<ApiAsset>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  const formData = new FormData()
+  formData.set('data', JSON.stringify(data))
+  formData.set('image', imageFile)
+  return request<ApiAsset>(`/assets/${id}`, { method: 'PUT', body: formData })
 }
 
-export function changeAssetStatus(id: number, statusId: number): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${id}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ statusId }),
-  })
+export function uploadAssetImage(id: number, imageFile: File): Promise<ApiAsset> {
+  const formData = new FormData()
+  formData.set('image', imageFile)
+  return request<ApiAsset>(`/assets/${id}/image`, { method: 'POST', body: formData })
 }
 
-// ITEM-05: el DELETE mueve el activo a la papelera (recuperable 30 días).
+export function removeAssetImage(id: number): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${id}/image`, { method: 'DELETE' })
+}
+
+export function updateAssetStatus(id: number, statusId: number): Promise<ApiAsset> {
+  return request<ApiAsset>(`/assets/${id}/status`, { method: 'PATCH', body: JSON.stringify({ statusId }) })
+}
+
+export const changeAssetStatus = updateAssetStatus
+
 export function deleteAsset(id: number): Promise<void> {
   return request<void>(`/assets/${id}`, { method: 'DELETE' })
 }
@@ -404,25 +452,16 @@ export function purgeAsset(id: number): Promise<void> {
   return request<void>(`/assets/${id}/purge`, { method: 'POST' })
 }
 
-// IMG-01: sube o reemplaza la imagen del activo (multipart, campo `image`);
-// devuelve el activo actualizado con su nueva imageUrl.
-export function uploadAssetImage(id: number, file: File): Promise<ApiAsset> {
-  const body = new FormData()
-  body.set('image', file)
-  return request<ApiAsset>(`/assets/${id}/image`, { method: 'POST', body })
-}
-
-export function deleteAssetImage(id: number): Promise<void> {
-  return request<void>(`/assets/${id}/image`, { method: 'DELETE' })
-}
-
-export function fetchAssetTypes(projectId?: number): Promise<ApiAssetType[]> {
-  const suffix = projectId ? `?projectId=${projectId}` : ''
-  return request<ApiAssetType[]>(`/asset-types${suffix}`)
+export function fetchAssetTypes(projectId = 1, options?: { includeInactive?: boolean; withCounts?: boolean }): Promise<ApiAssetType[]> {
+  const query = new URLSearchParams()
+  if (options?.includeInactive) query.set('includeInactive', 'true')
+  if (options?.withCounts) query.set('withCounts', 'true')
+  const q = query.toString()
+  return request<ApiAssetType[]>(`/projects/${projectId}/asset-types${q ? `?${q}` : ''}`)
 }
 
 export function fetchConfiguredAssetTypes(projectId: number, includeInactive = false): Promise<ApiAssetType[]> {
-  return request<ApiAssetType[]>(`/projects/${projectId}/asset-types${includeInactive ? '?includeInactive=true' : ''}`)
+  return fetchAssetTypes(projectId, { includeInactive, withCounts: true })
 }
 
 export function createAssetType(projectId: number, input: AssetTypeInput): Promise<ApiAssetType> {
@@ -437,12 +476,12 @@ export function archiveAssetType(projectId: number, id: number): Promise<void> {
   return request<void>(`/projects/${projectId}/asset-types/${id}`, { method: 'DELETE' })
 }
 
-export function fetchDynamicFieldDefinitions(projectId: number, options: { assetTypeId?: number; includeInactive?: boolean } = {}): Promise<ApiDynamicFieldDefinition[]> {
+export function fetchDynamicFieldDefinitions(projectId: number, options?: { includeInactive?: boolean; assetTypeId?: number }): Promise<ApiDynamicFieldDefinition[]> {
   const query = new URLSearchParams()
-  if (options.assetTypeId) query.set('assetTypeId', String(options.assetTypeId))
-  if (options.includeInactive) query.set('includeInactive', 'true')
-  const suffix = query.size > 0 ? `?${query.toString()}` : ''
-  return request<ApiDynamicFieldDefinition[]>(`/projects/${projectId}/dynamic-fields${suffix}`)
+  if (options?.includeInactive) query.set('includeInactive', 'true')
+  if (options?.assetTypeId) query.set('assetTypeId', String(options.assetTypeId))
+  const q = query.toString()
+  return request<ApiDynamicFieldDefinition[]>(`/projects/${projectId}/dynamic-fields${q ? `?${q}` : ''}`)
 }
 
 export function createDynamicFieldDefinition(projectId: number, input: DynamicFieldDefinitionInput): Promise<ApiDynamicFieldDefinition> {
@@ -460,6 +499,22 @@ export function archiveDynamicFieldDefinition(projectId: number, id: number): Pr
 export function fetchTasks(projectId: number, includeInactive = false): Promise<ApiTask[]> { return request<ApiTask[]>(`/projects/${projectId}/tasks${includeInactive ? '?includeInactive=true' : ''}`) }
 export function createTask(projectId: number, input: Pick<ApiTask, 'code' | 'name'>): Promise<ApiTask> { return request(`/projects/${projectId}/tasks`, { method: 'POST', body: JSON.stringify(input) }) }
 export function updateTask(projectId: number, id: number, input: Partial<Pick<ApiTask, 'code' | 'name' | 'isActive'>>): Promise<ApiTask> { return request(`/projects/${projectId}/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(input) }) }
+export function deleteTask(projectId: number, id: number): Promise<void> { return request(`/projects/${projectId}/tasks/${id}`, { method: 'DELETE' }) }
+export function bulkUpdateTasks(projectId: number, action: 'deactivate' | 'delete', ids: number[]): Promise<void> { return request(`/projects/${projectId}/tasks/bulk`, { method: 'POST', body: JSON.stringify({ action, ids }) }) }
+
+export function fetchPreventivePlans(projectId: number, options?: { includeInactive?: boolean; assetTypeId?: number }): Promise<ApiPreventivePlanTemplate[]> {
+  const query = new URLSearchParams()
+  if (options?.includeInactive) query.set('includeInactive', 'true')
+  if (options?.assetTypeId) query.set('assetTypeId', String(options.assetTypeId))
+  const q = query.toString()
+  return request<ApiPreventivePlanTemplate[]>(`/projects/${projectId}/preventive-plans${q ? `?${q}` : ''}`)
+}
+export function fetchPreventivePlan(projectId: number, id: number): Promise<ApiPreventivePlanTemplate> { return request(`/projects/${projectId}/preventive-plans/${id}`) }
+export function createPreventivePlan(projectId: number, input: PreventivePlanInput): Promise<ApiPreventivePlanTemplate> { return request(`/projects/${projectId}/preventive-plans`, { method: 'POST', body: JSON.stringify(input) }) }
+export function updatePreventivePlan(projectId: number, id: number, input: Partial<PreventivePlanInput>): Promise<ApiPreventivePlanTemplate> { return request(`/projects/${projectId}/preventive-plans/${id}`, { method: 'PATCH', body: JSON.stringify(input) }) }
+export function duplicatePreventivePlan(projectId: number, id: number): Promise<ApiPreventivePlanTemplate> { return request(`/projects/${projectId}/preventive-plans/${id}/duplicate`, { method: 'POST' }) }
+export function deletePreventivePlan(projectId: number, id: number): Promise<void> { return request(`/projects/${projectId}/preventive-plans/${id}`, { method: 'DELETE' }) }
+export function bulkUpdatePreventivePlans(projectId: number, action: 'deactivate' | 'delete', ids: number[]): Promise<void> { return request(`/projects/${projectId}/preventive-plans/bulk`, { method: 'POST', body: JSON.stringify({ action, ids }) }) }
 
 export function updateAssetDynamicFields(assetId: number, values: DynamicFieldValueInput[]): Promise<ApiAsset> {
   return request<ApiAsset>(`/assets/${assetId}/dynamic-fields`, { method: 'PUT', body: JSON.stringify({ values }) })
@@ -471,15 +526,18 @@ export function completeAssetDynamicDate(assetId: number, definitionId: number, 
 
 export function fetchAssetEventHistory(assetId: number): Promise<ApiAssetEventHistory[]> { return request(`/assets/${assetId}/events`) }
 export function completeAssetEvent(assetId: number, source: ApiAssetEventHistory['source'], id: number, performedDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/events/complete`, { method: 'POST', body: JSON.stringify({ source, id, performedDate }) }) }
-export function createAssetPreventive(assetId: number, input: { definitionId: number; name: string; scheduledDate: string; periodicity: DocumentPeriodicity; periodicityMode: DocumentPeriodicityMode; taskIds?: number[] }): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives`, { method: 'POST', body: JSON.stringify(input) }) }
+export function createAssetPreventive(assetId: number, input: { planId: number; scheduledDate: string }): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives`, { method: 'POST', body: JSON.stringify(input) }) }
+export function updateAssetPreventiveDate(assetId: number, planId: number, scheduledDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'PATCH', body: JSON.stringify({ scheduledDate }) }) }
+export function deleteAssetPreventive(assetId: number, planId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'DELETE' }) }
 export function completePreventiveTask(assetId: number, executionId: number, taskId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/${taskId}/complete`, { method: 'POST' }) }
 
 export function fetchStatuses(): Promise<ApiStatus[]> {
   return request<ApiStatus[]>('/statuses')
 }
 
-export function fetchLocations(): Promise<ApiLocationsResponse> {
-  return request<ApiLocationsResponse>('/locations')
+export async function fetchLocations(): Promise<ApiLocationsResponse> {
+  const res = await request<ApiLocationsResponse>('/locations')
+  return { ...res, locations: res.tree ?? [] }
 }
 
 export function fetchLocation(id: number): Promise<ApiLocationDetail> {
@@ -506,10 +564,11 @@ export function fetchSession(): Promise<ApiSession> {
   return request<ApiSession>('/session')
 }
 
-export function fetchDocuments(params: DocumentListParams = {}): Promise<ApiDocumentListResponse> {
+export async function fetchDocuments(params: DocumentListParams = {}): Promise<ApiDocumentListResponse> {
   const q = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') q.set(key, String(value))
-  return request<ApiDocumentListResponse>(`/documents?${q.toString()}`)
+  const res = await request<ApiDocumentListResponse>(`/documents?${q.toString()}`)
+  return { ...res, data: res.items ?? [] }
 }
 
 export function fetchDocumentKpis(): Promise<{ vigente: number; porVencer: number; vencido: number; total: number }> {
@@ -558,4 +617,18 @@ export async function downloadDocument(id: number, version?: number): Promise<vo
   link.download = ''
   link.click()
   URL.revokeObjectURL(url)
+}
+
+function documentFormData(input: DocumentMetadataInput, file: File): FormData {
+  const body = new FormData()
+  body.set('name', input.name)
+  body.set('type', input.type)
+  body.set('projectId', String(input.projectId))
+  if (input.assetIds && input.assetIds.length > 0) body.set('assetIds', JSON.stringify(input.assetIds))
+  body.set('issueDate', input.issueDate)
+  if (input.expiryDate) body.set('expiryDate', input.expiryDate)
+  if (input.periodicity) body.set('periodicity', input.periodicity)
+  if (input.periodicityMode) body.set('periodicityMode', input.periodicityMode)
+  body.set('file', file)
+  return body
 }

@@ -1,7 +1,7 @@
 import { FieldType, Prisma } from '@prisma/client'
 import { z } from 'zod'
 
-export const dynamicFieldTypes = ['TEXT', 'TEXTAREA', 'NUMBER', 'DATE', 'SELECT', 'MULTISELECT', 'BOOLEAN', 'PREVENTIVE'] as const
+export const dynamicFieldTypes = ['TEXT', 'TEXTAREA', 'NUMBER', 'DATE', 'SELECT', 'MULTISELECT', 'BOOLEAN'] as const
 
 const optionSchema = z.object({ key: z.string().trim().min(1).max(80).optional(), label: z.string().trim().min(1).max(120) }).strict()
 
@@ -16,7 +16,6 @@ const dynamicFieldDefinitionBaseSchema = z.object({
   minValue: z.number().finite().nullable().optional(),
   maxValue: z.number().finite().nullable().optional(),
   decimalPlaces: z.number().int().min(0).max(6).nullable().optional(),
-  taskIds: z.array(z.number().int().positive()).max(100).default([]),
   sortOrder: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
   assetTypeIds: z.array(z.number().int().positive()).min(1),
@@ -27,8 +26,6 @@ function validateDefinition(value: Partial<z.infer<typeof dynamicFieldDefinition
   const selection = value.fieldType === 'SELECT' || value.fieldType === 'MULTISELECT'
   if (selection && value.options?.length === 0) ctx.addIssue({ code: 'custom', path: ['options'], message: 'Selection fields require options' })
   if (value.fieldType && !selection && (value.options?.length ?? 0) > 0) ctx.addIssue({ code: 'custom', path: ['options'], message: 'Only selection fields accept options' })
-  if (value.fieldType === 'PREVENTIVE' && (value.taskIds?.length ?? 0) === 0) ctx.addIssue({ code: 'custom', path: ['taskIds'], message: 'Preventive plans require tasks' })
-  if (value.fieldType && value.fieldType !== 'PREVENTIVE' && (value.taskIds?.length ?? 0) > 0) ctx.addIssue({ code: 'custom', path: ['taskIds'], message: 'Only preventive plans accept tasks' })
   if (value.minValue !== null && value.minValue !== undefined && value.maxValue !== null && value.maxValue !== undefined && value.minValue > value.maxValue) ctx.addIssue({ code: 'custom', path: ['maxValue'], message: 'maxValue must be greater than or equal to minValue' })
 }
 
@@ -60,7 +57,6 @@ export function fieldKey(value: string): string {
 export const definitionInclude = {
   assetTypes: { include: { assetType: { select: { id: true, name: true } } }, orderBy: { assetTypeId: 'asc' as const } },
   options: { orderBy: { sortOrder: 'asc' as const } },
-  planTasks: { include: { task: { select: { id: true, code: true, name: true, isActive: true } } }, orderBy: { sortOrder: 'asc' as const } },
   _count: { select: { values: true } },
 } satisfies Prisma.DynamicFieldDefinitionInclude
 
@@ -71,8 +67,6 @@ export function serializeDefinition(definition: DefinitionWithRelations) {
     ...definition,
     assetTypes: definition.assetTypes.map((link) => link.assetType),
     assetTypeIds: definition.assetTypes.map((link) => link.assetTypeId),
-    taskIds: definition.planTasks.map((link) => link.taskId),
-    tasks: definition.planTasks.map((link) => link.task),
     usageCount: definition._count.values,
   }
 }
@@ -90,7 +84,6 @@ export function storedValue(type: FieldType, row: StoredDynamicValue): unknown {
   if (type === 'DATE') return row.dateValue?.toISOString().slice(0, 10) ?? null
   if (type === 'BOOLEAN') return row.booleanValue
   if (type === 'MULTISELECT') return row.jsonValue
-  if (type === 'PREVENTIVE') return null
   return row.textValue
 }
 
@@ -133,7 +126,5 @@ export function parseDynamicValue(definition: Pick<DefinitionWithRelations, 'fie
       if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string') || value.some((entry) => !definition.options.some((option) => option.isActive && option.key === entry))) throw Object.assign(new Error('Invalid multiple selection field value'), { status: 400 })
       return { ...base, jsonValue: value as Prisma.InputJsonValue }
     }
-    case 'PREVENTIVE':
-      return null
   }
 }

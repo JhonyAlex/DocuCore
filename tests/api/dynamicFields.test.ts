@@ -5,58 +5,99 @@ import { databaseUrl, ensureTestDatabase } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
-let definitionId = 0
-let preventiveDefinitionId = 0
-let taskId = 0
-let assetId = 0
 
-async function api(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${path}`, init)
+function api(path: string, options: RequestInit = {}) {
+  return fetch(`${baseUrl}${path}`, options)
 }
 
-beforeAll(async () => {
-  process.env.DATABASE_URL = databaseUrl
-  await ensureTestDatabase()
-  const { default: app } = await import('../../server/index')
-  await new Promise<void>((resolve) => {
-    server = app.listen(0, '127.0.0.1', () => { baseUrl = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`; resolve() })
-  })
-})
-
-afterAll(async () => {
-  if (assetId) {
-    await api(`/api/assets/${assetId}`, { method: 'DELETE' }).catch(() => undefined)
-    await api(`/api/assets/${assetId}/purge`, { method: 'POST' }).catch(() => undefined)
-  }
-  if (definitionId) await api(`/api/projects/1/dynamic-fields/${definitionId}`, { method: 'DELETE' }).catch(() => undefined)
-  if (preventiveDefinitionId) await api(`/api/projects/1/dynamic-fields/${preventiveDefinitionId}`, { method: 'DELETE' }).catch(() => undefined)
-  if (taskId) await api(`/api/projects/1/tasks/${taskId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ isActive: false }) }).catch(() => undefined)
-  await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()))
-})
-
 describe('dynamic fields API', () => {
-  it('creates a project-scoped date characteristic without recurrence', async () => {
-    const response = await api('/api/projects/1/dynamic-fields', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ fieldName: `QA próxima revisión ${Date.now()}`, groupName: 'QA', fieldType: 'DATE', required: true, assetTypeIds: [1], options: [] }),
-    })
-    expect(response.status).toBe(201)
-    const definition = await response.json() as { id: number; assetTypeIds: number[] }
-    definitionId = definition.id
-    expect(definition.assetTypeIds).toEqual([1])
+  let assetId: number
+  let definitionId: number
+  let taskId: number
+  let planTemplateId: number
 
-    const otherProject = await api('/api/projects/2/dynamic-fields?includeInactive=true')
-    expect((await otherProject.json() as Array<{ id: number }>).some((field) => field.id === definitionId)).toBe(false)
+  beforeAll(async () => {
+    process.env.DATABASE_URL = databaseUrl
+    await ensureTestDatabase()
+    const { default: app } = await import('../../server/index')
+    await new Promise<void>((resolve) => {
+      const instance = app.listen(0, '127.0.0.1', () => {
+        const address = instance.address() as AddressInfo
+        baseUrl = `http://127.0.0.1:${address.port}`
+        resolve()
+      })
+      server = instance
+    })
+
+    const assetResponse = await api('/api/assets', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        code: `QA-DYN-${Date.now()}`,
+        name: 'Torno test dinámico',
+        serialNumber: `SN-DYN-${Date.now()}`,
+        installDate: '2025-01-01',
+        typeId: 1,
+        statusId: 1,
+        locationId: 1,
+        projectId: 1,
+        responsibleId: 1,
+        initials: 'TD',
+      }),
+    })
+    assetId = (await assetResponse.json() as { id: number }).id
+  }, 120_000)
+
+  afterAll(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server?.close(() => resolve()))
+    }
   })
 
-  it('stores recurrence on the asset, retains the completed occurrence and advances it', async () => {
-    const create = await api('/api/assets', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code: `QA-DYN-${Date.now()}`, name: 'Activo dinámico QA', serialNumber: `QA-DYN-SN-${Date.now()}`, installDate: '2026-08-10', typeId: 1, statusId: 1, locationId: 1, projectId: 1, responsibleId: 1, initials: 'QD', dynamicFields: [{ definitionId, value: { date: '2026-09-15', periodicity: 'Trimestral', periodicityMode: 'Calendario' } }] }),
+  it('rejects dynamic field definitions assigned to invalid asset types', async () => {
+    const response = await api('/api/projects/1/dynamic-fields', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        fieldName: 'Presión hidrostática',
+        groupName: 'Verificaciones',
+        fieldType: 'NUMBER',
+        required: true,
+        assetTypeIds: [999],
+        options: [],
+      }),
     })
-    expect(create.status).toBe(201)
-    const asset = await create.json() as { id: number; dynamicFields: Array<{ definitionId: number; value: string; dateSchedule: { periodicity: string; occurrenceId: number } }>; nextEvents: Array<{ source: string; title: string; date: string }> }
-    assetId = asset.id
+    expect(response.status).toBe(400)
+  })
+
+  it('creates date field definitions and calculates scheduled occurrences', async () => {
+    const definitionResponse = await api('/api/projects/1/dynamic-fields', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        fieldName: `Verificación estanqueidad ${Date.now()}`,
+        groupName: 'Pruebas',
+        fieldType: 'DATE',
+        required: false,
+        assetTypeIds: [1],
+        options: [],
+      }),
+    })
+    expect(definitionResponse.status).toBe(201)
+    definitionId = (await definitionResponse.json() as { id: number }).id
+
+    const updateResponse = await api(`/api/assets/${assetId}/dynamic-fields`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        values: [{
+          definitionId,
+          value: { date: '2026-09-15', periodicity: 'Trimestral', periodicityMode: 'Calendario' },
+        }],
+      }),
+    })
+    expect(updateResponse.status).toBe(200)
+    const asset = await updateResponse.json() as { dynamicFields: Array<{ definitionId: number; value: unknown }>; nextEvents: Array<{ source: string; date: string }> }
     expect(asset.dynamicFields).toEqual(expect.arrayContaining([expect.objectContaining({ definitionId, value: '2026-09-15' })]))
     expect(asset.nextEvents).toEqual(expect.arrayContaining([expect.objectContaining({ source: 'dynamic-field', date: '2026-09-15T00:00:00.000Z' })]))
 
@@ -74,14 +115,16 @@ describe('dynamic fields API', () => {
     expect(response.status).toBe(409)
   })
 
-  it('snapshots preventive tasks, completes an execution and creates the next one', async () => {
+  it('snapshots preventive tasks from standalone templates, completes an execution and creates the next one', async () => {
     const taskResponse = await api('/api/projects/1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: `QA-TASK-${Date.now()}`, name: 'Verificar resguardo de seguridad' }) })
     expect(taskResponse.status).toBe(201)
     taskId = (await taskResponse.json() as { id: number }).id
-    const definitionResponse = await api('/api/projects/1/dynamic-fields', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fieldName: `QA preventivo ${Date.now()}`, groupName: 'QA', fieldType: 'PREVENTIVE', required: false, assetTypeIds: [1], options: [], taskIds: [taskId] }) })
-    expect(definitionResponse.status).toBe(201)
-    preventiveDefinitionId = (await definitionResponse.json() as { id: number }).id
-    const planResponse = await api(`/api/assets/${assetId}/preventives`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ definitionId: preventiveDefinitionId, name: 'Inspección de seguridad QA', scheduledDate: '2026-10-01', periodicity: 'Mensual', periodicityMode: 'Calendario' }) })
+
+    const planTemplateResponse = await api('/api/projects/1/preventive-plans', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `Plan QA ${Date.now()}`, description: 'Plan de prueba', periodicity: 'Mensual', periodicityMode: 'Calendario', taskIds: [taskId], assetTypeIds: [1] }) })
+    expect(planTemplateResponse.status).toBe(201)
+    planTemplateId = (await planTemplateResponse.json() as { id: number }).id
+
+    const planResponse = await api(`/api/assets/${assetId}/preventives`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ planId: planTemplateId, scheduledDate: '2026-10-01' }) })
     expect(planResponse.status).toBe(201)
     const planAsset = await planResponse.json() as { preventivePlans: Array<{ executions: Array<{ id: number; tasks: Array<{ id: number }> }> }> }
     const execution = planAsset.preventivePlans[0].executions[0]

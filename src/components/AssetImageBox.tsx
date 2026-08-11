@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { deleteAssetImage, uploadAssetImage, type ApiAsset } from '@/lib/api'
+import { removeAssetImage, uploadAssetImage, type ApiAsset } from '@/lib/api'
 import ConfirmDialog from '@/components/ConfirmDialog'
 
 // IMG-01: placeholder del HTML de referencia (mismo SVG de la ficha del activo).
@@ -83,7 +83,7 @@ export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBo
     setError(null)
     setBusy(true)
     try {
-      await deleteAssetImage(asset.id)
+      await removeAssetImage(asset.id)
       onChanged({ ...asset, imageUrl: null, imageMimeType: null, imageSizeBytes: null })
       setRemoveRequested(false)
     } catch (removeError) {

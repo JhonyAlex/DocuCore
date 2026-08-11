@@ -13,8 +13,8 @@ import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setA
 const router: Router = Router()
 
 const ACTOR_USER_ID = 1
-const periodicitySchema = z.enum(['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual'])
-const preventiveAssignmentSchema = z.object({ definitionId: z.number().int().positive(), name: z.string().trim().min(1).max(120), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), periodicity: periodicitySchema, periodicityMode: z.enum(['Calendario', 'Subida']), taskIds: z.array(z.number().int().positive()).max(100).optional() }).strict()
+const preventiveAssignmentSchema = z.object({ planId: z.number().int().positive(), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
+const updatePreventiveAssignmentSchema = z.object({ scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
 const completeEventSchema = z.object({ source: z.enum(['event', 'document', 'dynamic-date', 'preventive']), id: z.number().int().positive(), performedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
 
 // ITEM-05: un activo en la papelera se puede recuperar hasta 30 días después
@@ -63,7 +63,7 @@ const assetInclude = {
         where: { definition: { isActive: true } },
         include: {
           definition: {
-            include: { options: { orderBy: { sortOrder: 'asc' } }, planTasks: { include: { task: { select: { id: true, code: true, name: true, isActive: true } } }, orderBy: { sortOrder: 'asc' } } },
+            include: { options: { orderBy: { sortOrder: 'asc' } } },
           },
         },
       },
@@ -135,7 +135,6 @@ function withDerivedEvents(asset: AssetWithRelations) {
       decimalPlaces: definition.decimalPlaces,
       sortOrder: definition.sortOrder,
       options: definition.options.filter((option) => option.isActive).map(({ id, key, label, sortOrder }) => ({ id, key, label, sortOrder })),
-      tasks: definition.planTasks.map((link) => link.task),
       value: value ? storedValue(definition.fieldType, value) : null,
       dateSchedule: asset.dateSchedules.find((schedule) => schedule.definitionId === definition.id) ? (() => { const schedule = asset.dateSchedules.find((entry) => entry.definitionId === definition.id)!; const occurrence = schedule.occurrences.find((entry) => !entry.completedAt); return { periodicity: schedule.periodicity, periodicityMode: schedule.periodicityMode, occurrenceId: occurrence?.id ?? null, date: occurrence?.scheduledDate.toISOString().slice(0, 10) ?? null } })() : null,
     }
@@ -159,7 +158,19 @@ function withDerivedEvents(asset: AssetWithRelations) {
     })),
     eventCount: nextEvents.length,
     nextEvents,
-    preventivePlans: preventivePlans.map((plan) => ({ id: plan.id, definitionId: plan.definitionId, name: plan.name, periodicity: plan.periodicity, periodicityMode: plan.periodicityMode, executions: plan.executions.map((execution) => ({ id: execution.id, scheduledDate: execution.scheduledDate.toISOString(), completedAt: execution.completedAt?.toISOString() ?? null, tasks: execution.tasks.map((task) => ({ ...task, completedAt: task.completedAt?.toISOString() ?? null })) })) })),
+    preventivePlans: preventivePlans.map((plan) => ({
+      id: plan.id,
+      planId: plan.planId,
+      name: plan.name,
+      periodicity: plan.periodicity,
+      periodicityMode: plan.periodicityMode,
+      executions: plan.executions.map((execution) => ({
+        id: execution.id,
+        scheduledDate: execution.scheduledDate.toISOString(),
+        completedAt: execution.completedAt?.toISOString() ?? null,
+        tasks: execution.tasks.map((task) => ({ ...task, completedAt: task.completedAt?.toISOString() ?? null })),
+      })),
+    })),
   }
 }
 
@@ -168,11 +179,6 @@ function toNumberId(value: string | undefined): number | null {
   const n = Number(value)
   return Number.isFinite(n) ? n : null
 }
-
-// Ubicación y responsable deben pertenecer al proyecto del activo. En POST se
-// validan los cuatro ids recibidos; en PUT se valida el estado final
-// (existentes + cambios), de modo que modificar solo una relación nunca deja
-// las demás incoherentes con el proyecto.
 async function assertAssetRelationsValid(projectId: number, typeId: number, locationId: number, responsibleId: number): Promise<void> {
   const invalid = new Error('Type, location and responsible must belong to the asset project')
   ;(invalid as Error & { status?: number }).status = 400
@@ -214,7 +220,6 @@ async function replaceDynamicValues(
   // an occurrence never disappears when the asset is edited again.
   for (const input of inputs) {
     const definition = byId.get(input.definitionId)!
-    if (definition.fieldType === 'PREVENTIVE') continue
     if (definition.fieldType === 'DATE') {
       const raw = typeof input.value === 'object' && input.value !== null && !Array.isArray(input.value)
         ? dateScheduleValueSchema.parse(input.value)
@@ -428,17 +433,67 @@ router.post('/:id/preventives', asyncHandler(async (req, res) => {
   const input = preventiveAssignmentSchema.parse(req.body)
   const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { projectId: true, typeId: true, code: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
-  const definition = await prisma.dynamicFieldDefinition.findFirst({ where: { id: input.definitionId, projectId: asset.projectId, fieldType: 'PREVENTIVE', isActive: true, assetTypes: { some: { assetTypeId: asset.typeId } } }, include: { planTasks: true } })
-  if (!definition) return res.status(400).json({ error: 'Preventive definition does not apply to this asset' })
-  const taskIds = input.taskIds ?? definition.planTasks.map((task) => task.taskId)
-  if (taskIds.some((taskId) => !definition.planTasks.some((link) => link.taskId === taskId))) return res.status(400).json({ error: 'Task is not part of the preventive definition' })
+  const template = await prisma.preventivePlan.findFirst({ where: { id: input.planId, projectId: asset.projectId, isActive: true } })
+  if (!template) return res.status(400).json({ error: 'Preventive plan template not found' })
   await prisma.$transaction(async (tx) => {
-    const plan = await tx.assetPreventivePlan.create({ data: { assetId: id, definitionId: definition.id, name: input.name, periodicity: input.periodicity, periodicityMode: input.periodicityMode } })
-    await createPreventiveExecution(tx, plan.id, asUtcDate(input.scheduledDate), taskIds)
-    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Creación', entityId: asset.code, detail: `Plan periódico "${input.name}" asignado`, timestamp: new Date() } })
+    await tx.asset.update({ where: { id }, data: { hasPreventive: true } })
+    const plan = await tx.assetPreventivePlan.create({
+      data: {
+        assetId: id,
+        planId: template.id,
+        name: template.name,
+        periodicity: template.periodicity,
+        periodicityMode: template.periodicityMode,
+      },
+    })
+    await createPreventiveExecution(tx, plan.id, asUtcDate(input.scheduledDate))
+    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Creación', entityId: asset.code, detail: `Plan periódico "${template.name}" asignado`, timestamp: new Date() } })
   })
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
   res.status(201).json(withDerivedEvents(updated))
+}))
+
+router.delete('/:id/preventives/:planId', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  const planId = toNumberId(req.params.planId)
+  if (id === null || planId === null) return res.status(400).json({ error: 'Invalid id' })
+  const plan = await prisma.assetPreventivePlan.findFirst({ where: { id: planId, assetId: id } })
+  if (!plan) return res.status(404).json({ error: 'Preventive plan assignment not found' })
+  await prisma.$transaction(async (tx) => {
+    await tx.assetPreventivePlan.update({ where: { id: planId }, data: { isActive: false } })
+    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `asset:${id}`, detail: `Plan periódico "${plan.name}" desvinculado`, timestamp: new Date() } })
+  })
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+  res.json(withDerivedEvents(updated))
+}))
+
+router.patch('/:id/preventives/:planId', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  const planId = toNumberId(req.params.planId)
+  if (id === null || planId === null) return res.status(400).json({ error: 'Invalid id' })
+  const input = updatePreventiveAssignmentSchema.parse(req.body)
+  const plan = await prisma.assetPreventivePlan.findFirst({
+    where: { id: planId, assetId: id, isActive: true },
+    include: { executions: { where: { completedAt: null }, orderBy: { id: 'asc' }, take: 1 } },
+  })
+  if (!plan || !plan.executions[0]) return res.status(404).json({ error: 'Pending preventive execution not found' })
+  await prisma.$transaction(async (tx) => {
+    await tx.preventiveExecution.update({
+      where: { id: plan.executions[0].id },
+      data: { scheduledDate: asUtcDate(input.scheduledDate) },
+    })
+    await tx.auditLog.create({
+      data: {
+        userId: ACTOR_USER_ID,
+        action: 'Actualización',
+        entityId: `asset:${id}`,
+        detail: `Fecha de ejecución del plan "${plan.name}" actualizada a ${input.scheduledDate}`,
+        timestamp: new Date(),
+      },
+    })
+  })
+  const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+  res.json(withDerivedEvents(updated))
 }))
 
 router.post('/:id/preventives/executions/:executionId/tasks/:taskId/complete', asyncHandler(async (req, res) => {

@@ -1,7 +1,6 @@
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
-import { StorageMarkerError, cleanDocumentStorage } from './lib/documentStorage'
-import { storeDocumentBuffer } from './lib/documentStorage'
+import { StorageMarkerError, cleanDocumentStorage, storeDocumentBuffer } from './lib/documentStorage'
 import { fieldKey } from './lib/dynamicFields'
 
 const prisma = new PrismaClient()
@@ -17,11 +16,6 @@ function isoFromEu(date: string, time?: string): Date {
 
 const PROJECT_CODE = 'PRJ-2026-001'
 
-// Árbol visible del prototipo. Los hijos cuyo nombre NO comienza por el nombre
-// Modelo jerárquico real: todas las ubicaciones son administrables y visibles
-// al expandir su rama. `label` es el campo de presentación que muestra la tabla
-// de Activos (texto largo del prototipo); el árbol muestra `name`. Así no se
-// duplican ubicaciones ocultas.
 interface LocationSeed {
   code: string
   name: string
@@ -33,11 +27,9 @@ interface LocationSeed {
 }
 
 const locationsData: LocationSeed[] = [
-  // Ramas de nivel 1 del prototipo
   { code: 'PIN-NP-01', name: 'Nave Principal', label: 'Nave Principal', parentCode: null, responsibleEmail: 'jr@docucore.local', surface: '2.200 m²' },
   { code: 'PIN-AO-04', name: 'Anexo Oficinas', label: 'Anexo Oficinas', parentCode: null, responsibleEmail: 'maria@docucore.local', surface: '480 m²' },
   { code: 'PIN-EX-05', name: 'Almacén exterior', label: 'Almacén exterior', parentCode: null, responsibleEmail: 'jr@docucore.local', surface: '1.200 m²' },
-  // Hojas y subramas visibles bajo Nave Principal
   { code: 'PIN-NA-01A', name: 'Planta 1 · Nave A', label: 'Planta 1 · Nave A', parentCode: 'PIN-NP-01', responsibleEmail: 'jr@docucore.local', surface: '840 m²' },
   { code: 'PIN-NB-01B', name: 'Planta 1 · Nave B', label: 'Planta 1 · Nave B', parentCode: 'PIN-NP-01', responsibleEmail: 'jr@docucore.local', surface: '760 m²' },
   { code: 'PIN-NB-P3', name: 'Pasillo 3', label: 'Planta 1 · Nave B · Pasillo 3', parentCode: 'PIN-NB-01B', responsibleEmail: 'jr@docucore.local', surface: '90 m²' },
@@ -45,20 +37,16 @@ const locationsData: LocationSeed[] = [
   { code: 'PIN-LB-03', name: 'Laboratorio', label: 'Planta 1 · Laboratorio', parentCode: 'PIN-NP-01', responsibleEmail: 'ltorres@docucore.local', surface: '60 m²' },
   { code: 'CPD-R3-24', name: 'CPD · Rack 3 · U24', label: 'CPD · Rack 3 · U24', parentCode: 'PIN-AO-04', responsibleEmail: 'pmartin@docucore.local', surface: '200 m²' },
   { code: 'PIN-EX-04', name: 'Parking exterior', label: 'Parking exterior', parentCode: 'PIN-EX-05', responsibleEmail: 'jr@docucore.local', surface: '1.200 m²' },
-  // Proyecto secundario para pruebas de separación entre proyectos
   { code: 'ECC-PL1', name: 'Planta 1 Centro', label: 'Planta 1 Centro', parentCode: null, responsibleEmail: 'pmartin@docucore.local', surface: '300 m²', projectCode: 'PRJ-2026-002' },
 ]
 
-// Conteos objetivo del árbol (subrama): Nave A 42, Nave B 31, SC 8, LB 17,
-// Anexo 32, Almacén 12 (total 142). Los activos canónicos fijan parte del conteo;
-// el resto se completa con relleno. BH-04 y BSC-11 quedan en Nave A.
 const generatedBuckets: Array<{ locationCode: string; count: number }> = [
-  { locationCode: 'PIN-NA-01A', count: 39 }, // + CNC-05, BH-04, BSC-11 = 42
-  { locationCode: 'PIN-NB-01B', count: 30 }, // + EXT-A12 (en Pasillo 3) = 31
-  { locationCode: 'PIN-SC-02', count: 7 }, // + CP-02 = 8
-  { locationCode: 'PIN-LB-03', count: 16 }, // + MG-203 = 17
-  { locationCode: 'PIN-AO-04', count: 31 }, // + SRV-03 (en CPD) = 32
-  { locationCode: 'PIN-EX-05', count: 11 }, // + VH-014 (en Parking) = 12
+  { locationCode: 'PIN-NA-01A', count: 39 },
+  { locationCode: 'PIN-NB-01B', count: 30 },
+  { locationCode: 'PIN-SC-02', count: 7 },
+  { locationCode: 'PIN-LB-03', count: 16 },
+  { locationCode: 'PIN-AO-04', count: 31 },
+  { locationCode: 'PIN-EX-05', count: 11 },
 ]
 
 async function main(): Promise<void> {
@@ -73,6 +61,13 @@ async function main(): Promise<void> {
       "DocumentVersion",
       "Document",
       "Event",
+      "PreventiveExecutionTask",
+      "PreventiveExecution",
+      "AssetPreventivePlan",
+      "PreventivePlanAssetType",
+      "PreventivePlanTask",
+      "PreventivePlan",
+      "Task",
       "Asset",
       "DynamicFieldDefinition",
       "ProjectMember",
@@ -83,16 +78,12 @@ async function main(): Promise<void> {
     RESTART IDENTITY CASCADE
   `)
 
-  // Tras vaciar la BD, limpiar ficheros huérfanos del storage. Solo se omite un
-  // marcador ausente (entorno nuevo, aún sin provisionar); un marcador corrupto
-  // o de otro propietario detiene el seed para no escribir sobre un storage que
-  // no es de DocuCore.
   try {
     const removed = await cleanDocumentStorage()
     if (removed > 0) console.log(`  • Storage: ${removed} fichero(s) huérfano(s) eliminado(s).`)
   } catch (error) {
     if (error instanceof StorageMarkerError && error.code === 'MISSING_MARKER') {
-      // Sin marcador previo: nada que limpiar.
+      // Sin marcador previo
     } else {
       throw error
     }
@@ -166,10 +157,6 @@ async function main(): Promise<void> {
   }
 
   console.log('  • Assets (142)')
-  // Los seis canónicos conservan el orden (ids 1-6) y sus ubicaciones de ficha
-  // para que la tabla de Activos coincida con el HTML de referencia. BH-04 y
-  // BSC-11 se intercalan después para el detalle de Planta 1 · Nave A, por lo
-  // que el relleno de Nave A comienza en id 9.
   const assetsData: Array<{
     code: string
     name: string
@@ -180,8 +167,9 @@ async function main(): Promise<void> {
     locationCode: string
     responsibleEmail: string
     initials: string
+    hasPreventive?: boolean
   }> = [
-    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
+    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN', hasPreventive: true },
     { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', locationCode: 'PIN-SC-02', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
     { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-LB-03', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
     { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', locationCode: 'PIN-NB-P3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
@@ -198,6 +186,7 @@ async function main(): Promise<void> {
         serialNumber: asset.serialNumber,
         installDate: isoFromEu(asset.installDate),
         initials: asset.initials,
+        hasPreventive: asset.hasPreventive ?? false,
         type: { connect: { projectId_name: { projectId: 1, name: asset.typeName } } },
         status: { connect: { name: asset.statusName } },
         location: { connect: { code: asset.locationCode } },
@@ -213,8 +202,6 @@ async function main(): Promise<void> {
     prisma.user.findUniqueOrThrow({ where: { email: 'jr@docucore.local' }, select: { id: true } }),
   ])
 
-  // Relleno determinista: completa los conteos visibles del árbol sin alterar
-  // los seis canónicos de la tabla ni los tres activos del detalle de Nave A.
   let sequence = 0
   for (const bucket of generatedBuckets) {
     const location = await prisma.location.findUniqueOrThrow({ where: { code: bucket.locationCode }, select: { id: true, projectId: true } })
@@ -237,6 +224,113 @@ async function main(): Promise<void> {
       }),
     })
   }
+
+  console.log('  • Catalog Tasks (5)')
+  const taskSeeds = [
+    { code: 'TSK-01', name: 'Comprobar nivel de aceite y filtros' },
+    { code: 'TSK-02', name: 'Verificar presión del circuito hidráulico' },
+    { code: 'TSK-03', name: 'Inspeccionar resguardos y paradas de emergencia' },
+    { code: 'TSK-04', name: 'Comprobación de puesta a tierra y aislamiento' },
+    { code: 'TSK-05', name: 'Limpieza y lubricación de guías' },
+  ]
+  const createdTasks = []
+  for (const seed of taskSeeds) {
+    const task = await prisma.task.create({
+      data: { projectId: 1, code: seed.code, name: seed.name, isActive: true },
+    })
+    createdTasks.push(task)
+  }
+
+  console.log('  • Preventive Plan Templates (3)')
+  const plan1 = await prisma.preventivePlan.create({
+    data: {
+      projectId: 1,
+      name: 'Mantenimiento Trimestral Climatización / Hidráulica',
+      description: 'Revisión periódica de presión, filtros y paradas de emergencia.',
+      periodicity: 'Trimestral',
+      periodicityMode: 'Calendario',
+      isActive: true,
+      tasks: {
+        create: [
+          { taskId: createdTasks[0].id, sortOrder: 0 },
+          { taskId: createdTasks[1].id, sortOrder: 1 },
+          { taskId: createdTasks[2].id, sortOrder: 2 },
+        ],
+      },
+      assetTypes: {
+        create: [{ assetTypeId: machineType.id }],
+      },
+    },
+    include: { tasks: { include: { task: true } } },
+  })
+
+  await prisma.preventivePlan.create({
+    data: {
+      projectId: 1,
+      name: 'Inspección Mensual de Seguridad',
+      description: 'Comprobación general de paradas de emergencia y tierras.',
+      periodicity: 'Mensual',
+      periodicityMode: 'Calendario',
+      isActive: true,
+      tasks: {
+        create: [
+          { taskId: createdTasks[2].id, sortOrder: 0 },
+          { taskId: createdTasks[3].id, sortOrder: 1 },
+        ],
+      },
+      assetTypes: {
+        create: [{ assetTypeId: machineType.id }],
+      },
+    },
+  })
+
+  await prisma.preventivePlan.create({
+    data: {
+      projectId: 1,
+      name: 'Revisión Semestral Maquinaria',
+      description: 'Limpieza profunda, lubricación y filtros.',
+      periodicity: 'Semestral',
+      periodicityMode: 'Subida',
+      isActive: true,
+      tasks: {
+        create: [
+          { taskId: createdTasks[0].id, sortOrder: 0 },
+          { taskId: createdTasks[4].id, sortOrder: 1 },
+        ],
+      },
+      assetTypes: {
+        create: [{ assetTypeId: machineType.id }],
+      },
+    },
+  })
+
+  console.log('  • Asset Preventive Assignment (CNC-05)')
+  const cncAsset = await prisma.asset.findUniqueOrThrow({ where: { code: 'CNC-05' } })
+  const assignedPlan = await prisma.assetPreventivePlan.create({
+    data: {
+      assetId: cncAsset.id,
+      planId: plan1.id,
+      name: plan1.name,
+      periodicity: plan1.periodicity,
+      periodicityMode: plan1.periodicityMode,
+      isActive: true,
+    },
+  })
+  const initialExecution = await prisma.preventiveExecution.create({
+    data: {
+      planId: assignedPlan.id,
+      scheduledDate: new Date('2026-10-01T00:00:00.000Z'),
+    },
+  })
+  await prisma.preventiveExecutionTask.createMany({
+    data: plan1.tasks.map((link) => ({
+      executionId: initialExecution.id,
+      taskId: link.taskId,
+      code: link.task.code,
+      name: link.task.name,
+      sortOrder: link.sortOrder,
+    })),
+  })
 
   console.log('  • Dynamic fields (24)')
   const dynamicSeeds: Array<{

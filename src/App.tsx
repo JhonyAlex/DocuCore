@@ -11,7 +11,7 @@ import HistoryView from '@/views/HistoryView'
 import ConfigView from '@/views/ConfigView'
 import DynamicFieldsConfigView from '@/views/DynamicFieldsConfigView'
 import AssetTypesConfigView from '@/views/AssetTypesConfigView'
-import TasksConfigView from '@/views/TasksConfigView'
+import PreventivesConfigView from '@/views/PreventivesConfigView'
 
 export default function App() {
   return (
@@ -30,7 +30,8 @@ export default function App() {
         <Route path="/config" element={<ConfigView />} />
         <Route path="/config/dynamic-fields" element={<DynamicFieldsConfigView />} />
         <Route path="/config/asset-types" element={<AssetTypesConfigView />} />
-        <Route path="/config/tasks" element={<TasksConfigView />} />
+        <Route path="/config/preventives" element={<PreventivesConfigView />} />
+        <Route path="/config/tasks" element={<Navigate to="/config/preventives" replace />} />
       </Route>
     </Routes>
   )
