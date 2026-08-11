@@ -14,7 +14,7 @@ const planInputSchema = z.object({
   periodicity: z.enum(PERIODICITIES),
   periodicityMode: z.enum(PERIODICITY_MODES),
   isActive: z.boolean().optional(),
-  taskIds: z.array(z.number().int().positive()).default([]),
+  taskIds: z.array(z.number().int().positive()).min(1, 'El plan preventivo debe contener al menos una tarea'),
   assetTypeIds: z.array(z.number().int().positive()).default([]),
 }).strict()
 
@@ -65,7 +65,12 @@ router.get('/', asyncHandler(async (req, res) => {
     where: {
       projectId,
       isActive: includeInactive ? undefined : true,
-      assetTypes: assetTypeId ? { some: { assetTypeId } } : undefined,
+      ...(assetTypeId ? {
+        OR: [
+          { assetTypes: { none: {} } },
+          { assetTypes: { some: { assetTypeId } } },
+        ],
+      } : {}),
     },
     include: planInclude,
     orderBy: [{ name: 'asc' }, { id: 'asc' }],
@@ -130,6 +135,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (!before) return res.status(404).json({ error: 'Not found' })
 
   if (input.taskIds) {
+    if (input.taskIds.length === 0) return res.status(400).json({ error: 'Preventive plan must have at least one task' })
     const valid = await prisma.task.count({ where: { id: { in: input.taskIds }, projectId } })
     if (valid !== new Set(input.taskIds).size) return res.status(400).json({ error: 'Unknown task ID' })
   }

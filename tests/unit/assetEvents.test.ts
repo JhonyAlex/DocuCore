@@ -59,7 +59,7 @@ describe('deriveAssetEvents', () => {
         title: 'Próxima calibración',
         daysUntil: 0,
         urgency: 'amber',
-        source: 'dynamic-field',
+        source: 'dynamic-date',
       }),
     ])
   })

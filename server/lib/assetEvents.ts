@@ -1,5 +1,5 @@
 export type DerivedEventUrgency = 'amber' | 'red' | 'slate'
-export type DerivedEventSource = 'event' | 'document' | 'dynamic-field' | 'preventive'
+export type DerivedEventSource = 'event' | 'document' | 'dynamic-date' | 'preventive'
 
 export interface DerivedAssetEvent {
   id: string
@@ -133,7 +133,7 @@ export function deriveAssetEvents(relations: AssetEventRelations, now = new Date
   for (const schedule of relations.dateSchedules ?? []) {
     const occurrence = schedule.occurrences.find((entry) => !entry.completedAt)
     if (!occurrence) continue
-    derived.push(toDerivedEvent(`dynamic-date:${occurrence.id}`, schedule.definition.fieldName, occurrence.scheduledDate, 'dynamic-field', 'Fecha', now))
+    derived.push(toDerivedEvent(`dynamic-date:${occurrence.id}`, schedule.definition.fieldName, occurrence.scheduledDate, 'dynamic-date', 'Fecha', now))
   }
 
   // Legacy fallback for databases which have not yet run the migration.
@@ -146,7 +146,7 @@ export function deriveAssetEvents(relations: AssetEventRelations, now = new Date
       `dynamic-field:${value.id}`,
       definition.fieldName,
       date,
-      'dynamic-field',
+      'dynamic-date',
       'Campo dinámico',
       now,
     ))

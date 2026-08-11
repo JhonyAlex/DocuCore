@@ -381,7 +381,20 @@ router.get('/:id/events', asyncHandler(async (req, res) => {
   const rows = [
     ...asset.events.map((event) => ({ source: 'event', id: event.id, title: event.title, date: event.date.toISOString(), sourceLabel: event.type, completedAt: event.completedAt?.toISOString() ?? null, completedDate: event.completedAt?.toISOString().slice(0, 10) ?? null, progress: null })),
     ...asset.dateSchedules.flatMap((schedule) => schedule.occurrences.map((occurrence) => ({ source: 'dynamic-date', id: occurrence.id, title: schedule.definition.fieldName, date: occurrence.scheduledDate.toISOString(), sourceLabel: 'Fecha', completedAt: occurrence.completedAt?.toISOString() ?? null, completedDate: occurrence.completedDate?.toISOString().slice(0, 10) ?? null, progress: null }))),
-    ...asset.preventivePlans.flatMap((plan) => plan.executions.map((execution) => ({ source: 'preventive', id: execution.id, title: plan.name, date: execution.scheduledDate.toISOString(), sourceLabel: 'Plan periódico', completedAt: execution.completedAt?.toISOString() ?? null, completedDate: execution.completedDate?.toISOString().slice(0, 10) ?? null, progress: { completed: execution.tasks.filter((task) => task.completedAt).length, total: execution.tasks.length } }))),
+    ...asset.preventivePlans.flatMap((plan) =>
+      plan.executions
+        .filter((execution) => plan.isActive || execution.completedAt !== null)
+        .map((execution) => ({
+          source: 'preventive',
+          id: execution.id,
+          title: plan.name,
+          date: execution.scheduledDate.toISOString(),
+          sourceLabel: 'Plan periódico',
+          completedAt: execution.completedAt?.toISOString() ?? null,
+          completedDate: execution.completedDate?.toISOString().slice(0, 10) ?? null,
+          progress: { completed: execution.tasks.filter((task) => task.completedAt).length, total: execution.tasks.length },
+        })),
+    ),
     ...asset.documentAssets.flatMap(({ document }) => {
       const date = document.versions[0]?.expiryDate
       if (!date) return []
@@ -433,8 +446,20 @@ router.post('/:id/preventives', asyncHandler(async (req, res) => {
   const input = preventiveAssignmentSchema.parse(req.body)
   const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { projectId: true, typeId: true, code: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
-  const template = await prisma.preventivePlan.findFirst({ where: { id: input.planId, projectId: asset.projectId, isActive: true } })
+  const template = await prisma.preventivePlan.findFirst({
+    where: { id: input.planId, projectId: asset.projectId, isActive: true },
+    include: { assetTypes: true },
+  })
   if (!template) return res.status(400).json({ error: 'Preventive plan template not found' })
+
+  const existingAssignment = await prisma.assetPreventivePlan.findFirst({
+    where: { assetId: id, planId: template.id, isActive: true },
+  })
+  if (existingAssignment) return res.status(409).json({ error: 'El plan preventivo ya está asignado a este activo' })
+
+  if (template.assetTypes.length > 0 && !template.assetTypes.some((at) => at.assetTypeId === asset.typeId)) {
+    return res.status(400).json({ error: 'La plantilla del plan no es compatible con el tipo de este activo' })
+  }
   await prisma.$transaction(async (tx) => {
     await tx.asset.update({ where: { id }, data: { hasPreventive: true } })
     const plan = await tx.assetPreventivePlan.create({
@@ -461,6 +486,12 @@ router.delete('/:id/preventives/:planId', asyncHandler(async (req, res) => {
   if (!plan) return res.status(404).json({ error: 'Preventive plan assignment not found' })
   await prisma.$transaction(async (tx) => {
     await tx.assetPreventivePlan.update({ where: { id: planId }, data: { isActive: false } })
+    const remainingActive = await tx.assetPreventivePlan.count({
+      where: { assetId: id, id: { not: planId }, isActive: true },
+    })
+    if (remainingActive === 0) {
+      await tx.asset.update({ where: { id }, data: { hasPreventive: false } })
+    }
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `asset:${id}`, detail: `Plan periódico "${plan.name}" desvinculado`, timestamp: new Date() } })
   })
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
@@ -608,11 +639,22 @@ router.put(
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
     const existing = await prisma.asset.findFirst({
       where: { id, deletedAt: null },
-      select: { projectId: true, typeId: true, locationId: true, responsibleId: true },
+      select: { projectId: true, typeId: true, locationId: true, responsibleId: true, hasPreventive: true },
     })
     if (!existing) {
       res.status(404).json({ error: 'Not found' })
       return
+    }
+    if (typeId && typeId !== existing.typeId) {
+      const activePlans = await prisma.assetPreventivePlan.findMany({
+        where: { assetId: id, isActive: true },
+        include: { plan: { include: { assetTypes: true } } },
+      })
+      const incompatible = activePlans.find((p) => p.plan && p.plan.assetTypes.length > 0 && !p.plan.assetTypes.some((at) => at.assetTypeId === typeId))
+      if (incompatible) {
+        res.status(400).json({ error: `El nuevo tipo de activo no es compatible con el plan preventivo asignado "${incompatible.name}"` })
+        return
+      }
     }
     // El PUT es parcial: se valida el estado final combinando lo recibido con
     // lo existente, para que las relaciones no tocadas sigan siendo válidas.
@@ -633,6 +675,12 @@ router.put(
     }
     const updated = await prisma.$transaction(async (tx) => {
       await tx.asset.update({ where: { id }, data })
+      if (rest.hasPreventive === false && existing.hasPreventive === true) {
+        await tx.assetPreventivePlan.updateMany({
+          where: { assetId: id, isActive: true },
+          data: { isActive: false },
+        })
+      }
       const finalProjectId = projectId ?? existing.projectId
       const finalTypeId = typeId ?? existing.typeId
       if (dynamicFields !== undefined) {
