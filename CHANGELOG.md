@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Planos operativos (PLAN-02)**: capas dinámicas de los `AssetType` realmente presentes (color estable y contador), filtros de tipo/estado/urgencia, búsqueda y centrado de activos, detalle de próximo evento/origen y LOD de marcador (punto, código, código + nombre) sobre OpenSeadragon. La urgencia se deriva exclusivamente de `deriveAssetEvents`: vencidos se señalan en rojo con pulso sutil; próximos a 21 días, en ámbar; el estado operativo queda separado del color de tipo.
+- **Conversión local PDF → plano**: «Importar desde PDF» permite elegir página, delimitar una región y renderizar únicamente ese recorte a calidad configurable usando `pdfjs-dist`. Se sube solo el PNG generado al pipeline existente de versiones/DZI; el PDF origen no se envía ni se almacena.
 - **Vista previa por versión documental**: cada entrada del historial de «Gestionar documento» incorpora «Ver» junto a «Descargar»; `GET /api/documents/:id/versions/:version/preview` sirve exactamente la versión elegida inline sin alterar la versión vigente.
 - **Gestión documental desde la ficha del activo**: los documentos asociados son clicables y abren «Gestionar documento» encima de la ficha, sin navegar ni perder el contexto del activo.
 - **Imagen del activo (IMG-01)**: el cuadro de imagen de la ficha del activo muestra la foto (o el placeholder del HTML de referencia) y permite **subirla, cambiarla y quitarla** desde el hover; el formulario de alta/edición permite **elegir la imagen al añadir un activo desde cero** (se sube al guardar). Una imagen por activo, reemplazable, persistente en el storage gestionado de DocuCore (`POST/DELETE /api/assets/:id/image` y `GET /api/assets/:id/image` que la sirve inline con el MIME almacenado; PNG/JPG/WebP/GIF, máx. 10 MB); la purga del activo borra también su fichero. En reposo sin imagen, el cuadro es idéntico al HTML de referencia.
@@ -54,6 +56,7 @@
 
 ### Fixed
 
+- Los contratos de cliente de Documentos y sugerencias de activos vuelven a consumir las respuestas reales `data` y `values`; los listados y el picker de sugerencias ya no quedan vacíos. La traducción de errores de escritura usa el `status` HTTP preservado por el cliente, por lo que los conflictos de código/serie muestran su mensaje específico.
 - La vista previa de PDF ya no conserva la posición de scroll entre la vista incrustada y el visor ampliado, ni muestra la barra de navegación del visor del navegador: el PDF se renderiza con pdf.js en canvas propios (`PdfPreview`), siempre desde la primera página (el scroll es del contenedor propio y cada apertura arranca en 0). El fichero se comparte sin volver a pedirlo; pdf.js se carga en un chunk aparte solo al abrir un PDF.
 - El menú de acciones de Activos se renderiza fuera del contenedor desplazable de la tabla para evitar recortes y barras de desplazamiento al abrirlo.
 - Se evita que respuestas antiguas de filtros sustituyan el estado más reciente del listado de activos.
