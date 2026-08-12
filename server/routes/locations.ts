@@ -11,7 +11,7 @@ const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
 
 const locationInclude = {
   responsible: { select: { id: true, name: true, initials: true, color: true } },
-  floorPlan: { select: { id: true } },
+  floorPlans: { select: { id: true } },
   // ITEM-05: el árbol cuenta solo activos vivos, igual que el detalle.
   _count: { select: { assets: { where: { deletedAt: null } }, children: true } },
 } satisfies Prisma.LocationInclude
@@ -19,13 +19,13 @@ const locationInclude = {
 type LocationWithRelations = Prisma.LocationGetPayload<{ include: typeof locationInclude }>
 
 function serializeLocation(location: LocationWithRelations) {
-  const { responsible, floorPlan, _count, ...base } = location
+  const { responsible, floorPlans, _count, ...base } = location
   return {
     ...base,
     createdAt: location.createdAt.toISOString(),
     updatedAt: location.updatedAt.toISOString(),
     responsible,
-    hasFloorPlan: floorPlan !== null,
+    hasFloorPlan: floorPlans.length > 0,
     assetCount: _count.assets,
     childCount: _count.children,
   }

@@ -48,7 +48,7 @@ export interface AssetNextEvent {
   label: string
   date: string
   urgency: 'amber' | 'red' | 'slate'
-  source: 'event' | 'document' | 'dynamic-field' | 'preventive'
+  source: 'event' | 'document' | 'dynamic-date' | 'preventive'
   sourceLabel: string
 }
 
@@ -97,17 +97,6 @@ export interface CalendarEvent {
   day: number
   title: string
   colorClass: string
-}
-
-export interface FloorPlanMarker {
-  id: number
-  code: string
-  label: string
-  left: number
-  top: number
-  pinColorClass: string
-  dotColorClass: string
-  animate?: boolean
 }
 
 export interface LocationAsset {

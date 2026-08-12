@@ -11,6 +11,7 @@ import dynamicFieldsRouter from './routes/dynamicFields'
 import assetTypesRouter from './routes/assetTypes'
 import tasksRouter from './routes/tasks'
 import preventivePlansRouter from './routes/preventivePlans'
+import floorPlansRouter from './routes/floorPlans'
 import { errorHandler } from './middleware/error'
 
 const app = express()
@@ -28,6 +29,7 @@ app.use('/api/projects/:projectId/dynamic-fields', dynamicFieldsRouter)
 app.use('/api/projects/:projectId/asset-types', assetTypesRouter)
 app.use('/api/projects/:projectId/tasks', tasksRouter)
 app.use('/api/projects/:projectId/preventive-plans', preventivePlansRouter)
+app.use('/api/floor-plans', floorPlansRouter)
 app.use('/api', metaRouter)
 
 app.use('/api', (_req, res) => {

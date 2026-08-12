@@ -61,6 +61,13 @@ export interface AssetEventRelations {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// El reloj opcional de pruebas está junto a la lógica derivada para que todas
+// las superficies (activos, planos e historial) valoren la misma urgencia.
+export function assetEventClock(): Date {
+  const configured = process.env.DOCUCORE_NOW ? new Date(process.env.DOCUCORE_NOW) : null
+  return configured && !Number.isNaN(configured.getTime()) ? configured : new Date()
+}
+
 function utcDay(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
 }
@@ -163,4 +170,16 @@ export function deriveAssetEvents(relations: AssetEventRelations, now = new Date
     const dateDifference = Date.parse(left.date) - Date.parse(right.date)
     return dateDifference !== 0 ? dateDifference : left.id.localeCompare(right.id)
   })
+}
+
+export function deriveAssetEventsExcludingAcknowledged(
+  relations: AssetEventRelations,
+  acknowledgements: Iterable<string>,
+  now = assetEventClock(),
+): DerivedAssetEvent[] {
+  const acknowledged = new Set(acknowledgements)
+  return deriveAssetEvents({
+    ...relations,
+    documents: relations.documents.filter((document) => !acknowledged.has(`document:${document.id}`)),
+  }, now)
 }

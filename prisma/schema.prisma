@@ -61,6 +61,7 @@ model Project {
   fieldDefinitions DynamicFieldDefinition[]
   tasks            Task[]
   preventivePlans  PreventivePlan[]
+  floorPlans       FloorPlan[]
 }
 
 model ProjectMember {
@@ -459,7 +460,7 @@ model Location {
   responsible User       @relation("LocationResponsible", fields: [responsibleId], references: [id])
   project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assets      Asset[]
-  floorPlan   FloorPlan?
+  floorPlans  FloorPlan[]
 
   @@index([parentId])
   @@index([projectId])
@@ -468,32 +469,52 @@ model Location {
 model FloorPlan {
   id         Int      @id @default(autoincrement())
   name       String
-  locationId Int      @unique
-  imageUrl   String
-  version    String
-  uploadedAt DateTime @default(now())
+  projectId  Int
+  locationId Int
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  location Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  markers  FloorPlanMarker[]
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  location  Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  versions  FloorPlanVersion[]
+  markers   FloorPlanMarker[]
+
+  @@unique([locationId, name])
+  @@index([projectId, locationId])
+}
+
+model FloorPlanVersion {
+  id         Int      @id @default(autoincrement())
+  floorPlanId Int
+  version    Int
+  originalName String
+  storageKey String   @unique
+  dziKey     String   @unique
+  mimeType   String
+  sizeBytes  Int
+  width      Int
+  height     Int
+  uploadedAt DateTime @default(now())
+
+  floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+
+  @@unique([floorPlanId, version])
+  @@index([floorPlanId, uploadedAt])
 }
 
 model FloorPlanMarker {
   id          Int      @id @default(autoincrement())
   floorPlanId Int
-  assetId     Int?
-  left        Float
-  top         Float
-  code        String
-  label       String
-  pinColor    String
-  dotColor    String
-  animate     Boolean  @default(false)
+  assetId     Int
+  x           Float
+  y           Float
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  asset     Asset?    @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  asset     Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
+  @@unique([floorPlanId, assetId])
   @@index([floorPlanId])
   @@index([assetId])
 }

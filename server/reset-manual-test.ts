@@ -1,13 +1,14 @@
 /**
  * Reset para pruebas manuales desde cero.
  * Deja CERO activos, documentos, versiones, eventos, planos y ubicaciones, y
- * limpia de forma segura el almacenamiento de documentos. Conserva un proyecto
+ * limpia de forma segura el almacenamiento de documentos y planos. Conserva un proyecto
  * base, un administrador, los tipos de activo y los estados necesarios.
  * Ejecutar: pnpm db:reset:manual-test
  */
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import { cleanDocumentStorage } from './lib/documentStorage'
+import { cleanFloorPlanStorage } from './lib/floorPlanStorage'
 
 const prisma = new PrismaClient()
 
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
     TRUNCATE TABLE
       "AuditLog",
       "FloorPlanMarker",
+      "FloorPlanVersion",
       "FloorPlan",
       "Location",
       "DocumentVersion",
@@ -77,11 +79,11 @@ async function main(): Promise<void> {
     ],
   })
 
-  // Tras el reset de BD, limpiar el almacenamiento de documentos de forma
+  // Tras el reset de BD, limpiar los almacenamientos de forma
   // segura. Si la ruta o el marcador no son válidos, el reset termina con error
   // (nunca se silencia una limpieza que no pudo garantizarse).
-  const removed = await cleanDocumentStorage()
-  console.log(`  • Storage: ${removed} fichero(s) eliminado(s).`)
+  const [documentsRemoved, plansRemoved] = await Promise.all([cleanDocumentStorage(), cleanFloorPlanStorage()])
+  console.log(`  • Storage: ${documentsRemoved} documento(s) y ${plansRemoved} plano(s) eliminado(s).`)
 
   const counts = await Promise.all([
     prisma.asset.count(),

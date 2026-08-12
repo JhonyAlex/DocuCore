@@ -116,8 +116,37 @@ export const documentListQuerySchema = z.object({
   limit: z.preprocess((value) => value === undefined ? 10 : Number(value), z.number().int().positive().max(100)),
 }).strict()
 
+const multipartPositiveId = z.preprocess((value) => Number(value), z.number().int().positive())
+const coordinate = z.number().finite().min(0).max(1)
+
+export const floorPlanListQuerySchema = z.object({
+  projectId: optionalPositiveId,
+  locationId: optionalPositiveId,
+}).strict()
+
+export const createFloorPlanSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  projectId: multipartPositiveId,
+  locationId: multipartPositiveId,
+}).strict()
+
+export const updateFloorPlanSchema = z.object({
+  name: z.string().trim().min(1).max(160).optional(),
+  projectId: z.number().int().positive().optional(),
+  locationId: z.number().int().positive().optional(),
+}).strict()
+
+export const createFloorPlanMarkerSchema = z.object({
+  assetId: z.number().int().positive(),
+  x: coordinate,
+  y: coordinate,
+}).strict()
+
+export const updateFloorPlanMarkerSchema = z.object({ x: coordinate.optional(), y: coordinate.optional() }).strict().refine((value) => value.x !== undefined || value.y !== undefined, 'A coordinate is required')
+
 export type CreateAssetInput = z.infer<typeof createAssetSchema>
 export type UpdateAssetInput = z.infer<typeof updateAssetSchema>
 export type ChangeStatusInput = z.infer<typeof changeStatusSchema>
 export type CreateLocationInput = z.infer<typeof createLocationSchema>
 export type UpdateLocationInput = z.infer<typeof updateLocationSchema>
+export type CreateFloorPlanInput = z.infer<typeof createFloorPlanSchema>

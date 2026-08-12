@@ -6,7 +6,7 @@ const execAsync = promisify(exec)
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker'
 
-const testDatabasePort = process.env.DOCUCORE_DB_PORT ?? '5435'
+const testDatabasePort = process.env.DOCUCORE_DB_PORT ?? '5436'
 const composeArgs = ['--project-name', 'docucore-e2e', '--file', 'docker-compose.yml', '--file', 'tests/docker-compose.e2e.yml']
 
 export const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${testDatabasePort}/docucore?schema=public`
@@ -14,7 +14,13 @@ export const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:do
 async function run(command: string, args: string[]): Promise<void> {
   const options = {
     cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: databaseUrl, DB_HOST_PORT: testDatabasePort },
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      DB_HOST_PORT: testDatabasePort,
+      DOCUMENT_STORAGE_PATH: process.env.DOCUMENT_STORAGE_PATH ?? `${process.cwd()}/test-results/e2e-documents`,
+      FLOOR_PLAN_STORAGE_PATH: process.env.FLOOR_PLAN_STORAGE_PATH ?? `${process.cwd()}/test-results/e2e-floor-plans`,
+    },
     timeout: 120_000,
   }
 
@@ -36,9 +42,18 @@ export async function ensureTestDatabase(): Promise<void> {
     // Container might already be running or port mapped externally
   }
 
+  // Un volumen E2E nuevo no tiene esquema: aplicar las migraciones antes del
+  // seed para que la suite no dependa de una base previa en el equipo local.
+  try {
+    await run(pnpmCommand, ['db:deploy'])
+  } catch {
+    // El bucle posterior reintenta mientras PostgreSQL termina de arrancar.
+  }
+
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
     try {
+      await run(pnpmCommand, ['db:deploy'])
       await run(pnpmCommand, ['db:seed'])
       return
     } catch {

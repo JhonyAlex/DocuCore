@@ -57,7 +57,7 @@ export interface ApiAssetEvent {
   date: string
   daysUntil: number
   urgency: 'amber' | 'red' | 'slate'
-  source: 'event' | 'document' | 'dynamic-field' | 'preventive'
+  source: 'event' | 'document' | 'dynamic-date' | 'preventive'
   sourceLabel: string
 }
 
@@ -261,6 +261,57 @@ export interface ApiLocationDetail extends ApiLocation {
   previewAssetCount: number
 }
 
+export interface ApiFloorPlanVersion {
+  id: number
+  version: number
+  originalName: string
+  mimeType: 'image/png' | 'image/jpeg' | 'image/webp'
+  sizeBytes: number
+  width: number
+  height: number
+  uploadedAt: string
+}
+
+export interface ApiFloorPlanAsset {
+  id: number
+  code: string
+  name: string
+  locationId: number
+  type: { id: number; name: string }
+  status: { id: number; name: string; pulseDot: string | null }
+  nextEvents: ApiAssetEvent[]
+}
+
+export interface ApiFloorPlanMarker {
+  id: number
+  floorPlanId: number
+  assetId: number
+  x: number
+  y: number
+  createdAt: string
+  updatedAt: string
+  asset: ApiFloorPlanAsset
+}
+
+export interface ApiFloorPlan {
+  id: number
+  name: string
+  projectId: number
+  locationId: number
+  createdAt: string
+  updatedAt: string
+  location: ApiLocationRef
+  currentVersion: ApiFloorPlanVersion | null
+  markers: ApiFloorPlanMarker[]
+  availableAssets?: ApiFloorPlanAsset[]
+}
+
+export interface FloorPlanWriteInput {
+  name: string
+  projectId: number
+  locationId: number
+}
+
 export interface ApiLocationsResponse {
   tree: ApiLocationTreeNode[]
   list: ApiLocation[]
@@ -331,14 +382,10 @@ export interface DocumentListParams {
 }
 
 export interface ApiDocumentListResponse {
-  items: ApiDocument[]
   data: ApiDocument[]
-  meta: {
-    page: number
-    limit: number
-    totalItems: number
-    totalPages: number
-  }
+  total: number
+  page: number
+  totalPages: number
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -387,7 +434,8 @@ export async function fetchAssets(params: FetchAssetsParams = {}): Promise<Fetch
   if (params.locationId) q.set('locationId', String(params.locationId))
   if (params.trashed) q.set('trashed', 'true')
   const res = await request<FetchAssetsResponse>(`/assets?${q.toString()}`)
-  return { ...res, data: res.assets ?? [] }
+  const rows = res.data ?? res.assets ?? []
+  return { ...res, assets: res.assets ?? rows, data: rows }
 }
 
 export type ApiAssetSuggestionField = 'code' | 'name' | 'initials'
@@ -397,11 +445,16 @@ export interface ApiAssetSuggestionRow {
   initials: string | null
 }
 
-export function fetchAssetSuggestions(field: ApiAssetSuggestionField, q = '', excludeId?: number): Promise<ApiAssetSuggestionRow[]> {
+interface ApiAssetSuggestionsResponse {
+  values: ApiAssetSuggestionRow[]
+}
+
+export async function fetchAssetSuggestions(field: ApiAssetSuggestionField, q = '', excludeId?: number): Promise<ApiAssetSuggestionRow[]> {
   const query = new URLSearchParams({ field })
   if (q.trim()) query.set('q', q.trim())
   if (excludeId) query.set('excludeId', String(excludeId))
-  return request<ApiAssetSuggestionRow[]>(`/assets/suggestions?${query.toString()}`)
+  const response = await request<ApiAssetSuggestionsResponse>(`/assets/suggestions?${query.toString()}`)
+  return response.values
 }
 
 export function fetchAsset(id: number): Promise<ApiAsset> {
@@ -537,7 +590,7 @@ export function fetchStatuses(): Promise<ApiStatus[]> {
 
 export async function fetchLocations(): Promise<ApiLocationsResponse> {
   const res = await request<ApiLocationsResponse>('/locations')
-  return { ...res, locations: res.tree ?? [] }
+  return { ...res, locations: res.locations ?? res.tree ?? [] }
 }
 
 export function fetchLocation(id: number): Promise<ApiLocationDetail> {
@@ -556,6 +609,59 @@ export function deleteLocation(id: number): Promise<void> {
   return request<void>(`/locations/${id}`, { method: 'DELETE' })
 }
 
+export function fetchFloorPlans(projectId: number, locationId?: number): Promise<{ data: ApiFloorPlan[] }> {
+  const query = new URLSearchParams({ projectId: String(projectId) })
+  if (locationId) query.set('locationId', String(locationId))
+  return request(`/floor-plans?${query.toString()}`)
+}
+
+export function fetchFloorPlan(id: number): Promise<ApiFloorPlan> {
+  return request(`/floor-plans/${id}`)
+}
+
+function floorPlanFormData(input: FloorPlanWriteInput, file: File): FormData {
+  const form = new FormData()
+  form.set('name', input.name)
+  form.set('projectId', String(input.projectId))
+  form.set('locationId', String(input.locationId))
+  form.set('file', file)
+  return form
+}
+
+export function createFloorPlan(input: FloorPlanWriteInput, file: File): Promise<ApiFloorPlan> {
+  return request('/floor-plans', { method: 'POST', body: floorPlanFormData(input, file) })
+}
+
+export function updateFloorPlan(id: number, input: Partial<FloorPlanWriteInput>): Promise<ApiFloorPlan> {
+  return request(`/floor-plans/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function deleteFloorPlan(id: number): Promise<void> {
+  return request<void>(`/floor-plans/${id}`, { method: 'DELETE' })
+}
+
+export function createFloorPlanVersion(id: number, file: File): Promise<ApiFloorPlan> {
+  const form = new FormData()
+  form.set('file', file)
+  return request(`/floor-plans/${id}/versions`, { method: 'POST', body: form })
+}
+
+export function createFloorPlanMarker(id: number, input: Pick<ApiFloorPlanMarker, 'assetId' | 'x' | 'y'>): Promise<ApiFloorPlanMarker> {
+  return request(`/floor-plans/${id}/markers`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateFloorPlanMarker(id: number, markerId: number, input: Pick<ApiFloorPlanMarker, 'x' | 'y'>): Promise<ApiFloorPlanMarker> {
+  return request(`/floor-plans/${id}/markers/${markerId}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function deleteFloorPlanMarker(id: number, markerId: number): Promise<void> {
+  return request<void>(`/floor-plans/${id}/markers/${markerId}`, { method: 'DELETE' })
+}
+
+export function floorPlanDziUrl(id: number, version: number): string {
+  return `${API_BASE}/floor-plans/${id}/versions/${version}/dzi`
+}
+
 export function fetchUsers(): Promise<ApiUserRef[]> {
   return request<ApiUserRef[]>('/users')
 }
@@ -567,8 +673,7 @@ export function fetchSession(): Promise<ApiSession> {
 export async function fetchDocuments(params: DocumentListParams = {}): Promise<ApiDocumentListResponse> {
   const q = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') q.set(key, String(value))
-  const res = await request<ApiDocumentListResponse>(`/documents?${q.toString()}`)
-  return { ...res, data: res.items ?? [] }
+  return request<ApiDocumentListResponse>(`/documents?${q.toString()}`)
 }
 
 export function fetchDocumentKpis(): Promise<{ vigente: number; porVencer: number; vencido: number; total: number }> {

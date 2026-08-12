@@ -36,6 +36,7 @@ export default defineConfig({
         NODE_ENV: 'test',
         PORT: apiPort,
         DOCUMENT_STORAGE_PATH: `${process.cwd()}/test-results/e2e-documents`,
+        FLOOR_PLAN_STORAGE_PATH: `${process.cwd()}/test-results/e2e-floor-plans`,
       },
     },
     {

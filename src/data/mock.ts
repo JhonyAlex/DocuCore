@@ -1,5 +1,5 @@
 import type {
-  Project, Asset, DocumentRecord, CalendarEvent, FloorPlanMarker,
+  Project, Asset, DocumentRecord, CalendarEvent,
   AuditLog, DashboardKpi, UpcomingExpiration, AlertItem, ActivityItem,
   ChartBar, ConfigCard, DocKpi, User,
 } from '@/types'
@@ -308,15 +308,6 @@ export const calendarEvents: CalendarEvent[] = [
   { day: 22, title: 'Mant. preventivo', colorClass: 'bg-brand-500' },
   { day: 24, title: 'Rev. EXT-A12', colorClass: 'bg-emerald-500' },
   { day: 28, title: 'Auditoría interna', colorClass: 'bg-indigo-500' },
-]
-
-export const floorPlanMarkers: FloorPlanMarker[] = [
-  { id: 1, code: 'CNC-05', label: 'Torno Haas', left: 18, top: 32, pinColorClass: 'bg-brand-600', dotColorClass: 'bg-emerald-400' },
-  { id: 2, code: 'CP-02', label: 'Compresor ⚠', left: 42, top: 50, pinColorClass: 'bg-red-600', dotColorClass: 'bg-white', animate: true },
-  { id: 3, code: 'MG-203', label: 'Manómetro', left: 72, top: 28, pinColorClass: 'bg-amber-500', dotColorClass: 'bg-white' },
-  { id: 4, code: 'EXT-A12', label: '', left: 28, top: 72, pinColorClass: 'bg-red-500', dotColorClass: 'bg-white' },
-  { id: 5, code: 'EXT-B04', label: '', left: 55, top: 78, pinColorClass: 'bg-red-500', dotColorClass: 'bg-white' },
-  { id: 6, code: 'SRV-03', label: 'CPD', left: 85, top: 62, pinColorClass: 'bg-slate-700', dotColorClass: 'bg-amber-400' },
 ]
 
 export const auditLogs: AuditLog[] = [

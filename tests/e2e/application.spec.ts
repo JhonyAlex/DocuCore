@@ -234,7 +234,7 @@ test.describe('DocuCore application', () => {
     await expect(assetDialog.getByText('Activo', { exact: true })).toBeVisible()
 
     // La edición tampoco puede convertirlo en «Fuera de servicio» sin confirmar.
-    await assetDialog.getByRole('button', { name: 'Editar' }).click()
+    await assetDialog.getByRole('button', { name: 'Editar', exact: true }).click()
     const editDialog = page.getByRole('dialog', { name: 'Editar activo' })
     await editDialog.getByLabel('Estado').selectOption({ label: 'Fuera de servicio' })
     await editDialog.getByRole('button', { name: 'Guardar cambios' }).click()

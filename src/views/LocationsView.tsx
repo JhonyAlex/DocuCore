@@ -403,7 +403,7 @@ export default function LocationsView() {
                   <button type="button" onClick={() => setFormMode('edit')} className="px-3 py-1.5 rounded-md text-xs bg-slate-100 dark:bg-slate-800">Editar</button>
                   <button
                     type="button"
-                    onClick={() => { if (detail.hasFloorPlan) navigate('/plans') }}
+                    onClick={() => { if (detail.hasFloorPlan) navigate(`/plans?locationId=${detail.id}`) }}
                     disabled={!detail.hasFloorPlan}
                     title={detail.hasFloorPlan ? 'Abrir plano de la ubicación' : 'Disponible cuando PLAN-01 persista los planos'}
                     className={`px-3 py-1.5 rounded-md text-xs ${detail.hasFloorPlan ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'}`}

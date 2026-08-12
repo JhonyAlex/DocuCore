@@ -1,6 +1,9 @@
 import 'dotenv/config'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { StorageMarkerError, cleanDocumentStorage, storeDocumentBuffer } from './lib/documentStorage'
+import { FloorPlanStorageError, cleanFloorPlanStorage, storeFloorPlanBuffer } from './lib/floorPlanStorage'
 import { fieldKey } from './lib/dynamicFields'
 
 const prisma = new PrismaClient()
@@ -87,6 +90,13 @@ async function main(): Promise<void> {
     } else {
       throw error
     }
+  }
+
+  try {
+    const removed = await cleanFloorPlanStorage()
+    if (removed > 0) console.log(`  • Storage de planos: ${removed} fichero(s) huérfano(s) eliminado(s).`)
+  } catch (error) {
+    if (!(error instanceof FloorPlanStorageError) || error.code !== 'MISSING_MARKER') throw error
   }
 
   console.log('  • Users (5)')
@@ -462,25 +472,27 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('  • Floor plan + markers (6)')
+  console.log('  • Floor plan versionado + marcadores')
   const floorPlan = await prisma.floorPlan.create({
     data: {
       name: 'Plano Planta 1 · Nave A',
+      project: { connect: { code: PROJECT_CODE } },
       location: { connect: { code: 'PIN-NA-01A' } },
-      imageUrl: '/plano.svg',
-      version: 'v1',
-      uploadedAt: new Date(),
-      markers: {
-        create: [
-          { code: 'CNC-05', label: 'Torno Haas', left: 18, top: 32, pinColor: 'brand-600', dotColor: 'emerald-400', asset: { connect: { code: 'CNC-05' } } },
-          { code: 'CP-02', label: 'Compresor ⚠', left: 42, top: 50, pinColor: 'red-600', dotColor: 'white', animate: true, asset: { connect: { code: 'CP-02' } } },
-          { code: 'MG-203', label: 'Manómetro', left: 72, top: 28, pinColor: 'amber-500', dotColor: 'white', asset: { connect: { code: 'MG-203' } } },
-          { code: 'EXT-A12', label: '', left: 28, top: 72, pinColor: 'red-500', dotColor: 'white', asset: { connect: { code: 'EXT-A12' } } },
-          { code: 'EXT-B04', label: '', left: 55, top: 78, pinColor: 'red-500', dotColor: 'white' },
-          { code: 'SRV-03', label: 'CPD', left: 85, top: 62, pinColor: 'slate-700', dotColor: 'amber-400', asset: { connect: { code: 'SRV-03' } } },
-        ],
-      },
     },
+  })
+  const floorPlanBytes = await readFile(path.join(process.cwd(), 'public', 'floor-plan.png'))
+  const storedFloorPlan = await storeFloorPlanBuffer(floorPlanBytes, 'image/png')
+  await prisma.floorPlanVersion.create({
+    data: { floorPlanId: floorPlan.id, version: 1, originalName: 'plano-planta-1-nave-a.png', mimeType: 'image/png', sizeBytes: floorPlanBytes.length, ...storedFloorPlan },
+  })
+  const directAssets = await prisma.asset.findMany({
+    where: { location: { code: 'PIN-NA-01A' }, deletedAt: null },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+    take: 5,
+  })
+  await prisma.floorPlanMarker.createMany({
+    data: directAssets.map((asset, index) => ({ floorPlanId: floorPlan.id, assetId: asset.id, x: [0.18, 0.42, 0.72, 0.28, 0.55][index], y: [0.32, 0.5, 0.28, 0.72, 0.78][index] })),
   })
   console.log(`    floorPlan #${floorPlan.id} created`)
 

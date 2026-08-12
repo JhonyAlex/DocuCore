@@ -15,7 +15,7 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return
   }
 
-  if (err instanceof Error && (err.message === 'Unsupported document type' || err.message === 'Invalid document size' || err.message === 'Invalid document storage key' || err.message === 'Unsupported image type' || err.message === 'Invalid image size')) {
+  if (err instanceof Error && (err.message === 'Unsupported document type' || err.message === 'Invalid document size' || err.message === 'Invalid document storage key' || err.message === 'Unsupported image type' || err.message === 'Invalid image size' || err.message === 'Unsupported floor plan type' || err.message === 'Invalid floor plan size' || err.message === 'Invalid floor plan image' || err.message === 'Invalid floor plan storage key' || err.message === 'Invalid floor plan DZI key' || err.message === 'Invalid floor plan tile')) {
     res.status(400).json({ error: err.message })
     return
   }

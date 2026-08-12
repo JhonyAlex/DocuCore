@@ -27,6 +27,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://${POSTGRES_USER:-docucore}:${POSTGRES_PASSWORD:-docucore}@db:5432/${POSTGRES_DB:-docucore}?schema=public
       DOCUMENT_STORAGE_PATH: /app/data/documents
+      FLOOR_PLAN_STORAGE_PATH: /app/data/floor-plans
     ports:
       - "${APP_PORT:-3001}:3001"
     depends_on:
@@ -34,6 +35,7 @@ services:
         condition: service_healthy
     volumes:
       - document_data:/app/data/documents
+      - floor_plan_data:/app/data/floor-plans
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -45,3 +47,4 @@ services:
 volumes:
   pgdata:
   document_data:
+  floor_plan_data:

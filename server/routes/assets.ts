@@ -4,7 +4,7 @@ import multer from 'multer'
 import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { deriveAssetEvents } from '../lib/assetEvents'
+import { assetEventClock, deriveAssetEventsExcludingAcknowledged } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
 import { completeDynamicDateSchema, dateScheduleValueSchema, dynamicFieldValuesSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
@@ -105,15 +105,10 @@ const assetInclude = {
 
 type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
 
-function derivedEventClock(): Date {
-  const configured = process.env.DOCUCORE_NOW ? new Date(process.env.DOCUCORE_NOW) : null
-  return configured && !Number.isNaN(configured.getTime()) ? configured : new Date()
-}
-
 function withDerivedEvents(asset: AssetWithRelations) {
   const acknowledged = new Set(asset.eventAcknowledgements.map((entry) => entry.sourceKey))
   const documents = asset.documentAssets.map((link) => link.document).filter((document) => !acknowledged.has(`document:${document.id}`))
-  const nextEvents = deriveAssetEvents({ ...asset, documents }, derivedEventClock())
+  const nextEvents = deriveAssetEventsExcludingAcknowledged({ ...asset, documents }, acknowledged, assetEventClock())
   // IMG-01: la clave interna de storage no se expone (como en documentos); el
   // frontend recibe una URL servida por el propio API.
   const definitions = asset.type.fieldDefinitions.map((link) => link.definition).filter((definition) => definition.projectId === asset.projectId)
@@ -260,7 +255,7 @@ async function collectLocationSubtree(rootId: number): Promise<number[]> {
 
 // ITEM-05: purga perezosa de la papelera — borra físicamente los activos cuyo
 // `deletedAt` supera la ventana de retención, con auditoría por activo.
-async function purgeExpiredTrashedAssets(now = derivedEventClock()): Promise<void> {
+async function purgeExpiredTrashedAssets(now = assetEventClock()): Promise<void> {
   const cutoff = new Date(now.getTime() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
   const expired = await prisma.asset.findMany({
     where: { deletedAt: { not: null, lt: cutoff } },
@@ -281,6 +276,28 @@ async function purgeExpiredTrashedAssets(now = derivedEventClock()): Promise<voi
   ])
   // IMG-01: sin huérfanos — la imagen del activo se borra del storage con él.
   await Promise.all(expired.filter((asset) => asset.imageStorageKey).map((asset) => removeDocumentFile(asset.imageStorageKey as string)))
+}
+
+async function locationIsDescendantOf(tx: Prisma.TransactionClient, locationId: number, ancestorId: number): Promise<boolean> {
+  const visited = new Set<number>()
+  let current: number | null = locationId
+  while (current !== null && !visited.has(current)) {
+    if (current === ancestorId) return true
+    visited.add(current)
+    const location: { parentId: number | null } | null = await tx.location.findUnique({ where: { id: current }, select: { parentId: true } })
+    current = location?.parentId ?? null
+  }
+  return false
+}
+
+async function removeInvalidFloorPlanMarkers(tx: Prisma.TransactionClient, assetId: number, projectId: number, locationId: number): Promise<number> {
+  const markers = await tx.floorPlanMarker.findMany({ where: { assetId }, include: { floorPlan: { select: { id: true, projectId: true, locationId: true } } } })
+  const invalid: number[] = []
+  for (const marker of markers) {
+    if (marker.floorPlan.projectId !== projectId || !await locationIsDescendantOf(tx, locationId, marker.floorPlan.locationId)) invalid.push(marker.id)
+  }
+  if (invalid.length) await tx.floorPlanMarker.deleteMany({ where: { id: { in: invalid } } })
+  return invalid.length
 }
 
 router.get(
@@ -683,6 +700,7 @@ router.put(
       }
       const finalProjectId = projectId ?? existing.projectId
       const finalTypeId = typeId ?? existing.typeId
+      const finalLocationId = locationId ?? existing.locationId
       if (dynamicFields !== undefined) {
         await replaceDynamicValues(tx, id, finalProjectId, finalTypeId, dynamicFields)
       } else if (typeId && typeId !== existing.typeId) {
@@ -690,12 +708,13 @@ router.put(
           where: { assetId: id, definition: { assetTypes: { none: { assetTypeId: finalTypeId } } } },
         })
       }
+      const removedMarkers = await removeInvalidFloorPlanMarkers(tx, id, finalProjectId, finalLocationId)
       await tx.auditLog.create({
         data: {
           userId: ACTOR_USER_ID,
           action: 'Actualización',
           entityId: String(id),
-          detail: 'Activo actualizado',
+          detail: removedMarkers ? `Activo actualizado; ${removedMarkers} marcador(es) retirado(s) por cambio de ubicación` : 'Activo actualizado',
           timestamp: new Date(),
         },
       })
