@@ -8,6 +8,8 @@
 
 ### Added
 
+- **Calendario operativo (CAL-01)**: API real que unifica eventos manuales, vencimientos documentales, fechas dinámicas y preventivos; filtros por rango/fuente/estado/activo/búsqueda, vistas Mes/Semana/Día con estado en URL, detalle por origen y CRUD manual auditado. Completar delega en la entidad de origen y el preventivo solo se completa con todas sus tareas. La ficha del activo comparte la agregación y puede abrir una ejecución preventiva concreta desde el Calendario. Con autorización explícita, Calendario usa tres baselines funcionales versionados; el HTML protegido y el umbral de 0,5 % no cambian.
+
 - **Coherencia de ficha de activo (ASSET-COHERENCE-01)**: las características se editan junto con el resto del activo desde el único formulario global; el Resumen consume solo ocurrencias derivadas (evento, documento, fecha dinámica o preventivo), los documentos asociados exponen «Ver» además de «Descargar», Eventos redirige los preventivos a su ejecución enfocada y la pestaña Historial muestra la auditoría propia del activo. Preventivos incorpora «Completar todas las tareas» con confirmación y una única operación transaccional; completar la ejecución permanece separado para registrar la realización y generar la siguiente ocurrencia.
 
 - **Planos operativos (PLAN-02)**: capas dinámicas de los `AssetType` realmente presentes (color estable y contador), filtros de tipo/estado/urgencia, búsqueda y centrado de activos, detalle de próximo evento/origen y LOD de marcador (punto, código, código + nombre) sobre OpenSeadragon. La urgencia se deriva exclusivamente de `deriveAssetEvents`: vencidos se señalan en rojo con pulso sutil; próximos a 21 días, en ámbar; el estado operativo queda separado del color de tipo.

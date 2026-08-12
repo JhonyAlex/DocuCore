@@ -64,6 +64,50 @@ export interface ApiAssetEvent {
   sourceLabel: string
 }
 
+export type ApiCalendarEventSource = 'event' | 'document' | 'dynamic-date' | 'preventive'
+export type ApiCalendarEventCategory = 'expiry' | 'calibration' | 'maintenance' | 'review'
+export type ApiCalendarEventStatus = 'overdue' | 'today' | 'upcoming' | 'pending' | 'completed'
+export interface ApiCalendarEventOccurrence {
+  id: string
+  source: ApiCalendarEventSource
+  sourceId: number
+  projectId: number
+  assetId: number | null
+  title: string
+  sourceLabel: string
+  category: ApiCalendarEventCategory
+  date: string
+  status: ApiCalendarEventStatus
+  completedAt: string | null
+  completedDate: string | null
+  asset: { id: number; code: string; name: string; location?: string } | null
+  progress: { completed: number; total: number } | null
+  canComplete: boolean
+  canEdit: boolean
+  canDelete: boolean
+}
+export interface ApiCalendarResponse {
+  today: string
+  events: ApiCalendarEventOccurrence[]
+  counts: { total: number; overdue: number; today: number; upcoming: number }
+}
+export interface CalendarQuery {
+  projectId: number
+  from?: string
+  to?: string
+  source?: ApiCalendarEventSource
+  status?: ApiCalendarEventStatus
+  assetId?: number
+  search?: string
+}
+export interface CalendarManualEventInput {
+  title: string
+  date: string
+  category: ApiCalendarEventCategory
+  assetId: number | null
+  projectId: number
+}
+
 export type DynamicFieldType = 'TEXT' | 'TEXTAREA' | 'NUMBER' | 'DATE' | 'SELECT' | 'MULTISELECT' | 'BOOLEAN'
 
 export interface ApiDynamicFieldOption {
@@ -216,7 +260,7 @@ export interface PreventivePlanInput {
   assetTypeIds: number[]
 }
 
-export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
+export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; status: ApiCalendarEventStatus; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
 export interface ApiAssetHistoryEntry { id: number; action: string; detail: string; timestamp: string; user: { name: string; initials: string } }
 
 export interface ApiLocation {
@@ -594,6 +638,22 @@ export function updateAssetPreventiveDate(assetId: number, planId: number, sched
 export function deleteAssetPreventive(assetId: number, planId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'DELETE' }) }
 export function completePreventiveTask(assetId: number, executionId: number, taskId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/${taskId}/complete`, { method: 'POST' }) }
 export function completeAllPreventiveTasks(assetId: number, executionId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/complete`, { method: 'POST' }) }
+
+export function fetchCalendar(input: CalendarQuery): Promise<ApiCalendarResponse> {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(input)) if (value !== undefined && value !== '') query.set(key, String(value))
+  return request<ApiCalendarResponse>(`/calendar?${query.toString()}`)
+}
+export function createCalendarEvent(input: CalendarManualEventInput): Promise<ApiCalendarEventOccurrence> {
+  return request('/calendar/events', { method: 'POST', body: JSON.stringify(input) })
+}
+export function updateCalendarEvent(id: number, input: Partial<Pick<CalendarManualEventInput, 'title' | 'date' | 'category' | 'assetId'>>): Promise<ApiCalendarEventOccurrence> {
+  return request(`/calendar/events/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+export function deleteCalendarEvent(id: number): Promise<void> { return request(`/calendar/events/${id}`, { method: 'DELETE' }) }
+export function completeCalendarEvent(input: Pick<ApiCalendarEventOccurrence, 'source' | 'sourceId' | 'assetId' | 'projectId'> & { performedDate: string }): Promise<void> {
+  return request<void>('/calendar/events/complete', { method: 'POST', body: JSON.stringify(input) })
+}
 
 export function fetchStatuses(): Promise<ApiStatus[]> {
   return request<ApiStatus[]>('/statuses')

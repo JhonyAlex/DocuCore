@@ -1,5 +1,15 @@
 # CURRENT_STATUS — DocuCore
 
+## Fecha: 2026-08-12
+
+## CAL-01 — Calendario operativo: COMPLETADO
+
+- **Implementación realizada**: el Calendario ya consume PostgreSQL mediante `GET /api/calendar` (rango, fuente, estado, activo y búsqueda), consolida eventos manuales, vencimientos documentales, ocurrencias de fecha dinámica y ejecuciones preventivas en un DTO normalizado y estable. Las fechas, estados y cálculos salen del servidor; el frontend no duplica reglas de negocio.
+- **Operativa**: Mes, Semana y Día sincronizan su contexto en URL; hay detalle por origen, alta/edición/borrado de eventos manuales con auditoría y confirmación, y completar delega en la fuente real. Un preventivo incompleto muestra progreso y no permite completarlo; los enlaces llevan a la ficha del activo o a su ejecución enfocada. La ficha del activo reutiliza el mismo servicio de agregación y de completado.
+- **Contrato visual autorizado**: el usuario autorizó explícitamente que Calendario deje de compararse con los eventos mock del HTML protegido. Se inspeccionaron las tres capturas: la estructura, rejilla, dimensiones, espaciados, tipografía, paleta y estilo se conservan; las diferencias son los datos reales y los controles autorizados de CAL-01, más la terminología global de Activos ya aprobada. Se versionaron exclusivamente `calendar-1440x1000-dark.png`, `calendar-1440x1000-light.png` y `calendar-1920x1080-dark.png` en `tests/visual/baselines/release-01/`.
+- **Pruebas**: `pnpm typecheck`, `pnpm lint` y `pnpm build` ✅; `pnpm test` **189/189** ✅ (incluye 4 API CAL-01 y 5 unitarias de fechas); `pnpm test:e2e` **62/62** ✅ (incluye 2 flujos CAL-01); `pnpm test:visual` **30/30** ✅, incluyendo los tres pares Calendar contra su baseline a **0 píxeles**. Se añade una espera funcional de «Nuevo evento» antes de capturar para excluir el estado transitorio de carga tras sincronizar la URL.
+- **Protección respetada**: HTML protegido sin cambios (SHA-256 `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`), umbral inmutable de 0,5 % y ningún baseline ajeno a Calendario modificado. Las regresiones futuras de Calendario se comparan contra sus tres baselines aprobados.
+
 ## Fecha: 2026-08-10
 
 ## IMG-01 — Imagen del activo (ficha y alta): FUNCIONAL
@@ -142,7 +152,7 @@
 | Proyectos | VISUAL MOCK | Ruta y tarjetas validadas; alta/apertura no tienen persistencia. |
 | Activos | VALIDADO (base) + ITEM-04/05/06 FUNCIONAL + UX-04 FUNCIONAL + IMG-01 FUNCIONAL | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. Duplicación, serie única/derivada, reactivación, papelera (30 días con restaurar/purgar), renombrado «Activo», sugerencias de valores en el formulario e imagen del activo (subir/cambiar/quitar desde la ficha y elegirla en el alta, con persistencia en el storage gestionado y purga del fichero) automatizados; pendientes de aceptación manual. |
 | Documentos | FUNCIONAL | PostgreSQL, versiones inmutables, subida multipart, edición/relación multi-activo, descarga y almacenamiento local persistente; E2E Documento-Activo verde. La regresión visual sigue pendiente. |
-| Calendario | VISUAL MOCK | Calendario y fidelidad validados; vistas/eventos no persisten. |
+| Calendario | COMPLETADO | API PostgreSQL real que consolida eventos, documentos, fechas dinámicas y preventivos; Mes/Semana/Día y CRUD manual persisten; 189 unit/API + 62 E2E + visual 30/30. Tres baselines funcionales versionados con autorización explícita. |
 | Planos | PARCIAL | Marcadores arrastrables en memoria; guardar, deshacer/rehacer, capas y versiones no persisten. |
 | Ubicaciones | EN REVISIÓN | Jerarquía real (`parentId` + `label` de presentación, sin duplicados ocultos); CRUD con auditoría, selección de hojas y padres, borrado protegido (cualquier hija o activos en subrama), «Ver plano» condicionado a PLAN-01, estados vacíos y reset manual. Relaciones de activos validadas contra el proyecto, `label` sincronizado al renombrar y almacenamiento documental endurecido. LOC-02: los activos del detalle abren la misma ficha que en Activos (editar, estado, eliminar, documentos) sin salir de la vista. Regresión visual de la vista en verde; módulo pendiente de validación final (no marcado VALIDADO). |
 | Historial | VISUAL MOCK | Tabla estática; no consulta `AuditLog`. |
@@ -190,4 +200,4 @@ Matriz vigente (2026-08-10): lint ✅, typecheck ✅, 137 unit/API ✅, build �
 1. Ejecutar y completar `docs/progress/LOC-01_MANUAL_TEST.md` con el usuario.
 2. Si el usuario acepta LOC-01, actualizar su estado a VALIDADO mediante un commit documental separado.
 3. Validar manualmente ITEM-05 (eliminar desde ficha y menú, papelera, restaurar, eliminar definitivo y recuento del sidebar), ITEM-06 (todo «Activos» en la UI), UX-02 (pestaña Resumen y desplegable de «Activos asociados» sin recorte), DOC-04 (periodicidad en dos modos), DOC-03 (vista previa incrustada y visor), LOC-02 (ficha desde Ubicaciones) e IMG-01 (subir/cambiar/quitar foto desde la ficha y elegirla en el alta de un activo nuevo; persistencia al recargar y purga con el activo).
-4. Priorizar después la regresión visual de `DOC-01`, `CAL-01` o `ITEM-02`; evaluar code splitting y una matriz CI con Node LTS sin alterar el contrato visual.
+4. Priorizar la regresión visual de `DOC-01` o `ITEM-02` y evaluar una matriz CI con Node LTS sin alterar los contratos visuales aprobados.

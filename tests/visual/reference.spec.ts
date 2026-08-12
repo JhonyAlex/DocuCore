@@ -26,7 +26,7 @@ const targets: VisualTarget[] = [
   { name: 'projects', route: '/projects', referenceView: 'projects', heading: 'Proyectos' },
   { name: 'items', route: '/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems', evolvedContract: true },
   { name: 'documents', route: '/docs', referenceView: 'docs', heading: 'Documentos', evolvedContract: true },
-  { name: 'calendar', route: '/calendar', referenceView: 'calendar', heading: 'Calendario' },
+  { name: 'calendar', route: '/calendar', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
   { name: 'plans', route: '/plans', referenceView: 'plans', heading: 'Planos interactivos', evolvedContract: true },
   { name: 'locations', route: '/locations', referenceView: 'locations', heading: 'Ubicaciones' },
   { name: 'history', route: '/history', referenceView: 'history', heading: 'Historial y auditoría' },
@@ -57,6 +57,12 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
   }
   if (target.route === '/docs') {
     await expect(page.getByText('Certificado ITV 2025', { exact: true })).toBeVisible()
+  }
+  if (target.route === '/calendar') {
+    // La primera carga fija `view` y `date` en la URL, lo que provoca una
+    // segunda consulta. Esperamos al control funcional para no capturar ese
+    // estado transitorio de carga como parte del contrato evolucionado.
+    await expect(page.getByRole('button', { name: 'Nuevo evento' })).toBeVisible()
   }
   if (target.route === '/plans') {
     await expect(page.getByTestId('floor-plan-viewer')).toHaveAttribute('data-floor-plan-loaded', 'true')

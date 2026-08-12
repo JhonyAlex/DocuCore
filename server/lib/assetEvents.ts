@@ -93,12 +93,6 @@ function parseRelationDate(value: unknown): Date | null {
   return valid ? date : null
 }
 
-function urgencyFor(daysUntil: number): DerivedEventUrgency {
-  if (daysUntil < 0) return 'red'
-  if (daysUntil <= 21) return 'amber'
-  return 'slate'
-}
-
 function toDerivedEvent(
   id: string,
   title: string,
@@ -107,13 +101,29 @@ function toDerivedEvent(
   sourceLabel: string,
   now: Date,
 ): DerivedAssetEvent {
+  const sourceId = Number(id.split(':')[1]) || 0
+  // Las superficies de activo conservan su DTO compacto, pero la fecha y su
+  // urgencia proceden de la misma normalización semántica que Calendario.
+  const occurrence = createCalendarOccurrence({
+    source,
+    sourceId,
+    projectId: 0,
+    assetId: null,
+    title,
+    sourceLabel,
+    category: 'expiry',
+    date,
+    today: now,
+    asset: null,
+    progress: null,
+  })
   const daysUntil = Math.round((utcDay(date) - utcDay(now)) / DAY_MS)
   return {
     id,
     title,
-    date: new Date(utcDay(date)).toISOString(),
+    date: `${occurrence.date}T00:00:00.000Z`,
     daysUntil,
-    urgency: urgencyFor(daysUntil),
+    urgency: occurrence.status === 'overdue' ? 'red' : occurrence.status === 'today' || occurrence.status === 'upcoming' ? 'amber' : 'slate',
     source,
     sourceLabel,
   }
@@ -183,3 +193,4 @@ export function deriveAssetEventsExcludingAcknowledged(
     documents: relations.documents.filter((document) => !acknowledged.has(`document:${document.id}`)),
   }, now)
 }
+import { createCalendarOccurrence } from './calendarDomain'

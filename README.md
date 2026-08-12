@@ -63,7 +63,7 @@ Los flujos Playwright arrancan la API, Vite y un servidor de solo lectura del HT
 
 Las capturas de aplicación, referencia/baseline y diff se escriben en `test-results/visual/`, directorio ignorado por Git. `pixelmatch` falla si más de `0.5%` de los píxeles difiere: es un umbral deliberadamente estricto para detectar rediseños visibles.
 
-Dashboard, Proyectos, Calendario, Ubicaciones e Historial se comparan con el HTML protegido. Las evoluciones funcionales aprobadas de Activos, Documentos, Planos, Configuración y ficha de activo se comparan con los baselines versionados de `tests/visual/baselines/release-01/`. Esos baselines no se actualizan durante una ejecución normal: solo se regeneran tras inspección explícita con `APPROVE_EVOLVED_VISUAL_BASELINES=1` (en PowerShell: `$env:APPROVE_EVOLVED_VISUAL_BASELINES='1'; pnpm test:visual; Remove-Item Env:APPROVE_EVOLVED_VISUAL_BASELINES`).
+Dashboard, Proyectos, Ubicaciones e Historial se comparan con el HTML protegido. Las evoluciones funcionales aprobadas de Activos, Documentos, Calendario, Planos, Configuración y ficha de activo se comparan con los baselines versionados de `tests/visual/baselines/release-01/`. Esos baselines no se actualizan durante una ejecución normal: solo se regeneran tras inspección explícita con `APPROVE_EVOLVED_VISUAL_BASELINES=1` (en PowerShell: `$env:APPROVE_EVOLVED_VISUAL_BASELINES='1'; pnpm test:visual; Remove-Item Env:APPROVE_EVOLVED_VISUAL_BASELINES`).
 
 ## Producción Docker
 

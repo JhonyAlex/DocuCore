@@ -20,7 +20,7 @@ DocuCore es una plataforma de gestión documental y de activos industriales. Con
 
 > Antes de modificar una vista se debe revisar el contrato que le aplique: HTML protegido o baseline aprobado. Después de modificarla se debe ejecutar su comparación visual.
 
-El HTML de referencia es un **contrato visual protegido**, no una inspiración. Dashboard, Proyectos, Calendario, Ubicaciones e Historial se comparan directamente contra él. Las evoluciones funcionales aprobadas de Activos, Documentos, Planos, Configuración y ficha de activo se comparan contra los baselines versionados de `tests/visual/baselines/release-01/`. En ambos casos el umbral es fijo: **0,5 %**. No se modifican el HTML, el umbral ni los baselines sin inspección y aprobación explícitas.
+El HTML de referencia es un **contrato visual protegido**, no una inspiración. Dashboard, Proyectos, Ubicaciones e Historial se comparan directamente contra él. Las evoluciones funcionales aprobadas de Activos, Documentos, Calendario, Planos, Configuración y ficha de activo se comparan contra los baselines versionados de `tests/visual/baselines/release-01/`. En ambos casos el umbral es fijo: **0,5 %**. No se modifican el HTML, el umbral ni los baselines sin inspección y aprobación explícitas.
 
 ## Referencia
 
@@ -120,7 +120,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ Datos demostrativos centralizados para las superficies aún no conectadas
 - ✅ Navegación con React Router v6
 - ✅ Modal de activo funcional (6 pestañas)
-- ✅ Calendario visual (grid mensual)
+- ✅ Calendario CAL-01 real (Mes/Semana/Día) con contrato funcional versionado
 - ✅ Plano interactivo con marcadores arrastrables
 - ✅ Modo claro/oscuro funcional
 - ✅ `pnpm build` / `pnpm lint` / `pnpm typecheck` pasan
@@ -266,7 +266,7 @@ docker compose up    # Levantar todo (DB + app)
 | Proyectos | Implementada (mock) | Visual (3 objetivos) |
 | Activos | Implementada (PostgreSQL + papelera) | Visual + E2E |
 | Documentos | Implementada (PostgreSQL + almacenamiento local, multi-activo) | E2E + visual RELEASE-01 |
-| Calendario | Implementada (mock) | Visual (3 objetivos) |
+| Calendario | API real CAL-01 | Unit/API + E2E + visual RELEASE-01 |
 | Planos | Implementada (FloorPlan/FloorPlanVersion + DZI) | E2E + visual RELEASE-01 |
 | Ubicaciones | Implementada (PostgreSQL, jerarquía + CRUD) | Visual (3 objetivos) + E2E |
 | Historial | Implementada (mock) | Visual (3 objetivos) |
@@ -295,14 +295,14 @@ El build ya no emite el aviso de chunk de aplicación superior a 500 kB: las rut
 
 ## Estado de release
 
-RELEASE-01 aprobó y versionó el contrato visual actual: 15 objetivos siguen el HTML protegido y 15 evoluciones funcionales usan baselines inspeccionados de `tests/visual/baselines/release-01/`, todos al 0,5 %. Los módulos operativos de Planos y Preventivos están integrados en la arquitectura real. LOC-01 continúa `EN REVISIÓN` hasta aceptación manual expresa del usuario.
+RELEASE-01 aprobó y versionó el contrato visual actual: 12 objetivos siguen el HTML protegido y 18 evoluciones funcionales usan baselines inspeccionados de `tests/visual/baselines/release-01/`, todos al 0,5 %. Los módulos operativos de Planos, Preventivos y Calendario están integrados en la arquitectura real. CAL-01 queda `COMPLETADO`: con autorización explícita usa sus tres baselines funcionales, sin modificar el HTML protegido ni el umbral. LOC-01 continúa `EN REVISIÓN` hasta aceptación manual expresa del usuario.
 
 ## Próximo paso exacto
 
 1. Ejecutar con el usuario `docs/progress/LOC-01_MANUAL_TEST.md` y registrar el resultado observado.
 2. Solo si el usuario acepta la prueba, cambiar LOC-01 de `EN REVISIÓN` a `VALIDADO` en `AGENTS.md`, `CURRENT_STATUS.md`, `ROADMAP.md` y `SESSION_LOG.md` mediante un commit documental separado.
 3. Validar manualmente ITEM-05 (eliminar desde ficha y menú de fila → papelera → restaurar / eliminar definitivo, con el contador y el recuento del sidebar), ITEM-06 (todo «Activos» en la UI) y UX-02 (la ficha abre en «Resumen» y el desplegable de «Activos asociados» se ve completo); también ITEM-04 (duplicar un activo de baja), UX-03 (crear un activo eligiendo ubicación existente y creando una nueva desde el campo «Ubicación»; el alta solo desde la cabecera), UX-04 (las sugerencias de Código/Nombre/Iniciales muestran valores actuales con contexto y rellenan al seleccionar), LOC-02 (tocar un activo del detalle de una ubicación abre su ficha y permite editarlo), DOC-03 (abrir un documento y ver la versión actual incrustada bajo Emisión — PDF, imagen, txt; tocar la vista previa amplía el visor; xlsx/xls muestran el área deshabilitada), DOC-04 (crear un documento con periodicidad trimestral «Según calendario» y ver el vencimiento calculado; subir una nueva versión y comprobar que salta +3 meses desde el vigente; probar «Según subida» — el vencimiento sale de la emisión — y corregir el vencimiento a mano) e IMG-01 (subir una foto desde la ficha y desde el alta de un activo nuevo, cambiarla y quitarla; comprobar que la imagen persiste al recargar y que se purga con el activo) si el usuario lo desea.
-4. Pendientes de roadmap: `CAL-01`, `HIST-01`, `CONF-01`, `DASH-01`, `PROJ-01`, `SHELL-01` y `QA-01` (warning DEP0205 de Node/tsx en las suites).
+4. Pendientes de roadmap: `HIST-01`, `CONF-01`, `DASH-01`, `PROJ-01`, `SHELL-01` y `QA-01` (warning DEP0205 de Node/tsx en las suites).
 
 ## Archivos protegidos
 

@@ -14,8 +14,8 @@
 
 ## Contrato visual RELEASE-01
 
-- El HTML protegido sigue siendo la referencia de Dashboard, Proyectos, Calendario, Ubicaciones e Historial.
-- Activos, Documentos, Planos, Configuración y ficha de activo usan los 15 PNG aprobados en `tests/visual/baselines/release-01/` (3 viewport/tema por superficie).
+- El HTML protegido sigue siendo la referencia de Dashboard, Proyectos, Ubicaciones e Historial. Calendario evolucionó posteriormente por autorización explícita de CAL-01 y conserva el HTML intacto.
+- Activos, Documentos, **Calendario**, Planos, Configuración y ficha de activo usan los 18 PNG aprobados en `tests/visual/baselines/release-01/` (3 viewport/tema por superficie).
 - El umbral sigue fijado en **0,5 %** para todos los pares. Los baselines no se reescriben en una ejecución normal.
 - La aprobación requiere expresamente `APPROVE_EVOLVED_VISUAL_BASELINES=1`. Durante el cierre se corrigieron capturas tomadas antes de terminar la carga: Documentos oscuro 1440×1000 ahora espera el documento canónico `Certificado ITV 2025`; Planos espera la señal nativa de carga completa del visor, el marcador compuesto y dos frames de renderizado antes de capturar las tres variantes. Cada PNG regenerado fue inspeccionado antes de aprobarse.
 

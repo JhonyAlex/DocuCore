@@ -46,9 +46,10 @@ interface AssetModalProps {
   onDocumentsChanged: () => void | Promise<void>
   // IMG-01: la ficha actualiza el activo tras subir/quitar su imagen.
   onImageChanged: (asset: ApiAsset) => void
+  initialPreventiveExecutionId?: number | null
 }
 
-export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged, onImageChanged }: AssetModalProps) {
+export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged, onImageChanged, initialPreventiveExecutionId = null }: AssetModalProps) {
   const [activeTab, setActiveTab] = useState(0)
   const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -75,15 +76,15 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   // UX-02: el modal nunca se desmonta (vive en la vista); al cambiar de activo
   // (o al cerrar y reabrir) siempre arranca en la pestaña «Resumen».
   useEffect(() => {
-    setActiveTab(0)
+    setActiveTab(initialPreventiveExecutionId ? 4 : 0)
     setShowStatusSelector(false)
     setStatusError(null)
     setDeleteError(null)
     setConfirmedAction(null)
     setImagePreviewOpen(false)
     imagePreviewOpenRef.current = false
-    setFocusedPreventiveExecutionId(null)
-  }, [assetId])
+    setFocusedPreventiveExecutionId(initialPreventiveExecutionId)
+  }, [assetId, initialPreventiveExecutionId])
 
   useEffect(() => {
     onCloseRef.current = onClose

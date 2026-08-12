@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { Asset, AssetFilters, Pagination } from '@/types'
 import AssetsFilters from '@/components/AssetsFilters'
 import AssetsTable from '@/components/AssetsTable'
@@ -9,7 +10,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import type { AssetFormValues } from '@/components/AssetFormModal'
 import type { LocationFormValues } from '@/components/LocationFormModal'
-import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImage, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
+import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImage, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
@@ -24,6 +25,7 @@ interface RemovalTarget {
 }
 
 export default function AssetsView() {
+  const [searchParams] = useSearchParams()
   const { createRequested, clearCreateRequest } = useAssetCreateRequest()
   const { session, reload: reloadSession } = useSession()
   const selection = useSelection<number>()
@@ -55,6 +57,9 @@ export default function AssetsView() {
   const [removalError, setRemovalError] = useState<string | null>(null)
   const [removing, setRemoving] = useState(false)
   const latestLoadRequest = useRef(0)
+  const openedDeepLinkRef = useRef<number | null>(null)
+  const deepLinkedAssetId = Number(searchParams.get('assetId'))
+  const deepLinkedPreventiveExecutionId = Number(searchParams.get('preventiveExecutionId'))
 
   const loadAssets = useCallback(async () => {
     const requestId = latestLoadRequest.current + 1
@@ -127,6 +132,12 @@ export default function AssetsView() {
     setFormMode('create')
     clearCreateRequest()
   }, [clearCreateRequest, createRequested])
+
+  useEffect(() => {
+    if (!Number.isInteger(deepLinkedAssetId) || deepLinkedAssetId <= 0 || openedDeepLinkRef.current === deepLinkedAssetId) return
+    openedDeepLinkRef.current = deepLinkedAssetId
+    void fetchAsset(deepLinkedAssetId).then(setSelectedAsset).catch(() => { openedDeepLinkRef.current = null })
+  }, [deepLinkedAssetId])
 
   // Limpiar selección al cambiar filtros, entrar/salir papelera o cambiar de página.
   const handleFilterChange = (next: AssetFilters) => {
@@ -378,7 +389,7 @@ export default function AssetsView() {
         onPageChange={handlePageChange}
         onRetry={() => void loadAssets()}
       />
-      <AssetModal asset={selectedAsset} statuses={statuses} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={handleDelete} onDocumentsChanged={loadAssets} onImageChanged={handleImageChanged} />
+      <AssetModal asset={selectedAsset} statuses={statuses} initialPreventiveExecutionId={selectedAsset?.id === deepLinkedAssetId && Number.isInteger(deepLinkedPreventiveExecutionId) && deepLinkedPreventiveExecutionId > 0 ? deepLinkedPreventiveExecutionId : null} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={handleDelete} onDocumentsChanged={loadAssets} onImageChanged={handleImageChanged} />
       {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
       <ConfirmDialog
         open={removalTarget !== null}

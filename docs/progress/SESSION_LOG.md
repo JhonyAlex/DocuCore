@@ -1,5 +1,21 @@
 # SESSION_LOG — Fase 4
 
+## 2026-08-12 — CAL-01: contrato visual funcional aprobado
+
+- **Autorización explícita**: el usuario autorizó evolucionar exclusivamente el contrato visual de Calendario. El HTML protegido permanece intacto y su SHA-256 sigue siendo `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`; el umbral no cambió de 0,5 %.
+- **Inspección**: se revisaron las tres capturas de Calendario y sus diffs. Rejilla, estructura, dimensiones, espaciados, tipografía, paleta y estilo permanecen; la diferencia frente al HTML era el contenido estático mock frente a eventos reales y los controles de CAL-01. También aparecen las etiquetas globales de Activos ya aprobadas, sin cambios nuevos de diseño.
+- **Baselines acotados**: `calendar-1440x1000-dark.png`, `calendar-1440x1000-light.png` y `calendar-1920x1080-dark.png` se añadieron a `tests/visual/baselines/release-01/`. `calendar` usa `evolvedContract: true` como Activos, Documentos, Planos y Configuración. Ningún otro baseline fue generado o modificado.
+- **Estabilidad**: la primera carga establece `view` y `date` en la URL y lanza una segunda consulta; la prueba espera el botón funcional «Nuevo evento» antes de capturar para no aprobar un estado de carga transitorio.
+- **Resultado**: `pnpm test:visual` **30/30** ✅, los tres pares de Calendario a 0 píxeles. CAL-01 pasa de `BLOQUEADO POR CONTRATO VISUAL` a `COMPLETADO`.
+
+## 2026-08-12 — CAL-01: calendario real, pendiente de decisión de contrato visual
+
+- **Backend común**: `server/lib/calendarDomain.ts` normaliza fecha UTC, estado, categoría e identificadores por fuente; `server/lib/calendarEvents.ts` agrega `Event`, vencimientos de la versión documental vigente, `AssetDateOccurrence` y `PreventiveExecution`. `GET /api/calendar` sirve esa proyección con filtros de rango/proyecto/fuente/estado/activo/búsqueda. La API no depende del reloj del navegador.
+- **Mutaciones y coherencia**: `POST/PATCH/DELETE /api/calendar/events` gestionan solo eventos manuales con validación, pertenencia de activo al proyecto y auditoría; `POST /api/calendar/events/complete` delega al mismo servicio que la ficha del activo. Documentos se acusan por activo, las fechas dinámicas avanzan su ocurrencia y los preventivos exigen sus tareas completadas antes de generar la siguiente ejecución.
+- **UI**: `CalendarView` usa la API, URL `view/date`, vistas Mes/Semana/Día, navegación, leyenda/filtros, detalle por origen y formulario manual. El detalle abre el documento, el activo o el preventivo correcto; el enlace preventivo abre la ficha del activo directamente en la ejecución enfocada. `AssetModal` y su panel de próximos eventos comparten ahora la semántica del dominio de calendario.
+- **Matriz ejecutada**: typecheck ✅, lint ✅, build ✅, 189 unit/API ✅ y 62 E2E ✅ (2 nuevos CAL-01: ciclo manual completo y preventivo incompleto + deep link). Las suites solo emiten el warning conocido `DEP0205` de Node/tsx.
+- **Visual (bloqueante)**: `pnpm test:visual` da 27/30. Calendario falla contra el HTML protegido: 1,7897 % (1440 oscuro), 1,7199 % (1440 claro) y 1,8043 % (1920 oscuro), con límite inmutable de 0,5 %. La referencia conserva ocho chips estáticos de julio; la API expone el estado real de los documentos, preventivos y eventos canónicos. No se tocó HTML, baseline ni umbral, y no se falsearon datos. Cierre pendiente de una decisión explícita sobre baseline funcional de Calendario o cambio coordinado de sus datos/contratos relacionados.
+
 ## 2026-08-10 — PREV (WIP publicado): planes preventivos, calendarios de fecha y catálogo de tareas
 
 - **Publicación del working tree** (petición expresa de commit+push de «lo actual»; el usuario continúa desarrollando — **WIP, sin cerrar módulo ni cambiar estados**). Redesplegado el stack local sin pérdida de datos (la migración es aditiva y conservadora: los DATE existentes pasan a `AssetDateSchedule` con su primera ocurrencia pendiente).

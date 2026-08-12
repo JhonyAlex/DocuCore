@@ -2,17 +2,14 @@ import { useEffect as lifecycleEffect, useState } from 'react'
 import { completeAssetEvent, fetchAssetEventHistory, type ApiAsset, type ApiAssetEventHistory } from '@/lib/api'
 import { formatApiDate } from '@/lib/assetMappers'
 
-const day = () => new Date().toISOString().slice(0, 10)
-
 function status(row: ApiAssetEventHistory): string {
   if (row.completedAt) return `Completado · ${formatApiDate(row.completedDate ?? row.completedAt)}`
-  const difference = Math.floor((Date.parse(row.date) - Date.parse(`${day()}T00:00:00.000Z`)) / 86_400_000)
-  return difference < 0 ? 'Vencido' : difference === 0 ? 'Hoy' : difference <= 21 ? 'Próximo' : 'Pendiente'
+  return ({ overdue: 'Vencido', today: 'Hoy', upcoming: 'Próximo', pending: 'Pendiente', completed: 'Completado' })[row.status]
 }
 
 export default function AssetEventsPanel({ asset, onChanged, onOpenPreventive }: { asset: ApiAsset; onChanged: (asset: ApiAsset) => void; onOpenPreventive: (executionId: number) => void }) {
   const [rows, setRows] = useState<ApiAssetEventHistory[]>([])
-  const [performedDate, setPerformedDate] = useState(day)
+  const [performedDate, setPerformedDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [busy, setBusy] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const load = async () => { try { setRows(await fetchAssetEventHistory(asset.id)) } catch { setError('No se pudo cargar el historial de eventos.') } }

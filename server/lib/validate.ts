@@ -44,6 +44,46 @@ const nullableOptionalPositiveId = z.preprocess((value) => value === 'null' || v
 const optionalDateSchema = z.preprocess((value) => value === '' || value === undefined ? undefined : value, isoDateSchema.optional())
 const nullableOptionalDateSchema = z.preprocess((value) => value === '' ? null : value, isoDateSchema.nullable().optional())
 
+const calendarSourceSchema = z.enum(['event', 'document', 'dynamic-date', 'preventive'])
+const calendarCategorySchema = z.enum(['expiry', 'calibration', 'maintenance', 'review'])
+const calendarStatusSchema = z.enum(['overdue', 'today', 'upcoming', 'pending', 'completed'])
+const optionalQueryText = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((value) => value === '' || value === undefined ? undefined : value, schema.optional())
+const calendarOptionalAssetId = z.preprocess((value) => value === '' || value === undefined ? undefined : value === null || value === 'null' ? null : Number(value), z.number().int().positive().nullable().optional())
+const calendarProjectId = z.preprocess((value) => Number(value), z.number().int().positive())
+
+export const calendarListQuerySchema = z.object({
+  projectId: calendarProjectId,
+  from: optionalQueryText(isoDateSchema),
+  to: optionalQueryText(isoDateSchema),
+  source: optionalQueryText(calendarSourceSchema),
+  status: optionalQueryText(calendarStatusSchema),
+  assetId: optionalPositiveId,
+  search: optionalQueryText(z.string().trim().min(1).max(160)),
+}).strict().refine((value) => !value.from || !value.to || value.from <= value.to, { message: 'from must not be after to', path: ['to'] })
+
+export const calendarCreateEventSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  date: isoDateSchema,
+  category: calendarCategorySchema,
+  assetId: calendarOptionalAssetId,
+  projectId: calendarProjectId,
+}).strict()
+
+export const calendarUpdateEventSchema = z.object({
+  title: z.string().trim().min(1).max(160).optional(),
+  date: isoDateSchema.optional(),
+  category: calendarCategorySchema.optional(),
+  assetId: calendarOptionalAssetId,
+}).strict().refine((value) => Object.keys(value).length > 0, 'At least one value is required')
+
+export const completeCalendarOccurrenceSchema = z.object({
+  source: calendarSourceSchema,
+  sourceId: z.number().int().positive(),
+  assetId: calendarOptionalAssetId,
+  projectId: calendarProjectId,
+  performedDate: isoDateSchema,
+}).strict()
+
 // assetIds viaja como string JSON en FormData (multipart) y como array en JSON.
 function parseAssetIds(value: unknown): unknown {
   if (value === undefined || value === '') return undefined
