@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
 import AssetImageBox, { AssetImageViewer } from '@/components/AssetImageBox'
@@ -9,10 +9,13 @@ import AssetCharacteristics from '@/components/AssetCharacteristics'
 import AssetEventsPanel from '@/components/AssetEventsPanel'
 import AssetPreventivesPanel from '@/components/AssetPreventivesPanel'
 import AssetHistoryPanel from '@/components/AssetHistoryPanel'
-import AssetFloorPlanPreview from '@/components/AssetFloorPlanPreview'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
+
+// El visor de planos incorpora OpenSeadragon; la pestaña solo se monta bajo
+// interacción explícita, por lo que se mantiene fuera del bundle inicial.
+const AssetFloorPlanPreview = lazy(() => import('@/components/AssetFloorPlanPreview'))
 
 const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Preventivos', 'Historial', 'Plano']
 
@@ -372,7 +375,9 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
 
         {activeTab === 6 && (
           <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">
-            <AssetFloorPlanPreview asset={asset} />
+            <Suspense fallback={<p className="text-sm text-slate-500 dark:text-slate-400">Cargando plano…</p>}>
+              <AssetFloorPlanPreview asset={asset} />
+            </Suspense>
           </div>
         )}
 

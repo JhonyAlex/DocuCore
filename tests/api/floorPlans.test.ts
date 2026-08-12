@@ -14,12 +14,13 @@ let image: Buffer
 let createdPlanId: number | null = null
 let highResolutionPlanId: number | null = null
 let secondPlacementPlanId: number | null = null
+const formatPlanIds: number[] = []
 
 async function api(pathname: string, init?: RequestInit): Promise<Response> { return fetch(`${baseUrl}${pathname}`, init) }
-function form(name: string, locationId: number, bytes = image): FormData {
+function form(name: string, locationId: number, bytes = image, mimeType = 'image/png', fileName = 'plano.png'): FormData {
   const data = new FormData()
   data.set('name', name); data.set('projectId', '1'); data.set('locationId', String(locationId))
-  data.append('file', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'plano.png')
+  data.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), fileName)
   return data
 }
 
@@ -40,6 +41,7 @@ afterAll(async () => {
   if (createdPlanId) await api(`/api/floor-plans/${createdPlanId}`, { method: 'DELETE' }).catch(() => undefined)
   if (highResolutionPlanId) await api(`/api/floor-plans/${highResolutionPlanId}`, { method: 'DELETE' }).catch(() => undefined)
   if (secondPlacementPlanId) await api(`/api/floor-plans/${secondPlacementPlanId}`, { method: 'DELETE' }).catch(() => undefined)
+  await Promise.all(formatPlanIds.map((planId) => api(`/api/floor-plans/${planId}`, { method: 'DELETE' }).catch(() => undefined)))
   await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()))
   await rm(storageDir, { recursive: true, force: true })
 })
@@ -66,6 +68,24 @@ describe('floor plan API', () => {
     const tile = await api(`/api/floor-plans/${plan.id}/versions/1/tiles/${level}/0_0.jpeg`)
     expect(tile.status).toBe(200)
     expect(tile.headers.get('content-type')).toContain('image/jpeg')
+  })
+
+  it('accepts JPEG and WebP plan sources', async () => {
+    const locations = await (await api('/api/locations')).json() as { locations: Array<{ id: number; parentId: number | null }> }
+    const root = locations.locations.find((location) => location.parentId === null)!
+    const formats = [
+      { label: 'JPEG', mimeType: 'image/jpeg', fileName: 'plano.jpg', bytes: await sharp(image).jpeg().toBuffer() },
+      { label: 'WebP', mimeType: 'image/webp', fileName: 'plano.webp', bytes: await sharp(image).webp().toBuffer() },
+    ]
+
+    for (const format of formats) {
+      const response = await api('/api/floor-plans', { method: 'POST', body: form(`QA ${format.label} ${Date.now()}`, root.id, format.bytes, format.mimeType, format.fileName) })
+      expect(response.status).toBe(201)
+      const plan = await response.json() as { id: number; currentVersion: { version: number } }
+      formatPlanIds.push(plan.id)
+      expect(plan.currentVersion.version).toBe(1)
+      expect((await api(`/api/floor-plans/${plan.id}/current/image`)).headers.get('content-type')).toContain(format.mimeType)
+    }
   })
 
   it('validates project/location ownership and persists marker CRUD without duplicates', async () => {

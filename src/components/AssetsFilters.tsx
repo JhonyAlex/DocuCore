@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react'
+import type { ChangeEvent } from 'react'
 import type { AssetFilters } from '@/types'
 import type { ApiAssetType, ApiLocation, ApiStatus } from '@/lib/api'
 
@@ -11,10 +11,7 @@ interface AssetsFiltersProps {
 }
 
 export default function AssetsFilters({ filters, types, statuses, locations, onFilterChange }: AssetsFiltersProps) {
-  const [showReferenceChips, setShowReferenceChips] = useState(true)
-
   const applyFilters = (next: AssetFilters) => {
-    setShowReferenceChips(false)
     onFilterChange(next)
   }
 
@@ -66,11 +63,11 @@ export default function AssetsFilters({ filters, types, statuses, locations, onF
         </select>
         <button onClick={clearAll} className="px-3 py-2 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">Limpiar</button>
       </div>
-      {(hasActive || showReferenceChips) && (
+      {hasActive && (
         <div className="flex items-center gap-2 mt-3 text-xs text-slate-500 dark:text-slate-400">
           {filters.search && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Búsqueda: ${filters.search} ×`}</span>}
-          {(activeType || showReferenceChips) && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Tipo: ${activeType?.name ?? 'Máquina'} ×`}</span>}
-          {(activeStatus || showReferenceChips) && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Estado: ${activeStatus?.name ?? 'Activo'} ×`}</span>}
+          {activeType && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Tipo: ${activeType.name} ×`}</span>}
+          {activeStatus && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Estado: ${activeStatus.name} ×`}</span>}
           {activeLocation && <span className="chip bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">{`Ubicación: ${activeLocation.label} ×`}</span>}
           <button onClick={clearAll} className="text-brand-600 hover:text-brand-700 ml-2">Limpiar todos</button>
         </div>

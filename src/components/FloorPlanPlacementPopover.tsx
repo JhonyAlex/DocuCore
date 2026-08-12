@@ -22,8 +22,17 @@ export default function FloorPlanPlacementPopover({ anchor, assets, onChoose, on
       if (rootRef.current?.contains(event.target as Node)) return
       onClose()
     }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onClose()
+    }
     document.addEventListener('pointerdown', closeOutside)
-    return () => document.removeEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
   }, [onClose])
 
   return (

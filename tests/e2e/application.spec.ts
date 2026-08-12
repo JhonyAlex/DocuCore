@@ -111,6 +111,8 @@ test.describe('DocuCore application', () => {
 
     await goToAssets(page)
     await expect(page.getByText('Mostrando 1-6 de 147 resultados')).toBeVisible()
+    await expect(page.getByText('Tipo: Máquina ×', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Estado: Activo ×', { exact: true })).toHaveCount(0)
 
     const nextResponse = page.waitForResponse((response) => response.url().includes('page=2') && response.url().includes('/api/assets?'))
     await page.getByRole('button', { name: 'Siguiente', exact: true }).click()
@@ -123,6 +125,7 @@ test.describe('DocuCore application', () => {
     await filterResponse
     await expect(page.getByText('Mostrando 1-1 de 1 resultados')).toBeVisible()
     await expect(page.getByText('Torno CNC Haas ST-20', { exact: true })).toBeVisible()
+    await expect(page.getByText('Búsqueda: CNC-05 ×', { exact: true })).toBeVisible()
     expect(consoleIssues).toEqual([])
   })
 

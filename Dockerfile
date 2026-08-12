@@ -26,6 +26,8 @@ COPY prisma ./prisma
 RUN pnpm prisma generate
 COPY --from=build /app/dist ./dist
 COPY server ./server
+COPY shared ./shared
+COPY public ./public
 
 EXPOSE 3001
 

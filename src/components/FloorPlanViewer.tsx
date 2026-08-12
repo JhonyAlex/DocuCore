@@ -1,21 +1,17 @@
-import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
+import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react'
 import OpenSeadragon from 'openseadragon'
-import FloorPlanMarker from '@/components/FloorPlanMarker'
 import type { EditableFloorPlanMarker } from '@/hooks/useFloorPlanEditor'
 import { denormalizeImagePoint, normalizeImagePoint, type NormalizedPoint } from '@/lib/floorPlanCoordinates'
+import { destroyFloorPlanOverlay, syncFloorPlanMarkerOverlays, type FloorPlanLatestViewerValues, type FloorPlanOverlay, type FloorPlanOverlayAnchor } from '@/lib/floorPlanOverlays'
 import { lodForZoom, type FloorPlanLod } from '@/lib/floorPlanPresentation'
+
+export type { FloorPlanOverlayAnchor } from '@/lib/floorPlanOverlays'
 
 export interface FloorPlanViewerActions {
   zoomIn: () => void
   zoomOut: () => void
   fit: () => void
   focus: (marker: EditableFloorPlanMarker) => void
-}
-
-export interface FloorPlanOverlayAnchor {
-  x: number
-  y: number
 }
 
 interface FloorPlanViewerProps {
@@ -36,101 +32,34 @@ interface FloorPlanViewerProps {
   className?: string
 }
 
-type Overlay = { element: HTMLDivElement; root: Root; tracker: OpenSeadragon.MouseTracker | null; dragging: boolean }
 const noopReady = (_actions: FloorPlanViewerActions) => undefined
 const noopEmptyQuickClick = (_point: NormalizedPoint, _anchor: FloorPlanOverlayAnchor) => undefined
 const noopSelectMarker = (_marker: EditableFloorPlanMarker, _anchor: FloorPlanOverlayAnchor) => undefined
 const noopMarkerDragStart = (_markerId: number) => undefined
 const noopMarkerDrag = (_markerId: number, _point: NormalizedPoint) => undefined
 const noopMarkerDragEnd = (_markerId: number) => undefined
-type LatestViewerValues = {
-  markers: EditableFloorPlanMarker[]
-  onEmptyQuickClick: (point: NormalizedPoint, anchor: FloorPlanOverlayAnchor) => void
-  onSelectMarker: (marker: EditableFloorPlanMarker, anchor: FloorPlanOverlayAnchor) => void
-  onMarkerDragStart: (markerId: number) => void
-  onMarkerDrag: (markerId: number, point: NormalizedPoint) => void
-  onMarkerDragEnd: (markerId: number) => void
-  readOnly: boolean
-  width: number
-  height: number
+
+function releaseCapturedPointer(element: Element, event: Event) {
+  const pointerEvent = event as PointerEvent
+  if (typeof pointerEvent.pointerId !== 'number' || !element.hasPointerCapture(pointerEvent.pointerId)) return
+  element.releasePointerCapture(pointerEvent.pointerId)
 }
 
-function clientPoint(event: MouseEvent | TouchEvent | PointerEvent): { x: number; y: number } | null {
-  if ('changedTouches' in event && event.changedTouches.length > 0) return { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY }
-  if ('touches' in event && event.touches.length > 0) return { x: event.touches[0].clientX, y: event.touches[0].clientY }
-  return 'clientX' in event ? { x: event.clientX, y: event.clientY } : null
-}
-
-function syncMarkerOverlays({ viewer, overlays, markers, width, height, lod, highlightedAssetId, latest }: {
-  viewer: OpenSeadragon.Viewer
-  overlays: Map<number, Overlay>
-  markers: EditableFloorPlanMarker[]
-  width: number
-  height: number
-  lod: FloorPlanLod
-  highlightedAssetId: number | null
-  latest: MutableRefObject<LatestViewerValues>
-}) {
-  const active = new Set(markers.map((marker) => marker.id))
-  for (const [markerId, overlay] of overlays) {
-    if (!active.has(markerId)) {
-      viewer.removeOverlay(overlay.element)
-      overlay.tracker?.destroy()
-      setTimeout(() => overlay.root.unmount(), 0)
-      overlays.delete(markerId)
+function clearViewerPointerCaptures(viewer: OpenSeadragon.Viewer) {
+  const trackers = [
+    (viewer as OpenSeadragon.Viewer & { innerTracker: OpenSeadragon.MouseTracker }).innerTracker,
+    (viewer as OpenSeadragon.Viewer & { outerTracker: OpenSeadragon.MouseTracker }).outerTracker,
+  ]
+  for (const tracker of trackers) {
+    for (const pointerType of ['mouse', 'touch', 'pen']) {
+      const points = tracker.getActivePointersListByType(pointerType)
+      for (const point of points.asArray()) {
+        if (!point.captured) continue
+        if (tracker.element.hasPointerCapture(point.id)) tracker.element.releasePointerCapture(point.id)
+        point.captured = false
+      }
+      points.captureCount = 0
     }
-  }
-  const pointForEvent = (event: MouseEvent | TouchEvent | PointerEvent, overlay: Overlay, fallback: OpenSeadragon.Point): { point: NormalizedPoint; anchor: FloorPlanOverlayAnchor } => {
-    const hostBox = viewer.element.getBoundingClientRect()
-    const fromClient = clientPoint(event)
-    const client = fromClient ?? { x: overlay.element.getBoundingClientRect().left + fallback.x, y: overlay.element.getBoundingClientRect().top + fallback.y }
-    const viewerPoint = new OpenSeadragon.Point(client.x - hostBox.left, client.y - hostBox.top)
-    const imagePoint = viewer.viewport.viewportToImageCoordinates(viewer.viewport.pointFromPixel(viewerPoint))
-    return { point: normalizeImagePoint(imagePoint.x, imagePoint.y, latest.current.width, latest.current.height), anchor: { x: viewerPoint.x, y: viewerPoint.y } }
-  }
-  for (const marker of markers) {
-    let overlay = overlays.get(marker.id)
-    if (!overlay) {
-      const element = document.createElement('div')
-      element.className = 'floor-plan-overlay'
-      overlay = { element, root: createRoot(element), tracker: null, dragging: false }
-      overlays.set(marker.id, overlay)
-      viewer.addOverlay({ element, location: new OpenSeadragon.Point(0, 0), placement: OpenSeadragon.Placement.BOTTOM })
-    }
-    if (!overlay.tracker) {
-      const currentOverlay = overlay
-      currentOverlay.tracker = new OpenSeadragon.MouseTracker({
-        element: currentOverlay.element,
-        preProcessEventHandler: (event) => { event.stopPropagation = true },
-        clickHandler: (event) => {
-          if (!event.quick || currentOverlay.dragging) return
-          const current = latest.current.markers.find((candidate) => candidate.id === marker.id)
-          if (!current) return
-          const interaction = pointForEvent(event.originalEvent, currentOverlay, event.position)
-          latest.current.onSelectMarker(current, interaction.anchor)
-        },
-        dragHandler: (event) => {
-          if (latest.current.readOnly) return
-          const current = latest.current.markers.find((candidate) => candidate.id === marker.id)
-          if (!current) return
-          if (!currentOverlay.dragging) {
-            currentOverlay.dragging = true
-            latest.current.onMarkerDragStart(marker.id)
-          }
-          latest.current.onMarkerDrag(marker.id, pointForEvent(event.originalEvent, currentOverlay, event.position).point)
-        },
-        dragEndHandler: (event) => {
-          if (latest.current.readOnly) return
-          if (!currentOverlay.dragging) return
-          latest.current.onMarkerDrag(marker.id, pointForEvent(event.originalEvent, currentOverlay, event.position).point)
-          currentOverlay.dragging = false
-          latest.current.onMarkerDragEnd(marker.id)
-        },
-      })
-    }
-    const point = denormalizeImagePoint(marker, width, height)
-    viewer.updateOverlay(overlay.element, viewer.viewport.imageToViewportCoordinates(point.x, point.y), OpenSeadragon.Placement.BOTTOM)
-    overlay.root.render(<FloorPlanMarker marker={marker} lod={lod} highlighted={marker.assetId === highlightedAssetId} onSelect={() => latest.current.onSelectMarker(marker, { x: 24, y: 24 })} />)
   }
 }
 
@@ -140,15 +69,22 @@ export default function FloorPlanViewer({ dziUrl, width, height, markers, action
   const homeZoomRef = useRef(1)
   const relativeZoomRef = useRef(1)
   const suppressZoomSyncRef = useRef(false)
-  const overlaysRef = useRef(new Map<number, Overlay>())
+  const overlaysRef = useRef(new Map<number, FloorPlanOverlay>())
   const initialFocusMarkerRef = useRef(initialFocusMarker)
+  const isMountedRef = useRef(false)
   const [ready, setReady] = useState(false)
+  const [fullyLoaded, setFullyLoaded] = useState(false)
   const [lod, setLod] = useState<FloorPlanLod>('dot')
-  const latest = useRef({ markers, onEmptyQuickClick, onSelectMarker, onMarkerDragStart, onMarkerDrag, onMarkerDragEnd, readOnly, width, height })
+  const latest = useRef<FloorPlanLatestViewerValues>({ markers, onEmptyQuickClick, onSelectMarker, onMarkerDragStart, onMarkerDrag, onMarkerDragEnd, readOnly, width, height })
   latest.current = { markers, onEmptyQuickClick, onSelectMarker, onMarkerDragStart, onMarkerDrag, onMarkerDragEnd, readOnly, width, height }
   // Los callers suelen reconstruir el marcador al actualizar su estado. La
   // instancia OSD no debe reiniciarse por ese cambio de identidad.
   initialFocusMarkerRef.current = initialFocusMarker
+
+  useLayoutEffect(() => {
+    isMountedRef.current = true
+    return () => { isMountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     const host = hostRef.current
@@ -165,8 +101,10 @@ export default function FloorPlanViewer({ dziUrl, width, height, markers, action
       gestureSettingsTouch: { pinchToZoom: true, flickEnabled: true, dragToPan: true },
     })
     setReady(false)
+    setFullyLoaded(false)
     viewerRef.current = viewer
-    const overlays = overlaysRef.current
+    const overlays = new Map<number, FloorPlanOverlay>()
+    overlaysRef.current = overlays
     const focus = (marker: EditableFloorPlanMarker) => {
       suppressZoomSyncRef.current = true
       relativeZoomRef.current = 2.6
@@ -190,6 +128,9 @@ export default function FloorPlanViewer({ dziUrl, width, height, markers, action
       actionsRef.current = actions
       onReady(actions)
       if (initialFocusMarkerRef.current) focus(initialFocusMarkerRef.current)
+      viewer.whenFullyLoaded(() => {
+        if (viewerRef.current === viewer && isMountedRef.current) setFullyLoaded(true)
+      })
     })
     viewer.addHandler('zoom', () => {
       if (suppressZoomSyncRef.current) return
@@ -200,20 +141,44 @@ export default function FloorPlanViewer({ dziUrl, width, height, markers, action
       const imagePoint = viewer.viewport.viewportToImageCoordinates(viewer.viewport.pointFromPixel(event.position))
       latest.current.onEmptyQuickClick(normalizeImagePoint(imagePoint.x, imagePoint.y, latest.current.width, latest.current.height), { x: event.position.x, y: event.position.y })
     })
+    viewer.addHandler('canvas-release', (event) => {
+      window.setTimeout(() => releaseCapturedPointer(event.tracker.element, event.originalEvent as Event), 0)
+    })
     return () => {
       actionsRef.current = null
-      for (const overlay of overlays.values()) { overlay.tracker?.destroy(); setTimeout(() => overlay.root.unmount(), 0) }
-      overlays.clear()
-      viewer.destroy()
       viewerRef.current = null
+      const dispose = () => {
+        for (const overlay of overlays.values()) destroyFloorPlanOverlay(overlay)
+        overlays.clear()
+        if (!viewer.isDestroyed()) {
+          clearViewerPointerCaptures(viewer)
+          viewer.destroy()
+        }
+      }
+      if (isMountedRef.current) {
+        dispose()
+        return
+      }
+      const destroyAfterRender = () => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            dispose()
+          })
+        })
+      }
+      // OSD invalidates a tiled image during destroy. When the component is
+      // leaving the route, wait for in-flight tiles before that invalidation so
+      // they cannot complete against a reset cache, then let its render loop
+      // settle before releasing the instance.
+      viewer.whenFullyLoaded(destroyAfterRender)
     }
   }, [actionsRef, dziUrl, onReady])
 
   useEffect(() => {
     const viewer = viewerRef.current
     if (!viewer || !viewer.world.getItemCount()) return
-    syncMarkerOverlays({ viewer, overlays: overlaysRef.current, markers, width, height, lod, highlightedAssetId, latest })
+    syncFloorPlanMarkerOverlays({ viewer, overlays: overlaysRef.current, markers, width, height, lod, highlightedAssetId, latest })
   }, [height, highlightedAssetId, lod, markers, ready, width])
 
-  return <div ref={hostRef} data-testid="floor-plan-viewer" className={`relative h-[600px] bg-slate-100 dark:bg-slate-950 ${className ?? ''}`} />
+  return <div ref={hostRef} data-testid="floor-plan-viewer" data-floor-plan-loaded={fullyLoaded ? 'true' : 'false'} className={`relative h-[600px] bg-slate-100 dark:bg-slate-950 ${className ?? ''}`} />
 }

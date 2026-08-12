@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client'
 import { StorageMarkerError, cleanDocumentStorage, storeDocumentBuffer } from './lib/documentStorage'
 import { FloorPlanStorageError, cleanFloorPlanStorage, storeFloorPlanBuffer } from './lib/floorPlanStorage'
 import { fieldKey } from './lib/dynamicFields'
+import { createSeedPdfBuffer } from './lib/seedPdf'
 
 const prisma = new PrismaClient()
 
@@ -452,10 +453,11 @@ async function main(): Promise<void> {
       },
     })
     if (document.previous) {
-      const storageKey = await storeDocumentBuffer(Buffer.from(document.previous.content), 'application/pdf')
-      await prisma.documentVersion.create({ data: { documentId: logicalDocument.id, version: 1, originalName: document.previous.fileName, storageKey, mimeType: 'application/pdf', sizeBytes: Buffer.byteLength(document.previous.content), issueDate: isoFromEu(document.previous.issueDate), expiryDate: document.previous.expiryDate ? isoFromEu(document.previous.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:01') } })
+      const previousContent = createSeedPdfBuffer(document.previous.content)
+      const storageKey = await storeDocumentBuffer(previousContent, 'application/pdf')
+      await prisma.documentVersion.create({ data: { documentId: logicalDocument.id, version: 1, originalName: document.previous.fileName, storageKey, mimeType: 'application/pdf', sizeBytes: previousContent.length, issueDate: isoFromEu(document.previous.issueDate), expiryDate: document.previous.expiryDate ? isoFromEu(document.previous.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:01') } })
     }
-    const content = Buffer.alloc(document.sizeBytes, document.content)
+    const content = createSeedPdfBuffer(document.content, document.sizeBytes)
     const storageKey = await storeDocumentBuffer(content, 'application/pdf')
     await prisma.documentVersion.create({ data: { documentId: logicalDocument.id, version: document.previous ? 2 : 1, originalName: document.fileName, storageKey, mimeType: 'application/pdf', sizeBytes: content.length, issueDate: isoFromEu(document.issueDate), expiryDate: document.expiryDate ? isoFromEu(document.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })
   }
@@ -468,9 +470,9 @@ async function main(): Promise<void> {
   for (const group of expiryGroups) {
     for (let index = 0; index < group.count; index += 1) {
       const document = await prisma.document.create({ data: { name: `Documento canónico ${group.expiryDate ?? 'vigente'} ${index + 1}`, type: 'Archivo', createdAt: isoFromEu('01/01/2025'), updatedAt: isoFromEu('01/01/2025'), project: { connect: { code: PROJECT_CODE } } } })
-      const content = `CANONICAL-${group.expiryDate ?? 'CURRENT'}-${index + 1}`
-      const storageKey = await storeDocumentBuffer(Buffer.from(content), 'application/pdf')
-      await prisma.documentVersion.create({ data: { documentId: document.id, version: 1, originalName: `canonico-${document.id}.pdf`, storageKey, mimeType: 'application/pdf', sizeBytes: Buffer.byteLength(content), issueDate: isoFromEu('01/01/2026'), expiryDate: group.expiryDate ? isoFromEu(group.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })
+      const content = createSeedPdfBuffer(`CANONICAL-${group.expiryDate ?? 'CURRENT'}-${index + 1}`)
+      const storageKey = await storeDocumentBuffer(content, 'application/pdf')
+      await prisma.documentVersion.create({ data: { documentId: document.id, version: 1, originalName: `canonico-${document.id}.pdf`, storageKey, mimeType: 'application/pdf', sizeBytes: content.length, issueDate: isoFromEu('01/01/2026'), expiryDate: group.expiryDate ? isoFromEu(group.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })
     }
   }
 

@@ -70,6 +70,10 @@ test.describe.serial('floor plans', () => {
     await viewer.click({ position: { x: 360, y: 350 } })
     const placement = page.getByRole('dialog', { name: 'Añadir activo aquí' })
     await expect(placement).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(placement).toBeHidden()
+    await viewer.click({ position: { x: 360, y: 350 } })
+    await expect(placement).toBeVisible()
     await placement.getByLabel('Buscar activo para colocar').fill(asset.name)
     const createMarkerResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/floor-plans/${planId}/markers`))
     await placement.getByRole('button').filter({ hasText: asset.code }).click()
@@ -100,7 +104,8 @@ test.describe.serial('floor plans', () => {
     await expect(markerPopover).toContainText(asset.code)
     await expect(markerPopover).toContainText(asset.type.name)
     await expect(markerPopover).toContainText('Arrastra el marcador directamente para moverlo.')
-    await markerPopover.getByRole('button', { name: 'Cerrar activo del plano' }).click()
+    await page.keyboard.press('Escape')
+    await expect(markerPopover).toBeHidden()
 
     const before = await (await page.request.get(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ id: number; x: number; y: number }> }
     const initial = before.markers.find((item) => item.id > 0)!
