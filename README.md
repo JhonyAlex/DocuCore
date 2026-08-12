@@ -61,7 +61,9 @@ Los flujos Playwright arrancan la API, Vite y un servidor de solo lectura del HT
 
 `pnpm test:visual` captura Dashboard, Projects, Items, Documents, Calendar, Plans, Locations, History, Config y el modal de activo en `1440x1000` oscuro, `1440x1000` claro y `1920x1080` oscuro.
 
-Las capturas de aplicación, referencia y diff se escriben en `test-results/visual/`, directorio ignorado por Git. `pixelmatch` falla si más de `0.5%` de los píxeles difiere: es un umbral deliberadamente estricto para detectar rediseños visibles, no una aprobación automática de baselines.
+Las capturas de aplicación, referencia/baseline y diff se escriben en `test-results/visual/`, directorio ignorado por Git. `pixelmatch` falla si más de `0.5%` de los píxeles difiere: es un umbral deliberadamente estricto para detectar rediseños visibles.
+
+Dashboard, Proyectos, Calendario, Ubicaciones e Historial se comparan con el HTML protegido. Las evoluciones funcionales aprobadas de Activos, Documentos, Planos, Configuración y ficha de activo se comparan con los baselines versionados de `tests/visual/baselines/release-01/`. Esos baselines no se actualizan durante una ejecución normal: solo se regeneran tras inspección explícita con `APPROVE_EVOLVED_VISUAL_BASELINES=1` (en PowerShell: `$env:APPROVE_EVOLVED_VISUAL_BASELINES='1'; pnpm test:visual; Remove-Item Env:APPROVE_EVOLVED_VISUAL_BASELINES`).
 
 ## Producción Docker
 
@@ -90,7 +92,7 @@ Compose conserva las versiones en el volumen independiente `document_data`. Play
 
 ## Referencia y activos
 
-`docs/reference/docucore-prototype.html` es un contrato visual protegido. No se edita ni se reemplaza. Las pruebas visuales lo sirven como archivo original de solo lectura. Los assets de la aplicación viven en `public/`.
+`docs/reference/docucore-prototype.html` es un contrato visual protegido. No se edita ni se reemplaza. Las pruebas visuales lo sirven como archivo original de solo lectura para las superficies sin evolución aprobada; los assets de la aplicación viven en `public/`.
 
 ## Dokploy
 
@@ -98,4 +100,4 @@ Consulta `docs/deployment/DOKPLOY.md` para el procedimiento de Compose y las var
 
 ## Aviso conocido
 
-Vite informa que el bundle de producción supera 500 kB. No bloquea el build actual; queda pendiente evaluar code splitting sin alterar la fidelidad visual aprobada.
+En runners locales de pruebas puede aparecer `DEP0205` de Node sobre `module.register()`. No se observa en la aplicación Docker ni en la consola de la UI; debe revisarse al actualizar Node/tsx.

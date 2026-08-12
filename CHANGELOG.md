@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Release
+
+- **RELEASE-01**: se aprueba y versiona el contrato visual actual sin tocar el HTML protegido ni elevar el umbral de `pixelmatch` (0,5 %). Dashboard, Proyectos, Calendario, Ubicaciones e Historial continúan contra el HTML; Activos, Documentos, Planos, Configuración y ficha de activo usan los 15 baselines inspeccionados de `tests/visual/baselines/release-01/`.
+
 ### Added
 
 - **Coherencia de ficha de activo (ASSET-COHERENCE-01)**: las características se editan junto con el resto del activo desde el único formulario global; el Resumen consume solo ocurrencias derivadas (evento, documento, fecha dinámica o preventivo), los documentos asociados exponen «Ver» además de «Descargar», Eventos redirige los preventivos a su ejecución enfocada y la pestaña Historial muestra la auditoría propia del activo. Preventivos incorpora «Completar todas las tareas» con confirmación y una única operación transaccional; completar la ejecución permanece separado para registrar la realización y generar la siguiente ocurrencia.
@@ -60,6 +64,8 @@
 
 ### Fixed
 
+- **Estabilización de runtime y Planos**: la imagen Docker de producción incluye `shared/` y `public/`; el seed genera PDF válidos; los popovers de colocación y marcador cierran con Escape; los chips de Activos reflejan únicamente filtros reales; la API cubre explícitamente fuentes de plano JPEG/WebP; y OpenSeadragon libera teselas y capturas Pointer pendientes sin avisos al navegar, recargar o retirar marcadores.
+- **Carga inicial**: las vistas, OpenSeadragon y el catálogo de iconos se cargan bajo demanda; el bundle de entrada deja de superar 500 kB.
 - Los contratos de cliente de Documentos y sugerencias de activos vuelven a consumir las respuestas reales `data` y `values`; los listados y el picker de sugerencias ya no quedan vacíos. La traducción de errores de escritura usa el `status` HTTP preservado por el cliente, por lo que los conflictos de código/serie muestran su mensaje específico.
 - La vista previa de PDF ya no conserva la posición de scroll entre la vista incrustada y el visor ampliado, ni muestra la barra de navegación del visor del navegador: el PDF se renderiza con pdf.js en canvas propios (`PdfPreview`), siempre desde la primera página (el scroll es del contenedor propio y cada apertura arranca en 0). El fichero se comparte sin volver a pedirlo; pdf.js se carga en un chunk aparte solo al abrir un PDF.
 - El menú de acciones de Activos se renderiza fuera del contenedor desplazable de la tabla para evitar recortes y barras de desplazamiento al abrirlo.

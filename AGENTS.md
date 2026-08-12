@@ -2,7 +2,7 @@
 
 ## Propósito
 
-DocuCore es una plataforma de gestión documental y de activos industriales. Convierte un prototipo HTML aprobado en una aplicación real: React + TypeScript + PostgreSQL + Docker, con fidelidad visual total al diseño original.
+DocuCore es una plataforma de gestión documental y de activos industriales. Convierte un prototipo HTML aprobado en una aplicación real: React + TypeScript + PostgreSQL + Docker, con un contrato visual protegido y baselines versionados para evoluciones funcionales aprobadas.
 
 ## Regla temporal de desarrollo pre-release
 
@@ -18,9 +18,9 @@ DocuCore es una plataforma de gestión documental y de activos industriales. Con
 
 > Ningún agente puede rediseñar, reinterpretar, simplificar o sustituir la interfaz del HTML de referencia sin autorización expresa del usuario.
 
-> Antes de modificar una vista se debe abrir el HTML de referencia. Después de modificarla se debe ejecutar su comparación visual.
+> Antes de modificar una vista se debe revisar el contrato que le aplique: HTML protegido o baseline aprobado. Después de modificarla se debe ejecutar su comparación visual.
 
-El HTML de referencia es un **contrato visual**. No es una inspiración. La aplicación debe verse como un espejo del HTML original.
+El HTML de referencia es un **contrato visual protegido**, no una inspiración. Dashboard, Proyectos, Calendario, Ubicaciones e Historial se comparan directamente contra él. Las evoluciones funcionales aprobadas de Activos, Documentos, Planos, Configuración y ficha de activo se comparan contra los baselines versionados de `tests/visual/baselines/release-01/`. En ambos casos el umbral es fijo: **0,5 %**. No se modifican el HTML, el umbral ni los baselines sin inspección y aprobación explícitas.
 
 ## Referencia
 
@@ -115,9 +115,9 @@ docker compose up    # Levantar todo (DB + app)
 **Fase 2 — Réplica visual completa**: COMPLETADA
 
 - ✅ Shell: Sidebar + Topbar + Layout + ThemeToggle
-- ✅ 9 vistas implementadas con datos mock
+- ✅ 9 vistas replicadas; las superficies operativas se conectaron después a API y PostgreSQL
 - ✅ Tipos centralizados en `src/types/index.ts`
-- ✅ Datos mock centralizados en `src/data/mock.ts`
+- ✅ Datos demostrativos centralizados para las superficies aún no conectadas
 - ✅ Navegación con React Router v6
 - ✅ Modal de activo funcional (6 pestañas)
 - ✅ Calendario visual (grid mensual)
@@ -148,7 +148,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ Playwright E2E: navegación, tema, modal, filtros/paginación, CRUD y consola
 - ✅ Dockerfile, Compose de aplicación, migraciones al inicio y healthchecks
 - ✅ README, Dokploy, changelog y documentación operativa
-- ✅ Regresión visual: 30 de 30 pares bajo el umbral explícito de 0.5% (máximo: Activos 1440 × 1000 oscuro, 0.3238%)
+- ✅ Regresión visual RELEASE-01: 30 de 30 pares bajo el umbral explícito de 0,5 %; HTML protegido para superficies sin evolución y baselines aprobados para las 15 capturas funcionales evolucionadas
 
 **DOC-01 — Documentos funcionales**: FUNCIONAL
 
@@ -157,7 +157,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ API multipart con versiones, metadatos/relación, descargas y auditoría
 - ✅ Vista Documentos + ficha de activo conectadas a relaciones reales
 - ✅ E2E de subida, versiones, descarga por bytes, persistencia y actualización/retiro de evento derivado
-- ⏳ Regresión visual pendiente: `documents` (3 objetivos) mantiene el desfase contra el HTML de referencia; no se ha elevado el umbral de 0,5% ni modificado baselines
+- ✅ Contrato visual RELEASE-01 aprobado para los tres objetivos de Documentos; conserva la comprobación pixel a pixel con umbral 0,5 % frente al baseline versionado
 
 **DOC-02 — Documentos multi-activo y gestión**: FUNCIONAL
 
@@ -167,7 +167,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ «Gestionar documento»: campo único **«Activos asociados»** con `SearchableMultiPicker` (chips con «×», búsqueda con debounce y check en opciones), precargado con los del documento; «Vincular documento» desde la ficha del activo **añade** vínculo sin reasignar
 - ✅ **Un único control de versión**: desaparece el campo «Nueva versión» del grid; el botón «Subir nueva versión» (label con input oculto) sube la versión al elegir el fichero, con las fechas actuales del formulario
 - ✅ La fila completa de la tabla de Documentos abre «Gestionar documento» (columna «Activos asociados» con `COD · Nombre`); el tamaño de archivo usa el helper unificado `formatDocumentSize` (B/KB/MB, como el HTML: «840 KB», «2.4 MB») en la lista y en la ficha del activo — nunca «0 MB»
-- ✅ Validación: lint ✅, typecheck ✅, 66 unit/API ✅ y 32 E2E ✅ (incluye test nuevo: documento con 2 activos, apertura por fila y desvinculación parcial). Visual: `documents` 1440×1000 oscuro 1,9719 %, claro 1,4077 %, 1920×1080 oscuro 0,7283 % — desfase esperado por el header «Activos asociados» y el formato KB/MB, pedido expresamente por el usuario; sin elevación de umbral ni cambios de baseline
+- ✅ La evolución visual de Documentos (multi-activo, periodicidad, selección y acciones) está cubierta por el baseline RELEASE-01, sin elevar el umbral de 0,5 %
 
 **DOC-03 — Vista previa de documentos y formatos de imagen**: FUNCIONAL
 
@@ -194,7 +194,7 @@ docker compose up    # Levantar todo (DB + app)
 
 - ✅ Todos los modales (`AssetModal`, `AssetFormModal`, `DocumentModal`, `LocationFormModal`, diálogo «Vincular documento») anclados al borde superior (`items-start` + `overflow-y-auto`): el modal cambia de tamaño al navegar entre pestañas sin «bailar»; el borde superior permanece fijo
 - ✅ El campo «Estado» de la ficha del activo abre **inmediatamente** el menú de opciones (listbox con check en el estado actual, `fade-in`, cierre por click fuera y al seleccionar) con chevron ▾ rotatorio como indicación; sin controles intermedios
-- ✅ Validación: lint/typecheck/76 unit/36 E2E en verde; visual: `item-modal` (2,6212 % / 13,7055 % / 1,8212 %) en desfase por el anclaje y el chevron (cambio pedido por el usuario; el HTML de referencia centra el modal)
+- ✅ La ficha anclada y el selector directo de estado forman parte del baseline RELEASE-01 con umbral visual de 0,5 %
 
 **ITEM-05 — Papelera de activos (soft delete 30 días)**: FUNCIONAL
 
@@ -209,7 +209,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ El término «ítem» desaparece de todo el proyecto: vista **«Activos»** (nav, breadcrumb y heading), «Nuevo activo», labels y mensajes; `/api/items` → `/api/assets`, `/api/item-types` → `/api/asset-types`; documentos usan `assetIds`/`assetId`
 - ✅ Prisma: `Item` → `Asset`, `ItemType` → `AssetType`, `itemId` → `assetId` (DocumentItem, Event, FloorPlanMarker) y `itemTypeId` → `assetTypeId`; migraciones nuevas `20260810110000_rename_item_to_asset` / `20260810130000_rename_item_constraints` con RENAME (conservan datos); `prisma migrate diff` limpio
 - ✅ Frontend renombrado: `AssetsView/Table/Filters/Modal/FormModal`, `assetMappers`, `AssetCreateContext`, tipos `Asset`/`ApiAsset`, ruta `/assets` (redirect de `/items`), ids `#asset-*`; mock, seed y reset-manual-test en «Activo»
-- ✅ Validación: lint/typecheck/76 unit/36 E2E en verde; visual: `items` (0,6413 % / 0,5421 %; 1920×1080 oscuro ✅) y `config` (1,2809 % / 0,9477 %; 1920×1080 oscuro ✅) en desfase por el heading «Activos», el botón «Papelera» y «Tipos de activo» — cambios pedidos por el usuario
+- ✅ Activos y Configuración forman parte del baseline RELEASE-01, que recoge su terminología y controles funcionales aprobados
 
 **UX-02 — Modales: pestaña Resumen y desplegables completos**: FUNCIONAL
 
@@ -244,7 +244,7 @@ docker compose up    # Levantar todo (DB + app)
 - ✅ API: `POST /api/assets/:id/image` (multipart, campo `image`, solo PNG/JPEG/WebP/GIF, máx. 10 MB) sube o **reemplaza** — guarda la nueva primero y borra la anterior solo tras el éxito, con rollback del fichero si la BD falla (patrón documentos); `DELETE /api/assets/:id/image` la quita; `GET /api/assets/:id/image` la sirve inline con el MIME almacenado y `Cache-Control: private`. Auditoría en subida/eliminación; la **purga** (manual o perezosa) borra el fichero con el activo (sin huérfanos); papelera e inexistentes → 404; `withDerivedEvents` expone `imageUrl` (derivado) + MIME + tamaño, nunca `imageStorageKey`; POST/PUT de activos siguen siendo JSON puro (`.strict()` intacto)
 - ✅ Ficha (`AssetModal`): el cuadro `aspect-square` (idéntico al HTML en reposo) muestra la foto con `AssetImageBox` (`src/components/AssetImageBox.tsx`) — «Subir foto»/«Cambiar foto»/«Quitar» desde el hover, subida inmediata al elegir el fichero, spinner y error visibles; los padres refrescan con `onImageChanged` (`AssetsView` actualiza ficha + lista; `useAssetFicha.replaceAsset` para Ubicaciones)
 - ✅ Alta/edición (`AssetFormModal`): `AssetImagePicker` con preview local (blob) o imagen actual en edición; el fichero se sube **al guardar** (`onSubmit(values, imageFile)` → `createAsset`/`updateAsset` + `uploadAssetImage`); si la subida falla tras crear/actualizar, el error lo dice y la imagen queda subible desde la ficha; el duplicado no hereda la imagen (ITEM-04)
-- ✅ Validación: lint/typecheck/137 unit/API ✅ (9 API nuevos en `tests/api/assets.image.test.ts`: subida, reemplazo sin huérfanos, MIME/tamaño/sin fichero → 400, papelera → 404, GET inline, DELETE, purge limpia fichero, serialización sin storageKey) y 52 E2E ✅ (2 nuevos en `z-asset-image.spec.ts`: alta desde cero con imagen elegida en el form → ficha con `<img src=/api/assets/:id/image>`; subir/cambiar/quitar desde la ficha por UI). Visual aislado: el cuadro sin imagen pinta **0 píxeles** de diferencia (14,0002 % de `item-modal` idéntico con y sin `AssetImageBox`); `items`/`item-modal` mantienen la banda de desfase preexistente + variación ambiental del día
+- ✅ La ficha y Activos quedan cubiertos por el baseline RELEASE-01; el componente conserva el placeholder del contrato cuando no hay imagen
 
 **LOC-01 — Ubicaciones funcionales**: EN REVISIÓN (correcciones de integridad aplicadas; pendiente de validación final del usuario)
 
@@ -265,9 +265,9 @@ docker compose up    # Levantar todo (DB + app)
 | Panel general (dashboard) | Implementada (mock) | Visual (3 objetivos) |
 | Proyectos | Implementada (mock) | Visual (3 objetivos) |
 | Activos | Implementada (PostgreSQL + papelera) | Visual + E2E |
-| Documentos | Implementada (PostgreSQL + almacenamiento local, multi-activo) | E2E; visual pendiente |
+| Documentos | Implementada (PostgreSQL + almacenamiento local, multi-activo) | E2E + visual RELEASE-01 |
 | Calendario | Implementada (mock) | Visual (3 objetivos) |
-| Planos | Implementada (mock) | Visual (3 objetivos) |
+| Planos | Implementada (FloorPlan/FloorPlanVersion + DZI) | E2E + visual RELEASE-01 |
 | Ubicaciones | Implementada (PostgreSQL, jerarquía + CRUD) | Visual (3 objetivos) + E2E |
 | Historial | Implementada (mock) | Visual (3 objetivos) |
 | Configuración | Implementada (mock) | Visual (3 objetivos) |
@@ -285,24 +285,24 @@ docker compose up    # Levantar todo (DB + app)
 | Imagen del activo (ficha + alta, storage gestionado) | Implementado y verificado E2E |
 | Ubicaciones → PostgreSQL (jerarquía + CRUD + asignación) | Implementado y verificado E2E |
 | Docker | Producción validada (app + PostgreSQL) |
+| Planos → PostgreSQL + storage gestionado | Versiones, DZI/OpenSeadragon, PDF local, marcadores normalizados, capas/filtros/búsqueda/alertas y navegación Activo ↔ Plano |
+| Tipos de activo | `AssetType.iconKey` y catálogo industrial compartido por activos y marcadores |
+| Preventivos | `AssetPreventivePlan` como fuente de verdad, independiente de campos dinámicos |
 
 ## Errores conocidos
 
-Aviso no bloqueante: Vite informa que el bundle de producción supera 500 kB; evaluar code splitting en una mejora posterior.
+El build ya no emite el aviso de chunk de aplicación superior a 500 kB: las rutas pesadas, OpenSeadragon y el selector de iconos se cargan bajo demanda. En runners locales de pruebas queda el aviso deprecado `DEP0205` de Node sobre `module.register()`; no aparece en la aplicación Docker ni en la consola de la UI y debe revisarse al actualizar Node/tsx.
 
-Regresión visual: `pnpm test:visual` registra 19/30 con exit code 1; `locations` está 3/3 en verde (máx. 0,069236%). Fallan contra el HTML de referencia, todos por cambios pedidos expresamente por el usuario: `documents` (3 objetivos: 2,4638 % / 1,6337 % / 1,5681 % — header «Activos asociados», formato B/KB/MB, columna checkbox y menú ⋯ de acciones, DOC-02/BULK-01), `item-modal` (3 objetivos en la ejecución del 2026-08-10 con IMG-01: 2,8465 % / 14,0002 % / 1,9496 % — modal anclado arriba y chevron de estado, UX-01; la subida frente al histórico 2,6212 % / 13,7055 % / 1,8212 % quedó aislada como variación ambiental del día: 14,0002 % idéntico con y sin `AssetImageBox`, que pinta 0 píxeles en reposo), `items` (3 objetivos: 0,8442 % / 0,7419 % / 0,5783 % — heading «Activos», botón «Papelera», ausencia del botón «Nuevo activo» de la vista y header de UX-03; los +0,20 de los dos primeros frente al histórico son variación ambiental del día — la vista en reposo no renderiza la imagen — y el 1920×1080 oscuro sigue exactamente en 0,5783 % preexistente de UX-03, verificado con stash) y `config` (2 objetivos: 1,2809 % / 0,9477 %; 1920×1080 oscuro ✅ — «Tipos de activo», ITEM-06). No se ha elevado el umbral de 0,5% ni modificado baselines.
+## Estado de release
 
-## Último commit estable
-
-El trabajo pendiente del working tree se publicó en `main` el 2026-08-10 (HEAD de trabajo: `44c89ee`; commit documental posterior): **confirmación de acciones destructivas y de baja** — dar de baja, eliminar (ficha/fila/papelera/masivo), quitar foto, descartar selección de imagen, quitar asociación de documento y eliminar ubicación pasan por `AssetActionConfirmDialog`/`ConfirmDialog` con estado ocupado y Escape por capas (no cierra el modal padre) — y **vista previa de PDF con pdf.js** (`PdfPreview`, canvas propios: sin la barra de navegación del visor nativo y siempre desde la primera página; chunk aparte con su worker). El working tree queda limpio. Los módulos previos (ITEM-04, DOC-02, UX-01, ITEM-05, ITEM-06, UX-02, UX-03, UX-04, LOC-02, DOC-03, DOC-04, IMG-01) ya estaban publicados en `main` antes de esta tanda. Continúan pendientes las validaciones manuales del usuario (LOC-01 sigue EN REVISIÓN; los módulos publicados esperan aceptación manual) y la decisión sobre el desfase visual de `documents`/`item-modal`/`items`/`config`. No cambiar ningún estado a VALIDADO sin confirmación expresa del usuario.
+RELEASE-01 aprobó y versionó el contrato visual actual: 15 objetivos siguen el HTML protegido y 15 evoluciones funcionales usan baselines inspeccionados de `tests/visual/baselines/release-01/`, todos al 0,5 %. Los módulos operativos de Planos y Preventivos están integrados en la arquitectura real. LOC-01 continúa `EN REVISIÓN` hasta aceptación manual expresa del usuario.
 
 ## Próximo paso exacto
 
 1. Ejecutar con el usuario `docs/progress/LOC-01_MANUAL_TEST.md` y registrar el resultado observado.
 2. Solo si el usuario acepta la prueba, cambiar LOC-01 de `EN REVISIÓN` a `VALIDADO` en `AGENTS.md`, `CURRENT_STATUS.md`, `ROADMAP.md` y `SESSION_LOG.md` mediante un commit documental separado.
 3. Validar manualmente ITEM-05 (eliminar desde ficha y menú de fila → papelera → restaurar / eliminar definitivo, con el contador y el recuento del sidebar), ITEM-06 (todo «Activos» en la UI) y UX-02 (la ficha abre en «Resumen» y el desplegable de «Activos asociados» se ve completo); también ITEM-04 (duplicar un activo de baja), UX-03 (crear un activo eligiendo ubicación existente y creando una nueva desde el campo «Ubicación»; el alta solo desde la cabecera), UX-04 (las sugerencias de Código/Nombre/Iniciales muestran valores actuales con contexto y rellenan al seleccionar), LOC-02 (tocar un activo del detalle de una ubicación abre su ficha y permite editarlo), DOC-03 (abrir un documento y ver la versión actual incrustada bajo Emisión — PDF, imagen, txt; tocar la vista previa amplía el visor; xlsx/xls muestran el área deshabilitada), DOC-04 (crear un documento con periodicidad trimestral «Según calendario» y ver el vencimiento calculado; subir una nueva versión y comprobar que salta +3 meses desde el vigente; probar «Según subida» — el vencimiento sale de la emisión — y corregir el vencimiento a mano) e IMG-01 (subir una foto desde la ficha y desde el alta de un activo nuevo, cambiarla y quitarla; comprobar que la imagen persiste al recargar y que se purga con el activo) si el usuario lo desea.
-4. Decidir con el usuario el destino del desfase visual de `documents`/`item-modal`/`items`/`config` (cambios pedidos por el usuario; no se eleva el umbral ni se tocan baselines sin su autorización).
-5. Pendientes de roadmap: `CAL-01`, `HIST-01`, `CONF-01`, `DASH-01`, `PROJ-01`, `SHELL-01`, `PLAN-01`, `PERF-01` (bundle >500 kB) y `QA-01` (warning DEP0205 de Node 26 en las suites).
+4. Pendientes de roadmap: `CAL-01`, `HIST-01`, `CONF-01`, `DASH-01`, `PROJ-01`, `SHELL-01` y `QA-01` (warning DEP0205 de Node/tsx en las suites).
 
 ## Archivos protegidos
 
