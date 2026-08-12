@@ -11,8 +11,13 @@ async function goToLocations(page: Page): Promise<void> {
 }
 
 async function selectNaveA(page: Page): Promise<void> {
-  await page.locator('summary', { hasText: 'Nave Principal' }).click()
-  await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+  const naveA = page.locator('a', { hasText: 'Planta 1 · Nave A' })
+  // The PERF-01 bootstrap can already have this contextual branch open.
+  if (!await naveA.isVisible()) {
+    await page.locator('summary', { hasText: 'Nave Principal' }).click()
+    await expect(naveA).toBeVisible()
+  }
+  await naveA.click()
 }
 
 async function createLocationViaApi(page: Page, data: { name: string; code: string; surface: string; parentId?: number | null; label?: string }): Promise<LocationRow> {
@@ -45,8 +50,8 @@ test.describe('Locations', () => {
     await expect(page.locator('summary', { hasText: 'Nave Principal' })).toBeVisible()
     await expect(page.locator('summary', { hasText: 'Anexo Oficinas' })).toBeVisible()
     await expect(page.locator('summary', { hasText: 'Almacén exterior' })).toBeVisible()
-    // PERF-01: cada rama se solicita solo al expandirla.
-    await page.locator('summary', { hasText: 'Nave Principal' }).click()
+    // PERF-01 abre de entrada solo el camino de la primera hoja relevante.
+    // El resto de ramas sigue bajo demanda.
     await expect(page.locator('a', { hasText: 'Planta 1 · Nave A' })).toBeVisible()
     await expect(page.locator('a', { hasText: 'Sala compresores' })).toBeVisible()
     await page.locator('summary', { hasText: 'Anexo Oficinas' }).click()

@@ -21,9 +21,9 @@ export function mapAssetSuggestion(field: ApiAssetSuggestionField, row: ApiAsset
 
 // Construye la función onSearch de SuggestInput para un campo del formulario de
 // activo. `excludeId` evita sugerir el valor del propio activo al editarlo.
-export function buildAssetSuggestionSearch(field: ApiAssetSuggestionField, excludeId?: number): (query: string) => Promise<SuggestRow[]> {
+export function buildAssetSuggestionSearch(field: ApiAssetSuggestionField, excludeId?: number, projectId?: number): (query: string) => Promise<SuggestRow[]> {
   return async (query: string) => {
-    const response = await fetchAssetSuggestions(field, query, excludeId)
+    const response = await fetchAssetSuggestions(field, query, excludeId, projectId)
     return response.map((row) => mapAssetSuggestion(field, row))
   }
 }

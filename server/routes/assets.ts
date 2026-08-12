@@ -4,14 +4,15 @@ import multer from 'multer'
 import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { assetEventClock, deriveAssetEventsExcludingAcknowledged } from '../lib/assetEvents'
+import { assetEventClock, deriveAssetEventsExcludingAcknowledged, type DerivedAssetEvent } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
 import { completeDynamicDateSchema, dateScheduleValueSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
 import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setAssetDateSchedule } from '../lib/assetSchedules'
 import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/calendarEvents'
-import { descendantLocationIds, isLocationDescendantOf } from '../lib/locationTree'
+import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE } from '../lib/performance'
+import { nextAssetEventsById } from '../lib/nextAssetEvents'
 
 const router: Router = Router()
 
@@ -108,17 +109,19 @@ const assetInclude = {
   eventAcknowledgements: { select: { sourceKey: true } },
 } satisfies Prisma.AssetInclude
 
-// A list row needs its presentation relations and at most the earliest subset
-// required to derive the visible next event. Full histories stay on GET /:id.
-const assetListInclude = {
-  ...assetInclude,
-  events: { where: { completedAt: null }, orderBy: { date: 'asc' as const }, take: 20, select: { id: true, title: true, date: true, type: true, completedAt: true } },
-  documentAssets: { ...assetInclude.documentAssets, take: 20 },
-  dynamicFieldValues: { ...assetInclude.dynamicFieldValues, take: 100 },
-  dateSchedules: { ...assetInclude.dateSchedules, take: 20 },
-  preventivePlans: { ...assetInclude.preventivePlans, take: 20 },
-  eventAcknowledgements: { select: { sourceKey: true }, take: 100 },
-} satisfies Prisma.AssetInclude
+// The grid has a dedicated DTO. It deliberately contains no growing relation:
+// next-event hydration is performed by `nextAssetEventsById` with one bounded
+// LATERAL probe per source and page asset.
+const assetListSelect = {
+  id: true, code: true, name: true, serialNumber: true, installDate: true,
+  typeId: true, statusId: true, locationId: true, projectId: true, responsibleId: true,
+  initials: true, deletedAt: true, imageStorageKey: true, imageMimeType: true, imageSizeBytes: true,
+  type: { select: { id: true, name: true, iconKey: true } },
+  status: { select: { id: true, name: true, pulseDot: true } },
+  location: { select: { id: true, name: true, code: true, label: true } },
+  responsible: { select: { id: true, name: true, initials: true, color: true } },
+} satisfies Prisma.AssetSelect
+type AssetListRow = Prisma.AssetGetPayload<{ select: typeof assetListSelect }>
 
 type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
 
@@ -258,12 +261,19 @@ async function activeProjectId(requested: string | undefined): Promise<number> {
   return project.id
 }
 
-// Keep the list DTO intentionally narrower than the asset ficha. Relations
-// are only used transiently to calculate the one visible next event.
-function withAssetList(asset: AssetWithRelations) {
-  const detail = withDerivedEvents(asset)
-  const { dynamicFields: _dynamicFields, documents: _documents, preventivePlans: _preventivePlans, ...list } = detail
-  return list
+function serializeAssetList(asset: AssetListRow, nextEvent: DerivedAssetEvent | undefined) {
+  const { imageStorageKey, ...base } = asset
+  return {
+    ...base,
+    installDate: asset.installDate.toISOString(),
+    deletedAt: asset.deletedAt?.toISOString() ?? null,
+    imageUrl: imageStorageKey ? `/api/assets/${asset.id}/image` : null,
+    // The list exposes the single event used by its row. Counts and complete
+    // histories remain the responsibility of the asset detail/endpoints.
+    eventCount: nextEvent ? 1 : 0,
+    nextEvents: nextEvent ? [nextEvent] : [],
+    documentCount: 0,
+  }
 }
 
 // ITEM-05: purga perezosa de la papelera — borra físicamente los activos cuyo
@@ -327,31 +337,40 @@ router.get(
     // Al consultar la papelera se purgan primero los activos vencidos.
     if (trashed) await purgeExpiredTrashedAssets()
 
-    const where: Prisma.AssetWhereInput = { projectId, deletedAt: trashed ? { not: null } : null }
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { code: { contains: search, mode: 'insensitive' } },
-        { serialNumber: { contains: search, mode: 'insensitive' } },
-      ]
-    }
-    if (typeId !== null) where.typeId = typeId
-    if (statusId !== null) where.statusId = statusId
-    if (locationId !== null) where.locationId = { in: await descendantLocationIds(prisma, locationId) }
-
-    const [rows, total] = await prisma.$transaction([
-      prisma.asset.findMany({
-        where,
-        include: assetListInclude,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: trashed ? { deletedAt: 'desc' } : { id: 'asc' },
-      }),
-      prisma.asset.count({ where }),
-    ])
-
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`asset."projectId" = ${projectId}`,
+      trashed ? Prisma.sql`asset."deletedAt" IS NOT NULL` : Prisma.sql`asset."deletedAt" IS NULL`,
+    ]
+    if (search) conditions.push(Prisma.sql`(asset.name ILIKE ${`%${search}%`} OR asset.code ILIKE ${`%${search}%`} OR asset."serialNumber" ILIKE ${`%${search}%`})`)
+    if (typeId !== null) conditions.push(Prisma.sql`asset."typeId" = ${typeId}`)
+    if (statusId !== null) conditions.push(Prisma.sql`asset."statusId" = ${statusId}`)
+    const locationCte = locationId === null ? Prisma.empty : Prisma.sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id FROM "Location" WHERE id = ${locationId}
+        UNION ALL
+        SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id
+      )
+    `
+    if (locationId !== null) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId")`)
+    const orderBy = trashed ? Prisma.sql`asset."deletedAt" DESC, asset.id ASC` : Prisma.sql`asset.id ASC`
+    const ids = await prisma.$queryRaw<Array<{ id: number; total: bigint }>>(Prisma.sql`
+      ${locationCte}
+      SELECT asset.id, COUNT(*) OVER()::bigint AS total
+      FROM "Asset" asset
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ORDER BY ${orderBy}
+      OFFSET ${(page - 1) * limit} LIMIT ${limit}
+    `)
+    const total = Number(ids[0]?.total ?? 0)
+    const orderedIds = ids.map((row) => row.id)
+    const rows = orderedIds.length === 0 ? [] : await prisma.asset.findMany({ where: { id: { in: orderedIds } }, select: assetListSelect })
+    const byId = new Map(rows.map((row) => [row.id, row]))
+    const nextEvents = await nextAssetEventsById(prisma, orderedIds)
     const totalPages = total === 0 ? 1 : Math.ceil(total / limit)
-    res.json({ data: rows.map(withAssetList), total, page, totalPages })
+    res.json({ data: orderedIds.flatMap((assetId) => {
+      const asset = byId.get(assetId)
+      return asset ? [serializeAssetList(asset, nextEvents.get(assetId))] : []
+    }), total, page, totalPages })
   }),
 )
 
@@ -372,8 +391,10 @@ router.get(
     }
     const search = typeof q.q === 'string' ? q.q : ''
     const excludeId = toNumberId(typeof q.excludeId === 'string' ? q.excludeId : undefined)
+    const projectId = await activeProjectId(typeof q.projectId === 'string' ? q.projectId : undefined)
     const values = await prisma.asset.findMany({
       where: {
+        projectId,
         deletedAt: null,
         id: excludeId === null ? undefined : { not: excludeId },
         [field]: { not: '', contains: search, mode: 'insensitive' },

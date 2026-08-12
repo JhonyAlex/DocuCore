@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import DocumentModal from '@/components/DocumentModal'
 import DocumentsTable from '@/components/DocumentsTable'
 import DocumentsFilters, { type DocumentFilters } from '@/components/DocumentsFilters'
-import ListPagination from '@/components/ListPagination'
 import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
@@ -92,14 +91,13 @@ export default function DocumentsView() {
 
   return (
     <section className="fade-in">
-      <div className="flex items-end justify-between mb-6"><div><h1 className="text-2xl font-semibold tracking-tight">Documentos</h1><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Fichas técnicas, certificados, manuales y contratos</p></div><button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>Subir documento</button></div>
+      <div className="flex items-end justify-between mb-6"><div><h1 className="text-2xl font-semibold tracking-tight">Documentos</h1><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Fichas técnicas, certificados, manuales y contratos</p></div><div className="flex items-center gap-2"><DocumentsFilters filters={filters} onChange={(next) => { setFilters(next); setPage(1); selection.clear() }} page={page} total={total} totalPages={totalPages} onPageChange={(next) => { setPage(next); selection.clear() }} /><button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>Subir documento</button></div></div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">{cards.map((card) => <div key={card.label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex items-center gap-3"><div className={`w-10 h-10 rounded-lg ${card.className} flex items-center justify-center text-lg font-semibold`}>{card.value}</div><div><div className="text-sm font-medium">{card.label}</div><div className="text-xs text-slate-500">{card.sublabel}</div></div></div>)}</div>
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
         <button type="button" onClick={() => void handleBulkDownload()} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Descargar</button>
         <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
       </BulkActionBar>
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div>}
-      <DocumentsFilters filters={filters} onChange={(next) => { setFilters(next); setPage(1); selection.clear() }} />
       <DocumentsTable
         documents={documents}
         selection={selection}
@@ -107,7 +105,6 @@ export default function DocumentsView() {
         onDownload={(document) => void downloadDocument(document.id)}
         onDelete={(document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
       />
-      <ListPagination page={page} total={total} totalPages={totalPages} limit={LIMIT} onPageChange={(next) => { setPage(next); selection.clear() }} />
       {editing !== undefined && <DocumentModal document={editing} onClose={() => setEditing(undefined)} onChanged={load} />}
       <ConfirmDialog
         open={deleteTarget !== null}

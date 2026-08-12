@@ -26,6 +26,7 @@ function form(name: string, locationId: number, bytes = image, mimeType = 'image
 
 beforeAll(async () => {
   process.env.DATABASE_URL = databaseUrl
+  process.env.DOCUCORE_NOW = '2026-07-15T00:00:00.000Z'
   storageDir = await mkdtemp(path.join(tmpdir(), 'docucore-floor-plans-'))
   process.env.FLOOR_PLAN_STORAGE_PATH = storageDir
   image = await readFile(path.join(process.cwd(), 'public', 'floor-plan.png'))
@@ -111,15 +112,20 @@ describe('floor plan API', () => {
     const planId = createdPlanId as number
     const plan = await (await api(`/api/floor-plans/${planId}`)).json() as { projectId: number; locationId: number; availableAssets?: unknown; markers: Array<{ asset: Record<string, unknown> }> }
     expect(plan.availableAssets).toBeUndefined()
-    expect(plan.markers.every((marker) => marker.asset.nextEvents === undefined)).toBe(true)
+    expect(plan.markers.every((marker) => Array.isArray(marker.asset.nextEvents) && marker.asset.nextEvents.length <= 1 && !('documents' in marker.asset))).toBe(true)
     const available = await (await api(`/api/floor-plans/${planId}/assets?limit=20`)).json() as { data: Array<{ id: number; locationId: number }> }
     expect(available.data).toHaveLength(20)
+    const facets = await (await api(`/api/floor-plans/${planId}/facets`)).json() as { types: Array<{ typeId: number; count: number; iconKey: string }> }
+    expect(facets.types.length).toBeGreaterThan(0)
+    expect(facets.types.every((facet) => facet.count > 0 && typeof facet.iconKey === 'string')).toBe(true)
     const asset = available.data[0]!
     const placed = await api(`/api/floor-plans/${planId}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: asset.id, x: 0.25, y: 0.4 }) })
     expect(placed.status).toBe(201)
 
-    const withMarker = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ assetId: number; asset: { nextEvents?: unknown } }> }
-    expect(withMarker.markers.find((marker) => marker.assetId === asset.id)?.asset.nextEvents).toBeUndefined()
+    const withMarker = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ assetId: number; asset: { nextEvents?: unknown[]; documents?: unknown } }> }
+    const placedMarker = withMarker.markers.find((marker) => marker.assetId === asset.id)?.asset
+    expect(placedMarker?.nextEvents?.length).toBeLessThanOrEqual(1)
+    expect(placedMarker?.documents).toBeUndefined()
 
     const users = await (await api('/api/users')).json() as Array<{ id: number }>
     const outside = await api('/api/locations', {
@@ -137,6 +143,24 @@ describe('floor plan API', () => {
 
     expect((await api(`/api/assets/${asset.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locationId: asset.locationId }) })).status).toBe(200)
     expect((await api(`/api/locations/${outsideLocation.id}`, { method: 'DELETE' })).status).toBe(204)
+  })
+
+  it('preserves overdue and soon marker urgency without hydrating full asset histories', async () => {
+    const planId = createdPlanId as number
+    const available = await (await api(`/api/floor-plans/${planId}/assets?limit=20`)).json() as { data: Array<{ id: number }> }
+    const [overdue, soon] = available.data
+    expect(overdue).toBeDefined(); expect(soon).toBeDefined()
+    const overdueEvent = await api('/api/calendar/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projectId: 1, assetId: overdue!.id, title: 'QA vencido de plano', date: '2026-07-01', category: 'maintenance' }) })
+    const soonEvent = await api('/api/calendar/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projectId: 1, assetId: soon!.id, title: 'QA próximo de plano', date: '2026-07-20', category: 'maintenance' }) })
+    expect(overdueEvent.status).toBe(201); expect(soonEvent.status).toBe(201)
+    const overdueMarker = await api(`/api/floor-plans/${planId}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: overdue!.id, x: 0.12, y: 0.18 }) })
+    const soonMarker = await api(`/api/floor-plans/${planId}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: soon!.id, x: 0.32, y: 0.38 }) })
+    expect(overdueMarker.status).toBe(201); expect(soonMarker.status).toBe(201)
+    const plan = await (await api(`/api/floor-plans/${planId}`)).json() as {
+      markers: Array<{ assetId: number; asset: { alert: string; nextEvents: Array<{ urgency: string }> } }>
+    }
+    expect(plan.markers.find((marker) => marker.assetId === overdue!.id)?.asset).toMatchObject({ alert: 'overdue', nextEvents: [expect.objectContaining({ urgency: 'red' })] })
+    expect(plan.markers.find((marker) => marker.assetId === soon!.id)?.asset).toMatchObject({ alert: 'soon', nextEvents: [expect.objectContaining({ urgency: 'amber' })] })
   })
 
   it('makes a newly uploaded version current', async () => {

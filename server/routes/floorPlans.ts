@@ -5,8 +5,10 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { ALLOWED_FLOOR_PLAN_MIME_TYPES, MAX_FLOOR_PLAN_SIZE_BYTES, readFloorPlanDzi, readFloorPlanOriginal, readFloorPlanTile, removeFloorPlanFiles, storeFloorPlan } from '../lib/floorPlanStorage'
 import { createFloorPlanMarkerSchema, createFloorPlanSchema, floorPlanListQuerySchema, updateFloorPlanMarkerSchema, updateFloorPlanSchema } from '../lib/validate'
-import { descendantLocationIds } from '../lib/locationTree'
+import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE, MAX_MARKER_PAGE_SIZE, pageLimit } from '../lib/performance'
+import { nextAssetEventsById } from '../lib/nextAssetEvents'
+import type { DerivedAssetEvent } from '../lib/assetEvents'
 
 const router: Router = Router()
 const ACTOR_USER_ID = 1
@@ -53,17 +55,23 @@ function httpError(status: number, message: string): Error & { status: number } 
 function id(value: string): number | null { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null }
 function versionOf(plan: PlanWithCurrent): number | null { return plan.versions[0]?.version ?? null }
 function serializeVersion(version: { id: number; version: number; originalName: string; mimeType: string; sizeBytes: number; width: number; height: number; uploadedAt: Date }) { return { ...version, uploadedAt: version.uploadedAt.toISOString() } }
-function serializeAsset(asset: PlanAsset) {
-  return { id: asset.id, code: asset.code, name: asset.name, locationId: asset.locationId, type: asset.type, status: asset.status, alert: 'normal' as const }
+function serializeAsset(asset: PlanAsset, nextEvent?: DerivedAssetEvent) {
+  const alert = nextEvent?.urgency === 'red' ? 'overdue' : nextEvent?.urgency === 'amber' ? 'soon' : 'normal'
+  return { id: asset.id, code: asset.code, name: asset.name, locationId: asset.locationId, type: asset.type, status: asset.status, alert, nextEvents: nextEvent ? [nextEvent] : [] }
 }
-function serializeMarker(marker: PlanWithCurrent['markers'][number]) {
-  return { id: marker.id, floorPlanId: marker.floorPlanId, assetId: marker.assetId, x: marker.x, y: marker.y, createdAt: marker.createdAt.toISOString(), updatedAt: marker.updatedAt.toISOString(), asset: serializeAsset(marker.asset) }
+async function serializeAssets(assets: PlanAsset[]) {
+  const events = await nextAssetEventsById(prisma, assets.map((asset) => asset.id))
+  return assets.map((asset) => serializeAsset(asset, events.get(asset.id)))
 }
-function serializePlan(plan: PlanWithCurrent, markerTotal = plan.markers.length) {
+async function serializeMarker(marker: PlanWithCurrent['markers'][number], events?: Map<number, DerivedAssetEvent>) {
+  return { id: marker.id, floorPlanId: marker.floorPlanId, assetId: marker.assetId, x: marker.x, y: marker.y, createdAt: marker.createdAt.toISOString(), updatedAt: marker.updatedAt.toISOString(), asset: serializeAsset(marker.asset, events?.get(marker.assetId)) }
+}
+async function serializePlan(plan: PlanWithCurrent, markerTotal = plan.markers.length) {
+  const events = await nextAssetEventsById(prisma, plan.markers.map((marker) => marker.assetId))
   return {
     id: plan.id, name: plan.name, projectId: plan.projectId, locationId: plan.locationId, createdAt: plan.createdAt.toISOString(), updatedAt: plan.updatedAt.toISOString(), location: plan.location,
     currentVersion: plan.versions[0] ? serializeVersion(plan.versions[0]) : null,
-    markers: plan.markers.map(serializeMarker),
+    markers: await Promise.all(plan.markers.map((marker) => serializeMarker(marker, events))),
     markerTotal,
     markersTruncated: markerTotal > plan.markers.length,
   }
@@ -94,8 +102,7 @@ async function assertAssetPlacement(projectId: number, planLocationId: number, a
   const asset = await prisma.asset.findFirst({ where: { id: assetId, deletedAt: null }, select: { projectId: true, locationId: true } })
   if (!asset) throw httpError(404, 'Asset not found')
   if (asset.projectId !== projectId) throw httpError(400, 'Asset must belong to the floor plan project')
-  const allowedLocationIds = await descendantLocationIds(prisma, planLocationId)
-  if (allowedLocationIds.includes(asset.locationId)) return
+  if (await isLocationDescendantOf(prisma, asset.locationId, planLocationId)) return
   throw httpError(400, 'Asset location must be the floor plan location or a descendant')
 }
 
@@ -133,14 +140,55 @@ router.get('/:id/assets', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
   const plan = await getPlan(planId)
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
-  const locationIds = await descendantLocationIds(prisma, plan.locationId)
-  const assets = await prisma.asset.findMany({
-    where: { projectId: plan.projectId, deletedAt: null, locationId: { in: locationIds }, ...(search ? { OR: [{ code: { contains: search, mode: 'insensitive' } }, { name: { contains: search, mode: 'insensitive' } }] } : {}) },
-    select: floorPlanAssetSelect,
-    orderBy: [{ code: 'asc' }, { id: 'asc' }],
-    take: pageLimit(req.query.limit, MAX_AUTOCOMPLETE_SIZE, MAX_AUTOCOMPLETE_SIZE),
+  const limit = pageLimit(req.query.limit, MAX_AUTOCOMPLETE_SIZE, MAX_AUTOCOMPLETE_SIZE)
+  const ids = await prisma.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM "Location" WHERE id = ${plan.locationId}
+      UNION ALL
+      SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id
+    )
+    SELECT asset.id
+    FROM "Asset" asset
+    WHERE asset."projectId" = ${plan.projectId}
+      AND asset."deletedAt" IS NULL
+      AND EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId")
+      ${search ? Prisma.sql`AND (asset.code ILIKE ${`%${search}%`} OR asset.name ILIKE ${`%${search}%`})` : Prisma.empty}
+    ORDER BY asset.code ASC, asset.id ASC
+    LIMIT ${limit}
+  `)
+  const orderedIds = ids.map((row) => row.id)
+  const rows = orderedIds.length === 0 ? [] : await prisma.asset.findMany({ where: { id: { in: orderedIds } }, select: floorPlanAssetSelect })
+  const byId = new Map(rows.map((asset) => [asset.id, asset]))
+  const assets = orderedIds.flatMap((assetId) => {
+    const asset = byId.get(assetId)
+    return asset ? [asset] : []
   })
-  res.json({ data: assets.map(serializeAsset) })
+  res.json({ data: await serializeAssets(assets) })
+}))
+
+// The layer panel needs counts for every eligible asset type, not every asset.
+// This aggregate stays in PostgreSQL and remains constant-size with a large
+// location subtree.
+router.get('/:id/facets', asyncHandler(async (req, res) => {
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
+  const plan = await prisma.floorPlan.findUnique({ where: { id: planId }, select: { projectId: true, locationId: true } })
+  if (!plan) return res.status(404).json({ error: 'Floor plan not found' })
+  const types = await prisma.$queryRaw<Array<{ typeId: number; name: string; iconKey: string; count: bigint }>>(Prisma.sql`
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM "Location" WHERE id = ${plan.locationId}
+      UNION ALL
+      SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id
+    )
+    SELECT type.id AS "typeId", type.name, type."iconKey", COUNT(*)::bigint AS count
+    FROM "Asset" asset
+    JOIN "AssetType" type ON type.id = asset."typeId"
+    WHERE asset."projectId" = ${plan.projectId}
+      AND asset."deletedAt" IS NULL
+      AND EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId")
+    GROUP BY type.id, type.name, type."iconKey"
+    ORDER BY type.name ASC, type.id ASC
+  `)
+  res.json({ types: types.map((type) => ({ ...type, count: Number(type.count) })) })
 }))
 
 // The editor receives the first chunk with the plan. Larger plans can append
@@ -156,7 +204,8 @@ router.get('/:id/markers', asyncHandler(async (req, res) => {
     prisma.floorPlanMarker.findMany({ where: { floorPlanId: planId }, orderBy: { id: 'asc' }, skip: (page - 1) * limit, take: limit, include: { asset: { select: floorPlanAssetSelect } } }),
     prisma.floorPlanMarker.count({ where: { floorPlanId: planId } }),
   ])
-  res.json({ data: markers.map((marker) => serializeMarker(marker as PlanWithCurrent['markers'][number])), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) })
+  const events = await nextAssetEventsById(prisma, markers.map((marker) => marker.assetId))
+  res.json({ data: await Promise.all(markers.map((marker) => serializeMarker(marker as PlanWithCurrent['markers'][number], events))), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) })
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
@@ -172,7 +221,7 @@ router.post('/', asyncHandler(async (req, res) => {
       await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: created.id }, include: planInclude })
     })
-    res.status(201).json(serializePlan(plan))
+    res.status(201).json(await serializePlan(plan))
   } catch (error) { await removeFloorPlanFiles(stored); throw error }
 }))
 
@@ -186,7 +235,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Plano actualizado', entityId: String(planId), detail: `Plano ${plan.name} actualizado` } })
     return next
   })
-  res.json(serializePlan(updated))
+  res.json(await serializePlan(updated))
 }))
 
 router.post('/:id/versions', asyncHandler(async (req, res) => {
@@ -200,7 +249,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
       await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Nueva versión de plano', entityId: String(planId), detail: `${plan.name} · v${nextVersion}` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: planId }, include: planInclude })
     })
-    res.status(201).json(serializePlan(updated))
+    res.status(201).json(await serializePlan(updated))
   } catch (error) { await removeFloorPlanFiles(stored); throw error }
 }))
 
@@ -213,7 +262,7 @@ router.post('/:id/markers', asyncHandler(async (req, res) => {
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Activo colocado en plano', entityId: String(input.assetId), detail: `${plan.name} · (${input.x.toFixed(3)}, ${input.y.toFixed(3)})` } })
     return created
   })
-  res.status(201).json({ id: marker.id, floorPlanId: marker.floorPlanId, assetId: marker.assetId, x: marker.x, y: marker.y, createdAt: marker.createdAt.toISOString(), updatedAt: marker.updatedAt.toISOString(), asset: serializeAsset(marker.asset) })
+  res.status(201).json(await serializeMarker(marker as PlanWithCurrent['markers'][number]))
 }))
 
 router.patch('/:id/markers/:markerId', asyncHandler(async (req, res) => {
@@ -226,7 +275,7 @@ router.patch('/:id/markers/:markerId', asyncHandler(async (req, res) => {
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Marcador movido', entityId: String(marker.assetId), detail: `Plano #${planId} · (${next.x.toFixed(3)}, ${next.y.toFixed(3)})` } })
     return next
   })
-  res.json({ id: updated.id, floorPlanId: updated.floorPlanId, assetId: updated.assetId, x: updated.x, y: updated.y, createdAt: updated.createdAt.toISOString(), updatedAt: updated.updatedAt.toISOString(), asset: serializeAsset(updated.asset) })
+  res.json(await serializeMarker(updated as PlanWithCurrent['markers'][number]))
 }))
 
 router.delete('/:id/markers/:markerId', asyncHandler(async (req, res) => {
@@ -266,7 +315,7 @@ router.get('/:id/versions/:version/tiles/:level/:tile', asyncHandler(async (req,
 router.get('/:id', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
   const [plan, markerTotal] = await Promise.all([getPlan(planId), prisma.floorPlanMarker.count({ where: { floorPlanId: planId } })])
-  res.json(serializePlan(plan, markerTotal))
+  res.json(await serializePlan(plan, markerTotal))
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {

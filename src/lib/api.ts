@@ -331,6 +331,12 @@ export interface ApiFloorPlanAsset {
   nextEvents?: ApiAssetEvent[]
   alert?: 'overdue' | 'soon' | 'normal'
 }
+export interface ApiFloorPlanFacet {
+  typeId: number
+  name: string
+  iconKey: AssetIconKey
+  count: number
+}
 
 export interface ApiFloorPlanMarker {
   id: number
@@ -379,6 +385,10 @@ export interface ApiLocationsResponse {
   list: ApiLocation[]
   locations: ApiLocation[]
   project: { id: number; name: string; code: string }
+}
+export interface ApiLocationBootstrapResponse extends ApiLocationsResponse {
+  selectedId: number | null
+  openBranchIds: number[]
 }
 
 export interface LocationWriteInput {
@@ -514,10 +524,11 @@ interface ApiAssetSuggestionsResponse {
   values: ApiAssetSuggestionRow[]
 }
 
-export async function fetchAssetSuggestions(field: ApiAssetSuggestionField, q = '', excludeId?: number): Promise<ApiAssetSuggestionRow[]> {
+export async function fetchAssetSuggestions(field: ApiAssetSuggestionField, q = '', excludeId?: number, projectId?: number): Promise<ApiAssetSuggestionRow[]> {
   const query = new URLSearchParams({ field })
   if (q.trim()) query.set('q', q.trim())
   if (excludeId) query.set('excludeId', String(excludeId))
+  if (projectId) query.set('projectId', String(projectId))
   const response = await request<ApiAssetSuggestionsResponse>(`/assets/suggestions?${query.toString()}`)
   return response.values
 }
@@ -674,8 +685,13 @@ export async function fetchLocations(options?: { parentId?: number | null; limit
   const res = await request<ApiLocationsResponse>(`/locations${query.size ? `?${query.toString()}` : ''}`)
   return { ...res, locations: res.locations ?? res.tree ?? [] }
 }
-export function searchLocations(search = '', limit = 20): Promise<{ data: ApiLocation[] }> {
+export async function fetchLocationBootstrap(): Promise<ApiLocationBootstrapResponse> {
+  const res = await request<ApiLocationBootstrapResponse>('/locations/bootstrap')
+  return { ...res, locations: res.locations ?? res.tree ?? [], selectedId: res.selectedId ?? null, openBranchIds: res.openBranchIds ?? [] }
+}
+export function searchLocations(search = '', limit = 20, projectId?: number): Promise<{ data: ApiLocation[] }> {
   const query = new URLSearchParams({ search, limit: String(limit) })
+  if (projectId) query.set('projectId', String(projectId))
   return request(`/locations/search?${query.toString()}`)
 }
 
@@ -717,6 +733,9 @@ export function fetchFloorPlanAssets(id: number, search = '', limit = 20): Promi
   const query = new URLSearchParams({ limit: String(limit) })
   if (search.trim()) query.set('search', search.trim())
   return request(`/floor-plans/${id}/assets?${query.toString()}`)
+}
+export function fetchFloorPlanFacets(id: number): Promise<{ types: ApiFloorPlanFacet[] }> {
+  return request(`/floor-plans/${id}/facets`)
 }
 export function fetchFloorPlanMarkers(id: number, page: number, limit = 500): Promise<{ data: ApiFloorPlanMarker[]; total: number; page: number; totalPages: number }> {
   return request(`/floor-plans/${id}/markers?page=${page}&limit=${limit}`)

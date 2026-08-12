@@ -254,8 +254,9 @@ test.describe('Locations lifecycle', () => {
 
   test('tree and detail show the same count for a branch', async ({ page }) => {
     await goToLocations(page)
-    // PERF-01: cargar cada nivel de esta rama es explícito y perezoso.
-    await page.locator('summary', { hasText: 'Raíz E2E' }).click()
+    // PERF-01 has already opened the root path to the relevant initial leaf.
+    // Opening the selected branch itself remains an explicit lazy action.
+    await expect(page.locator('summary', { hasText: 'Hijo E2E' })).toBeVisible()
     await page.locator('summary', { hasText: 'Hijo E2E' }).click()
 
     // Hijo E2E tiene el activo ACT-E2E en su subrama (nieto vacío).
@@ -317,9 +318,14 @@ test.describe('Locations lifecycle', () => {
 
     // El nieto está vacío y sin hijos: la UI exige confirmación y permite borrarlo.
     await goToLocations(page)
-    await page.locator('summary', { hasText: root.name }).click()
-    await page.locator('summary', { hasText: child.name }).click()
-    await page.locator('a', { hasText: grandchild.name }).click()
+    const grandchildLink = page.locator('a', { hasText: grandchild.name })
+    // The bootstrap already opens root → child because child is the relevant
+    // branch; only expand further when the leaf has not yet been requested.
+    if (!await grandchildLink.isVisible()) {
+      await page.locator('summary', { hasText: child.name }).click()
+      await expect(grandchildLink).toBeVisible()
+    }
+    await grandchildLink.click()
     await expect(page.getByRole('heading', { name: grandchild.name, exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Eliminar ubicación' }).click()
     const deleteDialog = page.getByRole('dialog', { name: 'Eliminar ubicación' })
@@ -335,13 +341,9 @@ test.describe('Locations lifecycle', () => {
     const project1 = tree.filter((l) => l.code !== 'ECC-PL1')
 
     await goToLocations(page)
-    // PERF-01: las ubicaciones hijas no están presentes hasta que se abre su
-    // padre; esa expansión solicita la rama y la hace accesible sin descargar
-    // el árbol completo al entrar.
-    const root = project1.find((location) => location.code === 'R-E2E')!
+    // PERF-01 precarga el camino de la primera hoja relevante; el resto del
+    // árbol sigue diferido y no exige una descarga completa al entrar.
     const child = project1.find((location) => location.code === 'H-E2E')!
-    await expect(page.locator('summary, a', { hasText: child.name })).toHaveCount(0)
-    await page.locator('summary', { hasText: root.name }).click()
     await expect(page.locator('summary, a', { hasText: child.name }).first()).toBeVisible()
 
     // Persistencia: el nieto borrado ya no aparece y el resto sigue.

@@ -10,6 +10,8 @@ const router: Router = Router()
 
 const ACTOR_USER_ID = 1
 const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
+const BOOTSTRAP_BRANCH_SIZE = 100
+const BOOTSTRAP_DEPTH = 12
 
 const locationInclude = {
   responsible: { select: { id: true, name: true, initials: true, color: true } },
@@ -93,10 +95,68 @@ router.get(
   }),
 )
 
+// Initial navigation is a small, visual-equivalent slice: project roots plus
+// siblings along the first actionable leaf. It avoids both an eager tree and
+// a client-side walk over every location merely to open the initial branch.
+router.get('/bootstrap', asyncHandler(async (req, res) => {
+  const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
+  const project = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
+    ? await prisma.project.findUniqueOrThrow({ where: { id: requestedProjectId! }, select: { id: true, code: true, name: true, assetCount: true } })
+    : await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true, code: true, name: true, assetCount: true } })
+  const rows = await prisma.$queryRaw<Array<{ id: number; selectedId: number | null; openId: number | null }>>(Prisma.sql`
+    WITH RECURSIVE target AS (
+      SELECT location.id, location."parentId"
+      FROM "Location" location
+      WHERE location."projectId" = ${project.id}
+      ORDER BY
+        CASE WHEN EXISTS (SELECT 1 FROM "Asset" asset WHERE asset."locationId" = location.id AND asset."deletedAt" IS NULL) THEN 0 ELSE 1 END,
+        CASE WHEN EXISTS (SELECT 1 FROM "Location" child WHERE child."parentId" = location.id) THEN 1 ELSE 0 END,
+        location.id ASC
+      LIMIT 1
+    ),
+    path AS (
+      SELECT target.id, target."parentId", 0 AS depth FROM target
+      UNION ALL
+      SELECT parent.id, parent."parentId", path.depth + 1
+      FROM "Location" parent
+      JOIN path ON path."parentId" = parent.id
+      WHERE path.depth < ${BOOTSTRAP_DEPTH}
+    ),
+    requested AS (
+      SELECT location.id, location."parentId",
+        ROW_NUMBER() OVER (PARTITION BY location."parentId" ORDER BY location.id ASC) AS position
+      FROM "Location" location
+      WHERE location."projectId" = ${project.id}
+        AND (location."parentId" IS NULL OR location."parentId" IN (SELECT id FROM path))
+    )
+    SELECT requested.id,
+      (SELECT id FROM target LIMIT 1) AS "selectedId",
+      CASE WHEN requested.id IN (SELECT id FROM path WHERE depth > 0) THEN requested.id ELSE NULL END AS "openId"
+    FROM requested
+    WHERE requested."parentId" IS NULL OR requested.position <= ${BOOTSTRAP_BRANCH_SIZE}
+    ORDER BY requested."parentId" NULLS FIRST, requested.id ASC
+  `)
+  const orderedIds = rows.map((row) => row.id)
+  const locations = orderedIds.length === 0 ? [] : await prisma.location.findMany({ where: { id: { in: orderedIds } }, include: locationInclude })
+  const byId = new Map(locations.map((location) => [location.id, serializeLocation(location)]))
+  res.json({
+    project,
+    locations: orderedIds.flatMap((id) => {
+      const location = byId.get(id)
+      return location ? [location] : []
+    }),
+    selectedId: rows[0]?.selectedId ?? null,
+    openBranchIds: [...new Set(rows.flatMap((row) => row.openId === null ? [] : [row.openId]))],
+  })
+}))
+
 // Remote catalogue for selectors. It is intentionally separate from the
 // progressive tree endpoint so forms never need a complete location list.
 router.get('/search', asyncHandler(async (req, res) => {
-  const project = await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })
+  const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
+  const project = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
+    ? await prisma.project.findUniqueOrThrow({ where: { id: requestedProjectId! }, select: { id: true } })
+    : await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
   const locations = await prisma.location.findMany({
     where: {
@@ -177,10 +237,20 @@ router.get(
       take: LOCATION_PREVIEW_SIZE,
     })
 
-    // El detalle comparte el conteo de subrama del árbol (activos directos e
-    // hijos), de modo que árbol y detalle muestran siempre el mismo número.
-    const subtreeIds = await descendantLocationIds(prisma, id)
-    const subtreeAssets = await prisma.asset.count({ where: { locationId: { in: subtreeIds }, deletedAt: null } })
+    // The subtree is counted inside PostgreSQL. The detail never materializes
+    // a potentially huge location-id array in Node just to show this number.
+    const subtreeRows = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+      WITH RECURSIVE subtree AS (
+        SELECT id FROM "Location" WHERE id = ${id}
+        UNION ALL
+        SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id
+      )
+      SELECT COUNT(*)::bigint AS count
+      FROM "Asset" asset
+      WHERE asset."deletedAt" IS NULL
+        AND EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId")
+    `)
+    const subtreeAssets = Number(subtreeRows[0]?.count ?? 0)
 
     res.json({
       ...serializeLocation(location),

@@ -1,10 +1,9 @@
 import AssetIcon from '@/components/AssetIcon'
-import type { ApiAssetType, ApiFloorPlanAsset, ApiStatus } from '@/lib/api'
+import type { ApiFloorPlanFacet, ApiStatus } from '@/lib/api'
 import { floorPlanTypeColor, type FloorPlanAlert } from '@/lib/floorPlanPresentation'
 
 interface FloorPlanAssetPanelProps {
-  types: ApiAssetType[]
-  assets: ApiFloorPlanAsset[]
+  types: ApiFloorPlanFacet[]
   statuses: ApiStatus[]
   visibleTypes: Set<number>
   alert: FloorPlanAlert | 'all'
@@ -22,7 +21,6 @@ function operationalStatusColor(name: string): string {
 
 export default function FloorPlanAssetPanel({
   types,
-  assets,
   statuses,
   visibleTypes,
   alert,
@@ -35,10 +33,10 @@ export default function FloorPlanAssetPanel({
     <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
       <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Capas</div>
       {types.map((type) => {
-        const count = assets.filter((asset) => asset.type.id === type.id).length
-        return <label key={type.id} className="flex items-center gap-2 py-1 text-sm">
-          <input type="checkbox" checked={visibleTypes.has(type.id)} onChange={(event) => onToggleType(type.id, event.target.checked)} className="rounded" />
-          <span className="flex h-5 w-5 items-center justify-center rounded-md text-white" style={{ backgroundColor: floorPlanTypeColor(type.id) }}><AssetIcon iconKey={type.iconKey} size={12} strokeWidth={2} /></span>
+        const count = type.count
+        return <label key={type.typeId} className="flex items-center gap-2 py-1 text-sm">
+          <input type="checkbox" checked={visibleTypes.has(type.typeId)} onChange={(event) => onToggleType(type.typeId, event.target.checked)} className="rounded" />
+          <span className="flex h-5 w-5 items-center justify-center rounded-md text-white" style={{ backgroundColor: floorPlanTypeColor(type.typeId) }}><AssetIcon iconKey={type.iconKey} size={12} strokeWidth={2} /></span>
           {type.name} <span className="text-xs text-slate-400">({count})</span>
         </label>
       })}

@@ -5,6 +5,7 @@ import {
   deleteLocation,
   fetchAssetTypes,
   fetchLocation,
+  fetchLocationBootstrap,
   fetchLocations,
   fetchStatuses,
   fetchUsers,
@@ -94,22 +95,26 @@ export default function LocationsView() {
 
   const loadCatalog = useCallback(async () => {
     const requestId = latestCatalogRequest.current + 1
+    const retainedSelectedId = selectedIdRef.current
     latestCatalogRequest.current = requestId
     setLoading(true)
     setError(null)
     try {
-      const [nextCatalog, nextUsers] = await Promise.all([fetchLocations({ parentId: null }), fetchUsers()])
+      const [nextCatalog, nextUsers] = await Promise.all([fetchLocationBootstrap(), fetchUsers()])
       if (requestId !== latestCatalogRequest.current) return
       // A refresh may happen while a nested location is selected (for example
       // after editing an asset in its ficha). Keep only that selected node as
       // an extra DTO; never rebuild its entire ancestor branch.
-      const selectedId = selectedIdRef.current
-      const selected = selectedId && !nextCatalog.locations.some((location) => location.id === selectedId)
-        ? await fetchLocation(selectedId).catch(() => null)
+      const selected = retainedSelectedId && !nextCatalog.locations.some((location) => location.id === retainedSelectedId)
+        ? await fetchLocation(retainedSelectedId).catch(() => null)
         : null
       if (requestId !== latestCatalogRequest.current) return
       setCatalog(selected ? { ...nextCatalog, locations: [...nextCatalog.locations, selected] } : nextCatalog)
       setUsers(nextUsers)
+      // Bootstrap only chooses the first contextual leaf on initial entry. A
+      // refresh after editing must retain the user's selected parent/leaf.
+      if (retainedSelectedId === null && nextCatalog.selectedId !== null) setSelectedId(nextCatalog.selectedId)
+      setOpenBranches((current) => current.size === 0 ? new Set(nextCatalog.openBranchIds) : current)
     } catch {
       if (requestId !== latestCatalogRequest.current) return
       setError('No se pudieron cargar las ubicaciones. Inténtalo de nuevo.')

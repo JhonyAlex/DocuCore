@@ -14,7 +14,7 @@ import PlanEditorControls from '@/components/PlanEditorControls'
 import type { LocationFormValues } from '@/components/LocationFormModal'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useFloorPlanEditor } from '@/hooks/useFloorPlanEditor'
-import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlanAssets, fetchFloorPlanMarkers, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
+import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlanAssets, fetchFloorPlanFacets, fetchFloorPlanMarkers, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiFloorPlanFacet, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
 import { type NormalizedPoint } from '@/lib/floorPlanCoordinates'
 import { filterFloorPlanAssets } from '@/lib/floorPlanPresentation'
 
@@ -45,6 +45,7 @@ export default function PlansView() {
   const [visibleTypes, setVisibleTypes] = useState<Set<number>>(new Set())
   const [assetSearch, setAssetSearch] = useState('')
   const [searchedAssets, setSearchedAssets] = useState<ApiFloorPlanAsset[]>([])
+  const [facets, setFacets] = useState<ApiFloorPlanFacet[]>([])
   const [alertFilter, setAlertFilter] = useState<'all' | 'overdue' | 'soon' | 'normal'>('all')
   const [statusFilterId, setStatusFilterId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -102,9 +103,17 @@ export default function PlansView() {
     if (!catalog || !selectedLocationId) return
     await loadPlans(selectedLocationId, catalog.project.id, plan?.id)
   }, [catalog, loadPlans, plan?.id, selectedLocationId])
+  const activePlanId = plan?.id
 
   useEffect(() => { void loadCatalog() }, [loadCatalog])
   useEffect(() => { if (catalog && selectedLocationId) void loadPlans(selectedLocationId, catalog.project.id, preferredPlanIdRef.current) }, [catalog, loadPlans, selectedLocationId])
+
+  useEffect(() => {
+    if (!activePlanId) { setFacets([]); return }
+    let current = true
+    void fetchFloorPlanFacets(activePlanId).then((result) => { if (current) setFacets(result.types) }).catch(() => { if (current) setFacets([]) })
+    return () => { current = false }
+  }, [activePlanId])
 
   // Asset discovery is remote and debounced: a plan never downloads the
   // complete subtree simply to make the placement/search UI usable.
@@ -123,8 +132,7 @@ export default function PlansView() {
   const buildingId = location && catalog ? rootLocationId(location.id, catalog.locations) : null
   const buildings = catalog?.locations.filter((item) => item.parentId === null) ?? []
   const floors = catalog && buildingId ? catalog.locations.filter((item) => rootLocationId(item.id, catalog.locations) === buildingId) : []
-  const planAssets = editor.markers.map((marker) => marker.asset)
-  const planTypes = types
+  const planTypes = facets
   const markerFilters = { search: assetSearch, typeIds: visibleTypes, statusIds: statusFilterId ? new Set<number>([statusFilterId]) : new Set<number>(), alert: alertFilter }
   const shownMarkers = editor.markers.filter((marker) => filterFloorPlanAssets([marker.asset], markerFilters).length === 1)
   const markerForRemoval = editor.markers.find((marker) => marker.id === markerRemovalId) ?? null
@@ -197,7 +205,7 @@ export default function PlansView() {
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Edificio</label><select value={buildingId ?? ''} onChange={(event) => { const next = Number(event.target.value); const first = catalog?.locations.find((item) => rootLocationId(item.id, catalog.locations) === next); preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(first?.id ?? null) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{buildings.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Planta</label><select value={selectedLocationId ?? ''} onChange={(event) => { preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(Number(event.target.value)) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{floors.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Plano</label><select value={plan?.id ?? ''} onChange={(event) => { const value = event.target.value; if (value === '__new__') { setCreateError(null); setCreateOpen(true); return } const selected = plans.find((item) => item.id === Number(value)); if (selected) { preferredPlanIdRef.current = selected.id; setFocusedAssetId(null); void fetchFloorPlan(selected.id).then(setPlan) } }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"><option value="">Sin plano</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="__new__">＋ Crear nuevo plano…</option></select>{currentVersion && <div className="text-xs text-slate-500 mt-1">v{currentVersion.version} · Subido: {new Date(currentVersion.uploadedAt).toLocaleDateString('es-ES')} · {sizeLabel(currentVersion.sizeBytes)}</div>}</div>
-        {plan && <FloorPlanAssetPanel types={planTypes} assets={planAssets} statuses={statuses} visibleTypes={visibleTypes} alert={alertFilter} statusFilterId={statusFilterId} onToggleType={(typeId, visible) => setVisibleTypes((current) => { const next = new Set(current); if (visible) next.add(typeId); else next.delete(typeId); return next })} onAlertChange={setAlertFilter} onStatusFilterChange={setStatusFilterId} />}
+        {plan && <FloorPlanAssetPanel types={planTypes} statuses={statuses} visibleTypes={visibleTypes} alert={alertFilter} statusFilterId={statusFilterId} onToggleType={(typeId, visible) => setVisibleTypes((current) => { const next = new Set(current); if (visible) next.add(typeId); else next.delete(typeId); return next })} onAlertChange={setAlertFilter} onStatusFilterChange={setStatusFilterId} />}
         {plan?.markersTruncated && <button type="button" disabled={editor.dirty} onClick={() => void loadMoreMarkers()} className="mt-4 text-xs text-brand-600 hover:underline disabled:opacity-40">Cargar más marcadores</button>}
         {plan && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
       </aside>

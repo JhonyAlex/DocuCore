@@ -162,7 +162,7 @@ export default function AssetFormModal({
   const selectedLocationLabel = locations.find((location) => location.id === values.locationId)?.label
     ?? (asset?.locationId === values.locationId ? asset.location?.label ?? null : null)
   const searchLocationOptions = async (query: string): Promise<SearchableOption[]> => {
-    const result = await searchLocations(query)
+    const result = await searchLocations(query, 20, values.projectId)
     return [
       ...result.data.map((location) => ({ value: String(location.id), label: location.label, hint: location.code })),
       { value: NEW_LOCATION_OPTION, label: '＋ Crear nueva ubicación…' },
@@ -210,11 +210,11 @@ export default function AssetFormModal({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <FieldLabel htmlFor="asset-code">Código</FieldLabel>
-                <SuggestInput id="asset-code" inputRef={codeInputRef} value={values.code} onChange={(value) => updateValue('code', value)} onSearch={buildAssetSuggestionSearch('code', mode === 'edit' ? asset?.id : undefined)} required />
+                <SuggestInput id="asset-code" inputRef={codeInputRef} value={values.code} onChange={(value) => updateValue('code', value)} onSearch={buildAssetSuggestionSearch('code', mode === 'edit' ? asset?.id : undefined, values.projectId)} required />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-name">Nombre</FieldLabel>
-                <SuggestInput id="asset-name" value={values.name} onChange={(value) => updateValue('name', value)} onSearch={buildAssetSuggestionSearch('name', mode === 'edit' ? asset?.id : undefined)} required />
+                <SuggestInput id="asset-name" value={values.name} onChange={(value) => updateValue('name', value)} onSearch={buildAssetSuggestionSearch('name', mode === 'edit' ? asset?.id : undefined, values.projectId)} required />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-serial-number">Nº de serie</FieldLabel>
@@ -252,7 +252,7 @@ export default function AssetFormModal({
               </div>
               <div>
                 <FieldLabel htmlFor="asset-initials">Iniciales</FieldLabel>
-                <SuggestInput id="asset-initials" value={values.initials} onChange={(value) => updateValue('initials', value)} onSearch={buildAssetSuggestionSearch('initials', mode === 'edit' ? asset?.id : undefined)} required maxLength={4} />
+                <SuggestInput id="asset-initials" value={values.initials} onChange={(value) => updateValue('initials', value)} onSearch={buildAssetSuggestionSearch('initials', mode === 'edit' ? asset?.id : undefined, values.projectId)} required maxLength={4} />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-project">Proyecto</FieldLabel>

@@ -187,7 +187,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   }
 
   const searchDocuments = async (query: string): Promise<SearchableOption[]> => {
-    const res = await fetchDocuments({ search: query || undefined, limit: 20 })
+    const res = await fetchDocuments({ search: query || undefined, limit: 20, projectId: asset.projectId })
     return res.data.map((document) => ({
       value: String(document.id),
       label: document.name,
