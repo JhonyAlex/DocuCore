@@ -7,7 +7,7 @@ Rama auditada: `test/local-dogfood`. Commit de correcciones: `68f2cde`.
 | Integridad HTML | Hash y tamaño protegidos | 126104 bytes; SHA-256 correcto | ✅ | `Get-FileHash` | — | — |
 | Arranque PostgreSQL | Contenedor saludable en 5435 | Healthy | ✅ | `docker compose ps` | — | — |
 | Migraciones | Sin pendientes | 1 aplicada, 0 pendientes | ✅ | `pnpm db:deploy` | — | — |
-| Seed | 142 ítems canónicos | 142 ítems, 5 auditorías | ✅ | `pnpm db:seed` + SQL | — | — |
+| Seed | 142 activos canónicos | 142 activos, 5 auditorías | ✅ | `pnpm db:seed` + SQL | — | — |
 | Rutas y recarga | Nueve vistas accesibles | Nueve headings y rutas directas correctas | ✅ | Navegador + E2E | — | 68f2cde |
 | Tema | Alterna sin consola | Claro/oscuro correctos; 0 issues en flujo normal | ✅ | Navegador + E2E | DC-004 | 68f2cde |
 | Filtros individuales | Código, nombre, tipo, estado y ubicación coherentes | Resultados correctos | ✅ | Navegador | — | 68f2cde |

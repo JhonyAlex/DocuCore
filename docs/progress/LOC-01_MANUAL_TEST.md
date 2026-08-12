@@ -15,7 +15,7 @@ Estado inicial: la implementación y la matriz automática están completas, per
    ```
 
 2. Abrir `http://localhost:5173/locations`.
-3. Mantener abierto también `http://localhost:5173/items` para comprobar la relación Activo ↔ Ubicación.
+3. Mantener abierto también `http://localhost:5173/assets` para comprobar la relación Activo ↔ Ubicación.
 4. El seed y el reset son destructivos por la regla pre-release vigente. Restaurar siempre el seed canónico al finalizar.
 
 ## Checklist funcional con seed canónico
@@ -32,7 +32,7 @@ Estado inicial: la implementación y la matriz automática están completas, per
 | 8 | Editar nombre, superficie, responsable y padre | Los cambios persisten; renombrar mantiene `label` sincronizado cuando no era personalizado. | |
 | 9 | Intentar crear un ciclo o usar relaciones de otro proyecto por API | La API responde 400 y no altera la jerarquía. Este caso también está cubierto por E2E. | |
 | 10 | Intentar borrar una ubicación con hija | Responde con mensaje de conflicto y no elimina la rama. | |
-| 11 | Asignar un activo a una ubicación desde **Nuevo ítem** | El selector muestra `location.label`; el activo se crea y el Sidebar aumenta sin recargar. | |
+| 11 | Asignar un activo a una ubicación desde el formulario de activo | El selector muestra `location.label`; el activo se crea (vía **Nuevo activo** de la cabecera) y el Sidebar aumenta sin recargar. | |
 | 12 | Filtrar Activos por una ubicación padre | Aparecen los activos de toda la subrama, no solo los asignados directamente al padre. | |
 | 13 | Intentar borrar una ubicación con activos en su subrama | Responde con mensaje de conflicto y conserva ubicación y activos. | |
 | 14 | Borrar primero el activo de prueba por API y luego una hoja vacía | El contador del Sidebar refleja el borrado después de recargar; la hoja vacía se elimina con confirmación. | |
@@ -68,7 +68,7 @@ Estado inicial: la implementación y la matriz automática están completas, per
 
 ## Límites y pendientes conocidos
 
-- La suite visual completa queda en 24/30 porque `documents` e `item-modal` pertenecen al pendiente visual de DOC-01. `locations` pasa sus 3 objetivos bajo el umbral fijo de 0,5%.
+- La suite visual RELEASE-01/PERF-01 cumple 30/30 bajo el umbral fijo de 0,5 %.
 - El selector global de proyecto todavía es demostrativo; las reglas entre proyectos están verificadas por API/E2E.
 - El borrado directo de un activo por API no notifica al frontend: el Sidebar refleja el nuevo total al recargar.
 - El botón **Ver plano** solo se habilita si existe un plano; la persistencia de planos es PLAN-01.
