@@ -1,4 +1,6 @@
-import type { Browser, Page, TestInfo } from '@playwright/test'
+import { access, copyFile, mkdir } from 'node:fs/promises'
+import path from 'node:path'
+import type { BrowserContext, Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { compareImages, VISUAL_THRESHOLD_PERCENT, visualOutputPath } from './imageDiff'
 
@@ -13,19 +15,23 @@ type VisualTarget = {
   // «Activos e ítems», así que cada lado espera su propio heading.
   referenceHeading?: string
   modal?: boolean
+  // Estas superficies evolucionaron deliberadamente más allá del prototipo
+  // protegido. Su estado de reposo aprobado se compara con un baseline
+  // versionado, sin cambiar el umbral ni ocultar funcionalidad.
+  evolvedContract?: boolean
 }
 
 const targets: VisualTarget[] = [
   { name: 'dashboard', route: '/dashboard', referenceView: 'dashboard', heading: 'Panel general' },
   { name: 'projects', route: '/projects', referenceView: 'projects', heading: 'Proyectos' },
-  { name: 'items', route: '/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems' },
-  { name: 'documents', route: '/docs', referenceView: 'docs', heading: 'Documentos' },
+  { name: 'items', route: '/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems', evolvedContract: true },
+  { name: 'documents', route: '/docs', referenceView: 'docs', heading: 'Documentos', evolvedContract: true },
   { name: 'calendar', route: '/calendar', referenceView: 'calendar', heading: 'Calendario' },
-  { name: 'plans', route: '/plans', referenceView: 'plans', heading: 'Planos interactivos' },
+  { name: 'plans', route: '/plans', referenceView: 'plans', heading: 'Planos interactivos', evolvedContract: true },
   { name: 'locations', route: '/locations', referenceView: 'locations', heading: 'Ubicaciones' },
   { name: 'history', route: '/history', referenceView: 'history', heading: 'Historial y auditoría' },
-  { name: 'config', route: '/config', referenceView: 'config', heading: 'Configuración' },
-  { name: 'item-modal', route: '/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true },
+  { name: 'config', route: '/config', referenceView: 'config', heading: 'Configuración', evolvedContract: true },
+  { name: 'item-modal', route: '/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true, evolvedContract: true },
 ]
 
 const variants: Array<{ name: string; width: number; height: number; theme: Theme }> = [
@@ -48,6 +54,21 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
   await expect(page.getByText('María Fernández', { exact: true }).first()).toBeVisible()
   if (target.route === '/assets') {
     await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
+  }
+  if (target.route === '/docs') {
+    await expect(page.getByText('Certificado ITV 2025', { exact: true })).toBeVisible()
+  }
+  if (target.route === '/plans') {
+    await expect(page.getByTestId('floor-plan-viewer')).toHaveAttribute('data-floor-plan-loaded', 'true')
+    const firstMarker = page.getByRole('button', { name: /^Abrir activo / }).first()
+    await expect(firstMarker).toBeVisible()
+    await expect(firstMarker.locator('[data-asset-icon]')).toBeVisible()
+    await expect.poll(() => firstMarker.evaluate((marker) => {
+      const box = marker.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      return hit !== null && marker.contains(hit)
+    })).toBe(true)
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   }
   if (target.route === '/locations') {
     await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
@@ -72,7 +93,7 @@ async function openReferenceTarget(page: Page, target: VisualTarget, theme: Them
   await expect(page.getByRole('heading', { name: target.referenceHeading ?? target.heading, exact: true })).toBeVisible()
 }
 
-async function attachDiff(testInfo: TestInfo, name: string, result: Awaited<ReturnType<typeof compareImages>>): Promise<void> {
+async function attachDiff(testInfo: TestInfo, name: string, source: 'reference' | 'baseline', result: Awaited<ReturnType<typeof compareImages>>): Promise<void> {
   const metrics = JSON.stringify({
     name,
     thresholdPercent: VISUAL_THRESHOLD_PERCENT,
@@ -82,48 +103,75 @@ async function attachDiff(testInfo: TestInfo, name: string, result: Awaited<Retu
   await Promise.all([
     testInfo.attach(`${name}-metrics`, { body: metrics, contentType: 'application/json' }),
     testInfo.attach(`${name}-app`, { path: result.appPath, contentType: 'image/png' }),
-    testInfo.attach(`${name}-reference`, { path: result.referencePath, contentType: 'image/png' }),
+    testInfo.attach(`${name}-${source}`, { path: result.referencePath, contentType: 'image/png' }),
     testInfo.attach(`${name}-diff`, { path: result.diffPath, contentType: 'image/png' }),
   ])
 }
 
-async function compareTarget(browser: Browser, testInfo: TestInfo, target: VisualTarget, variant: typeof variants[number]): Promise<void> {
+function evolvedBaselinePath(name: string): string {
+  return path.resolve(process.cwd(), 'tests', 'visual', 'baselines', 'release-01', `${name}.png`)
+}
+
+async function prepareEvolvedBaseline(name: string, appPath: string): Promise<string> {
+  const baselinePath = evolvedBaselinePath(name)
+  if (process.env.APPROVE_EVOLVED_VISUAL_BASELINES === '1') {
+    await mkdir(path.dirname(baselinePath), { recursive: true })
+    await copyFile(appPath, baselinePath)
+    return baselinePath
+  }
+  try {
+    await access(baselinePath)
+  } catch {
+    throw new Error(`Missing approved visual baseline for ${name}. Inspect the capture and use APPROVE_EVOLVED_VISUAL_BASELINES=1 only for an explicit contract approval.`)
+  }
+  return baselinePath
+}
+
+async function compareTarget(context: BrowserContext, testInfo: TestInfo, target: VisualTarget, variant: typeof variants[number]): Promise<void> {
   const name = `${target.name}-${variant.name}`
-  const context = await browser.newContext({
-    viewport: { width: variant.width, height: variant.height },
-    deviceScaleFactor: 1,
-  })
   const appPage = await context.newPage()
-  const referencePage = await context.newPage()
+  const referencePage = target.evolvedContract ? null : await context.newPage()
 
   try {
-    await Promise.all([appPage.emulateMedia({ reducedMotion: 'reduce' }), referencePage.emulateMedia({ reducedMotion: 'reduce' })])
+    await appPage.setViewportSize({ width: variant.width, height: variant.height })
+    if (referencePage) await referencePage.setViewportSize({ width: variant.width, height: variant.height })
+    await appPage.emulateMedia({ reducedMotion: 'reduce' })
+    if (referencePage) await referencePage.emulateMedia({ reducedMotion: 'reduce' })
     await openAppTarget(appPage, target, variant.theme)
-    await openReferenceTarget(referencePage, target, variant.theme)
+    if (referencePage) await openReferenceTarget(referencePage, target, variant.theme)
 
-    const [appPath, referencePath] = await Promise.all([
-      visualOutputPath(name, 'app'),
-      visualOutputPath(name, 'reference'),
-    ])
-    await Promise.all([
-      appPage.screenshot({ path: appPath, animations: 'disabled' }),
-      referencePage.screenshot({ path: referencePath, animations: 'disabled' }),
-    ])
+    const appPath = await visualOutputPath(name, 'app')
+    await appPage.screenshot({ path: appPath, animations: 'disabled' })
+    const source = target.evolvedContract ? 'baseline' : 'reference'
+    const referencePath = target.evolvedContract
+      ? await prepareEvolvedBaseline(name, appPath)
+      : await visualOutputPath(name, 'reference')
+    if (referencePage) await referencePage.screenshot({ path: referencePath, animations: 'disabled' })
 
     const result = await compareImages(name, appPath, referencePath)
-    console.log(`${name}: ${result.mismatchPixels} pixels (${result.mismatchPercent.toFixed(4)}%) differ; threshold ${VISUAL_THRESHOLD_PERCENT}%.`)
-    await attachDiff(testInfo, name, result)
+    console.log(`${name} vs ${source}: ${result.mismatchPixels} pixels (${result.mismatchPercent.toFixed(4)}%) differ; threshold ${VISUAL_THRESHOLD_PERCENT}%.`)
+    await attachDiff(testInfo, name, source, result)
     expect(result.mismatchPercent, `${name} exceeds the ${VISUAL_THRESHOLD_PERCENT}% visual mismatch threshold.`).toBeLessThanOrEqual(VISUAL_THRESHOLD_PERCENT)
   } finally {
-    await context.close()
+    await Promise.all([appPage.close(), referencePage?.close()])
   }
 }
 
-test.describe('Visual fidelity against protected reference @visual', () => {
+test.describe('Visual contract against protected reference and approved baselines @visual', () => {
+  let context: BrowserContext
+
+  test.beforeAll(async ({ browser }) => {
+    context = await browser.newContext({ deviceScaleFactor: 1 })
+  })
+
+  test.afterAll(async () => {
+    await context.close()
+  })
+
   for (const variant of variants) {
     for (const target of targets) {
-      test(`${target.name} ${variant.name} @visual`, async ({ browser }, testInfo) => {
-        await compareTarget(browser, testInfo, target, variant)
+      test(`${target.name} ${variant.name} @visual`, async ({ browser: _browser }, testInfo) => {
+        await compareTarget(context, testInfo, target, variant)
       })
     }
   }
