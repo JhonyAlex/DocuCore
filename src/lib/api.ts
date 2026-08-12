@@ -90,6 +90,7 @@ export interface ApiCalendarResponse {
   today: string
   events: ApiCalendarEventOccurrence[]
   counts: { total: number; overdue: number; today: number; upcoming: number }
+  truncated?: boolean
 }
 export interface CalendarQuery {
   projectId: number
@@ -99,6 +100,7 @@ export interface CalendarQuery {
   status?: ApiCalendarEventStatus
   assetId?: number
   search?: string
+  limit?: number
 }
 export interface CalendarManualEventInput {
   title: string
@@ -262,6 +264,7 @@ export interface PreventivePlanInput {
 
 export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; status: ApiCalendarEventStatus; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
 export interface ApiAssetHistoryEntry { id: number; action: string; detail: string; timestamp: string; user: { name: string; initials: string } }
+export interface ApiAssetHistoryPage { data: ApiAssetHistoryEntry[]; total: number; page: number; totalPages: number }
 
 export interface ApiLocation {
   id: number
@@ -325,7 +328,8 @@ export interface ApiFloorPlanAsset {
   locationId: number
   type: { id: number; name: string; iconKey?: AssetIconKey }
   status: { id: number; name: string; pulseDot: string | null }
-  nextEvents: ApiAssetEvent[]
+  nextEvents?: ApiAssetEvent[]
+  alert?: 'overdue' | 'soon' | 'normal'
 }
 
 export interface ApiFloorPlanMarker {
@@ -349,7 +353,8 @@ export interface ApiFloorPlan {
   location: ApiLocationRef
   currentVersion: ApiFloorPlanVersion | null
   markers: ApiFloorPlanMarker[]
-  availableAssets?: ApiFloorPlanAsset[]
+  markerTotal?: number
+  markersTruncated?: boolean
 }
 
 export interface ApiAssetFloorPlanPlacement {
@@ -372,7 +377,7 @@ export interface FloorPlanWriteInput {
 export interface ApiLocationsResponse {
   tree: ApiLocationTreeNode[]
   list: ApiLocation[]
-  locations: ApiLocationTreeNode[]
+  locations: ApiLocation[]
   project: { id: number; name: string; code: string }
 }
 
@@ -409,6 +414,7 @@ export interface ApiDocument {
   currentVersion: ApiDocumentVersion | null
   assetIds?: number[]
   assets?: Array<{ id: number; code: string; name: string }>
+  assetCount?: number
   periodicity?: DocumentPeriodicity | null
   periodicityMode?: DocumentPeriodicityMode | null
 }
@@ -467,6 +473,7 @@ export interface FetchAssetsParams {
   typeId?: number
   statusId?: number
   locationId?: number
+  projectId?: number
   trashed?: boolean
 }
 
@@ -489,6 +496,7 @@ export async function fetchAssets(params: FetchAssetsParams = {}): Promise<Fetch
   if (params.typeId) q.set('typeId', String(params.typeId))
   if (params.statusId) q.set('statusId', String(params.statusId))
   if (params.locationId) q.set('locationId', String(params.locationId))
+  if (params.projectId) q.set('projectId', String(params.projectId))
   if (params.trashed) q.set('trashed', 'true')
   const res = await request<FetchAssetsResponse>(`/assets?${q.toString()}`)
   const rows = res.data ?? res.assets ?? []
@@ -631,7 +639,7 @@ export function completeAssetDynamicDate(assetId: number, definitionId: number, 
 }
 
 export function fetchAssetEventHistory(assetId: number): Promise<ApiAssetEventHistory[]> { return request(`/assets/${assetId}/events`) }
-export function fetchAssetHistory(assetId: number): Promise<ApiAssetHistoryEntry[]> { return request(`/assets/${assetId}/history`) }
+export function fetchAssetHistory(assetId: number, page = 1): Promise<ApiAssetHistoryPage> { return request(`/assets/${assetId}/history?page=${page}&limit=20`) }
 export function completeAssetEvent(assetId: number, source: ApiAssetEventHistory['source'], id: number, performedDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/events/complete`, { method: 'POST', body: JSON.stringify({ source, id, performedDate }) }) }
 export function createAssetPreventive(assetId: number, input: { planId: number; scheduledDate: string }): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives`, { method: 'POST', body: JSON.stringify(input) }) }
 export function updateAssetPreventiveDate(assetId: number, planId: number, scheduledDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'PATCH', body: JSON.stringify({ scheduledDate }) }) }
@@ -659,13 +667,28 @@ export function fetchStatuses(): Promise<ApiStatus[]> {
   return request<ApiStatus[]>('/statuses')
 }
 
-export async function fetchLocations(): Promise<ApiLocationsResponse> {
-  const res = await request<ApiLocationsResponse>('/locations')
+export async function fetchLocations(options?: { parentId?: number | null; limit?: number }): Promise<ApiLocationsResponse> {
+  const query = new URLSearchParams()
+  if (options && Object.prototype.hasOwnProperty.call(options, 'parentId')) query.set('parentId', options.parentId === null ? 'root' : String(options.parentId))
+  if (options?.limit) query.set('limit', String(options.limit))
+  const res = await request<ApiLocationsResponse>(`/locations${query.size ? `?${query.toString()}` : ''}`)
   return { ...res, locations: res.locations ?? res.tree ?? [] }
+}
+export function searchLocations(search = '', limit = 20): Promise<{ data: ApiLocation[] }> {
+  const query = new URLSearchParams({ search, limit: String(limit) })
+  return request(`/locations/search?${query.toString()}`)
 }
 
 export function fetchLocation(id: number): Promise<ApiLocationDetail> {
   return request<ApiLocationDetail>(`/locations/${id}`)
+}
+
+export function fetchLocationAssets(id: number, params: { page?: number; limit?: number; search?: string } = {}): Promise<{ data: ApiLocationAsset[]; total: number; page: number; totalPages: number }> {
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.search) query.set('search', params.search)
+  return request(`/locations/${id}/assets${query.size ? `?${query.toString()}` : ''}`)
 }
 
 export function createLocation(data: LocationWriteInput): Promise<ApiLocation> {
@@ -688,6 +711,15 @@ export function fetchFloorPlans(projectId: number, locationId?: number): Promise
 
 export function fetchFloorPlan(id: number): Promise<ApiFloorPlan> {
   return request(`/floor-plans/${id}`)
+}
+
+export function fetchFloorPlanAssets(id: number, search = '', limit = 20): Promise<{ data: ApiFloorPlanAsset[] }> {
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (search.trim()) query.set('search', search.trim())
+  return request(`/floor-plans/${id}/assets?${query.toString()}`)
+}
+export function fetchFloorPlanMarkers(id: number, page: number, limit = 500): Promise<{ data: ApiFloorPlanMarker[]; total: number; page: number; totalPages: number }> {
+  return request(`/floor-plans/${id}/markers?page=${page}&limit=${limit}`)
 }
 
 export function fetchAssetFloorPlanPlacements(assetId: number): Promise<{ data: ApiAssetFloorPlanPlacement[] }> {
@@ -751,8 +783,8 @@ export async function fetchDocuments(params: DocumentListParams = {}): Promise<A
   return request<ApiDocumentListResponse>(`/documents?${q.toString()}`)
 }
 
-export function fetchDocumentKpis(): Promise<{ vigente: number; porVencer: number; vencido: number; total: number }> {
-  return request('/documents/kpis')
+export function fetchDocumentKpis(projectId?: number): Promise<{ vigente: number; porVencer: number; vencido: number; total: number }> {
+  return request(`/documents/kpis${projectId ? `?projectId=${projectId}` : ''}`)
 }
 
 export function fetchDocument(id: number): Promise<ApiDocumentDetail> {

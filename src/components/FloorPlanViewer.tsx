@@ -55,7 +55,10 @@ function clearViewerPointerCaptures(viewer: OpenSeadragon.Viewer) {
       const points = tracker.getActivePointersListByType(pointerType)
       for (const point of points.asArray()) {
         if (!point.captured) continue
-        if (tracker.element.hasPointerCapture(point.id)) tracker.element.releasePointerCapture(point.id)
+        // OpenSeadragon may tear down its tracker element while a pointer-up
+        // callback is still queued. Avoid a console exception in that race.
+        const element = tracker.element
+        if (element?.hasPointerCapture(point.id)) element.releasePointerCapture(point.id)
         point.captured = false
       }
       points.captureCount = 0

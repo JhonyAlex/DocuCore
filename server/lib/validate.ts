@@ -59,7 +59,13 @@ export const calendarListQuerySchema = z.object({
   status: optionalQueryText(calendarStatusSchema),
   assetId: optionalPositiveId,
   search: optionalQueryText(z.string().trim().min(1).max(160)),
-}).strict().refine((value) => !value.from || !value.to || value.from <= value.to, { message: 'from must not be after to', path: ['to'] })
+  limit: z.preprocess((value) => value === undefined ? 500 : Number(value), z.number().int().positive().max(500)),
+}).strict()
+  .refine((value) => !value.from || !value.to || value.from <= value.to, { message: 'from must not be after to', path: ['to'] })
+  .refine((value) => {
+    if (!value.from || !value.to) return true
+    return (Date.parse(`${value.to}T00:00:00.000Z`) - Date.parse(`${value.from}T00:00:00.000Z`)) / 86_400_000 <= 93
+  }, { message: 'Calendar range must not exceed 93 days', path: ['to'] })
 
 export const calendarCreateEventSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -161,6 +167,7 @@ const coordinate = z.number().finite().min(0).max(1)
 export const floorPlanListQuerySchema = z.object({
   projectId: optionalPositiveId,
   locationId: optionalPositiveId,
+  limit: z.preprocess((value) => value === undefined ? 100 : Number(value), z.number().int().positive().max(100)),
 }).strict()
 
 export const createFloorPlanSchema = z.object({

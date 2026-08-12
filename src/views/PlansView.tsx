@@ -14,7 +14,7 @@ import PlanEditorControls from '@/components/PlanEditorControls'
 import type { LocationFormValues } from '@/components/LocationFormModal'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useFloorPlanEditor } from '@/hooks/useFloorPlanEditor'
-import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
+import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlanAssets, fetchFloorPlanMarkers, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
 import { type NormalizedPoint } from '@/lib/floorPlanCoordinates'
 import { filterFloorPlanAssets } from '@/lib/floorPlanPresentation'
 
@@ -44,6 +44,7 @@ export default function PlansView() {
   const [plan, setPlan] = useState<ApiFloorPlan | null>(null)
   const [visibleTypes, setVisibleTypes] = useState<Set<number>>(new Set())
   const [assetSearch, setAssetSearch] = useState('')
+  const [searchedAssets, setSearchedAssets] = useState<ApiFloorPlanAsset[]>([])
   const [alertFilter, setAlertFilter] = useState<'all' | 'overdue' | 'soon' | 'normal'>('all')
   const [statusFilterId, setStatusFilterId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -105,20 +106,36 @@ export default function PlansView() {
   useEffect(() => { void loadCatalog() }, [loadCatalog])
   useEffect(() => { if (catalog && selectedLocationId) void loadPlans(selectedLocationId, catalog.project.id, preferredPlanIdRef.current) }, [catalog, loadPlans, selectedLocationId])
 
+  // Asset discovery is remote and debounced: a plan never downloads the
+  // complete subtree simply to make the placement/search UI usable.
+  useEffect(() => {
+    if (!plan || !assetSearch.trim()) { setSearchedAssets([]); return }
+    let current = true
+    const timer = window.setTimeout(() => {
+      void fetchFloorPlanAssets(plan.id, assetSearch).then((result) => { if (current) setSearchedAssets(result.data) }).catch(() => { if (current) setSearchedAssets([]) })
+    }, 250)
+    return () => { current = false; window.clearTimeout(timer) }
+  }, [assetSearch, plan])
+
   const ficha = useAssetFicha({ onAssetChanged: () => { void refreshPlan() } })
   const editor = useFloorPlanEditor(plan)
   const location = catalog?.locations.find((item) => item.id === selectedLocationId) ?? null
   const buildingId = location && catalog ? rootLocationId(location.id, catalog.locations) : null
   const buildings = catalog?.locations.filter((item) => item.parentId === null) ?? []
   const floors = catalog && buildingId ? catalog.locations.filter((item) => rootLocationId(item.id, catalog.locations) === buildingId) : []
-  const planAssets = plan?.availableAssets ?? []
-  const planTypes = types.filter((type) => planAssets.some((asset) => asset.type.id === type.id))
-  const filteredAssets = filterFloorPlanAssets(planAssets, { search: assetSearch, typeIds: visibleTypes, statusIds: statusFilterId ? new Set([statusFilterId]) : new Set(), alert: alertFilter })
-  const shownMarkers = editor.markers.filter((marker) => visibleTypes.has(marker.asset.type.id) && filteredAssets.some((asset) => asset.id === marker.assetId))
-  const unplacedAssets = planAssets.filter((asset) => !editor.markers.some((marker) => marker.assetId === asset.id))
+  const planAssets = editor.markers.map((marker) => marker.asset)
+  const planTypes = types
+  const markerFilters = { search: assetSearch, typeIds: visibleTypes, statusIds: statusFilterId ? new Set<number>([statusFilterId]) : new Set<number>(), alert: alertFilter }
+  const shownMarkers = editor.markers.filter((marker) => filterFloorPlanAssets([marker.asset], markerFilters).length === 1)
   const markerForRemoval = editor.markers.find((marker) => marker.id === markerRemovalId) ?? null
   const activeMarker = editor.markers.find((marker) => marker.id === markerPopover?.markerId) ?? null
   const currentVersion = plan?.currentVersion ?? null
+  const loadMoreMarkers = async () => {
+    if (!plan || editor.dirty || !plan.markersTruncated) return
+    const page = Math.floor(plan.markers.length / 500) + 1
+    const next = await fetchFloorPlanMarkers(plan.id, page)
+    setPlan((current) => current && current.id === plan.id ? { ...current, markers: [...current.markers, ...next.data], markersTruncated: current.markers.length + next.data.length < next.total } : current)
+  }
 
   useEffect(() => {
     if (!focusedAssetId || !plan || !viewerActionState) return
@@ -181,15 +198,16 @@ export default function PlansView() {
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Planta</label><select value={selectedLocationId ?? ''} onChange={(event) => { preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(Number(event.target.value)) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{floors.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Plano</label><select value={plan?.id ?? ''} onChange={(event) => { const value = event.target.value; if (value === '__new__') { setCreateError(null); setCreateOpen(true); return } const selected = plans.find((item) => item.id === Number(value)); if (selected) { preferredPlanIdRef.current = selected.id; setFocusedAssetId(null); void fetchFloorPlan(selected.id).then(setPlan) } }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"><option value="">Sin plano</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="__new__">＋ Crear nuevo plano…</option></select>{currentVersion && <div className="text-xs text-slate-500 mt-1">v{currentVersion.version} · Subido: {new Date(currentVersion.uploadedAt).toLocaleDateString('es-ES')} · {sizeLabel(currentVersion.sizeBytes)}</div>}</div>
         {plan && <FloorPlanAssetPanel types={planTypes} assets={planAssets} statuses={statuses} visibleTypes={visibleTypes} alert={alertFilter} statusFilterId={statusFilterId} onToggleType={(typeId, visible) => setVisibleTypes((current) => { const next = new Set(current); if (visible) next.add(typeId); else next.delete(typeId); return next })} onAlertChange={setAlertFilter} onStatusFilterChange={setStatusFilterId} />}
+        {plan?.markersTruncated && <button type="button" disabled={editor.dirty} onClick={() => void loadMoreMarkers()} className="mt-4 text-xs text-brand-600 hover:underline disabled:opacity-40">Cargar más marcadores</button>}
         {plan && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
       </aside>
       <div className="xl:col-span-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Pan y zoom siempre disponibles · Coordenadas normalizadas (0–1)</span></div></div>
         {loading ? <div className="h-[600px] flex items-center justify-center text-sm text-slate-500">Cargando planos…</div> : plan && currentVersion ? <div className="relative">
           <FloorPlanViewer dziUrl={floorPlanDziUrl(plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} highlightedAssetId={focusedAssetId} actionsRef={viewerActions} onReady={markViewerReady} onEmptyQuickClick={(point, anchor) => { setMarkerPopover(null); if (placementTarget && !editor.markers.some((marker) => marker.assetId === placementTarget.id)) { placeAsset(placementTarget, point); return } setPlacementPopover({ point, anchor }) }} onSelectMarker={(marker, anchor) => { setPlacementTarget(null); setPlacementPopover(null); setFocusedAssetId(marker.assetId); setMarkerPopover({ markerId: marker.id, anchor }) }} onMarkerDragStart={(markerId) => { setMarkerPopover(null); editor.beginMove(markerId) }} onMarkerDrag={(markerId, point) => editor.previewMove(markerId, point)} onMarkerDragEnd={() => editor.endMove()} />
-          <FloorPlanAssetSearch search={assetSearch} assets={filteredAssets} markers={editor.markers} onSearchChange={setAssetSearch} onFocusMarker={(marker) => { setMarkerPopover(null); viewerActions.current?.focus(marker) }} onStartPlacement={(asset) => { setAssetSearch(''); setPlacementPopover(null); setMarkerPopover(null); setPlacementTarget(asset) }} />
+          <FloorPlanAssetSearch search={assetSearch} assets={searchedAssets} markers={editor.markers} onSearchChange={setAssetSearch} onFocusMarker={(marker) => { setMarkerPopover(null); viewerActions.current?.focus(marker) }} onStartPlacement={(asset) => { setAssetSearch(''); setPlacementPopover(null); setMarkerPopover(null); setPlacementTarget(asset) }} />
           {placementTarget && <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-brand-200 bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:border-brand-800 dark:bg-slate-900/95"><span>Elige una zona para <strong>{placementTarget.name}</strong></span><button type="button" onClick={() => setPlacementTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancelar</button></div>}
-          {placementPopover && <FloorPlanPlacementPopover anchor={placementPopover.anchor} assets={unplacedAssets} onChoose={(asset) => placeAsset(asset, placementPopover.point)} onClose={() => setPlacementPopover(null)} />}
+          {placementPopover && <FloorPlanPlacementPopover anchor={placementPopover.anchor} searchAssets={async (query) => (await fetchFloorPlanAssets(plan.id, query)).data.filter((asset) => !editor.markers.some((marker) => marker.assetId === asset.id))} onChoose={(asset) => placeAsset(asset, placementPopover.point)} onClose={() => setPlacementPopover(null)} />}
           {activeMarker && markerPopover && <FloorPlanMarkerPopover marker={activeMarker} anchor={markerPopover.anchor} onClose={() => setMarkerPopover(null)} onView={() => { ficha.open(activeMarker.assetId); setMarkerPopover(null) }} onRemove={() => { setMarkerRemovalId(activeMarker.id); setMarkerPopover(null) }} />}
         </div> : <div className="h-[600px] flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-center"><p className="text-sm font-medium">No hay un plano para esta ubicación.</p><p className="mt-1 text-sm text-slate-500">Crea el primer plano con una imagen PNG, JPEG o WebP.</p><button type="button" onClick={() => { setCreateError(null); setCreateOpen(true) }} className="mt-4 px-3 py-2 rounded-lg bg-brand-600 text-white text-sm">Crear plano</button></div>}
       </div>

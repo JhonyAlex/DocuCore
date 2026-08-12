@@ -6,6 +6,7 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentFile } from '../lib/documentStorage'
 import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
+import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
 
 const router: Router = Router()
 const ACTOR_USER_ID = 1
@@ -31,6 +32,33 @@ const documentInclude = {
 } satisfies Prisma.DocumentInclude
 
 type DocumentWithCurrentVersion = Prisma.DocumentGetPayload<{ include: typeof documentInclude }>
+
+// Intentionally distinct from documentInclude. A table row must never hydrate
+// a document's full version history or an unbounded many-to-many relation.
+const documentListSelect = {
+  id: true,
+  name: true,
+  eventTitle: true,
+  type: true,
+  projectId: true,
+  createdAt: true,
+  updatedAt: true,
+  periodicity: true,
+  periodicityMode: true,
+  assets: {
+    where: { asset: { deletedAt: null } },
+    orderBy: { asset: { code: 'asc' as const } },
+    take: LOCATION_PREVIEW_SIZE,
+    select: { asset: { select: { id: true, code: true, name: true } } },
+  },
+  _count: { select: { assets: { where: { asset: { deletedAt: null } } } } },
+  versions: {
+    orderBy: { version: 'desc' as const },
+    take: 1,
+    select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, issueDate: true, expiryDate: true, uploadedAt: true },
+  },
+} satisfies Prisma.DocumentSelect
+type DocumentListRow = Prisma.DocumentGetPayload<{ select: typeof documentListSelect }>
 
 function nowClock(): Date {
   const configured = process.env.DOCUCORE_NOW ? new Date(process.env.DOCUCORE_NOW) : null
@@ -75,6 +103,34 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
 function parseId(value: string): number | null {
   const id = Number(value)
   return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+function serializeDocumentList(document: DocumentListRow) {
+  const currentVersion = document.versions[0]
+  return {
+    id: document.id,
+    name: document.name,
+    eventTitle: document.eventTitle,
+    type: document.type,
+    projectId: document.projectId,
+    createdAt: document.createdAt.toISOString(),
+    updatedAt: document.updatedAt.toISOString(),
+    periodicity: document.periodicity ?? null,
+    periodicityMode: document.periodicityMode ?? null,
+    assetCount: document._count.assets,
+    assets: document.assets.map((link) => link.asset),
+    currentVersion: currentVersion ? {
+      id: currentVersion.id,
+      version: currentVersion.version,
+      originalName: currentVersion.originalName,
+      mimeType: currentVersion.mimeType,
+      sizeBytes: currentVersion.sizeBytes,
+      issueDate: currentVersion.issueDate.toISOString(),
+      expiryDate: currentVersion.expiryDate?.toISOString() ?? null,
+      uploadedAt: currentVersion.uploadedAt.toISOString(),
+    } : null,
+    status: documentStatus(currentVersion?.expiryDate ?? null),
+  }
 }
 
 async function sendDocumentVersion(
@@ -131,37 +187,73 @@ function assetCodes(document: DocumentWithCurrentVersion): string {
 
 router.get('/', asyncHandler(async (req, res) => {
   const parsed = documentListQuerySchema.parse(req.query)
-  const rows = await prisma.document.findMany({
-    where: {
-      projectId: parsed.projectId,
-      assets: parsed.assetId === null ? { none: {} } : parsed.assetId !== undefined ? { some: { assetId: parsed.assetId } } : undefined,
-      type: parsed.type ? { equals: parsed.type, mode: 'insensitive' } : undefined,
-      OR: parsed.search ? [
-        { name: { contains: parsed.search, mode: 'insensitive' } },
-        { assets: { some: { asset: { code: { contains: parsed.search, mode: 'insensitive' } } } } },
-        { assets: { some: { asset: { name: { contains: parsed.search, mode: 'insensitive' } } } } },
-      ] : undefined,
-    },
-    include: documentInclude,
-    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-  })
-  const filtered = parsed.status ? rows.filter((document) => documentStatus(document.versions[0]?.expiryDate ?? null) === parsed.status) : rows
-  const total = filtered.length
-  const totalPages = Math.max(1, Math.ceil(total / parsed.limit))
-  const start = (parsed.page - 1) * parsed.limit
-  res.json({ data: filtered.slice(start, start + parsed.limit).map(serializeDocument), total, page: parsed.page, totalPages })
+  const now = nowClock()
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + 30)
+  const conditions: Prisma.Sql[] = [Prisma.sql`TRUE`]
+  if (parsed.projectId !== undefined) conditions.push(Prisma.sql`d."projectId" = ${parsed.projectId}`)
+  if (parsed.assetId === null) conditions.push(Prisma.sql`NOT EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id")`)
+  if (parsed.assetId !== undefined && parsed.assetId !== null) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id" AND di."assetId" = ${parsed.assetId})`)
+  if (parsed.type) conditions.push(Prisma.sql`d."type" ILIKE ${parsed.type}`)
+  if (parsed.search) {
+    const pattern = `%${parsed.search}%`
+    conditions.push(Prisma.sql`(
+      d."name" ILIKE ${pattern}
+      OR EXISTS (
+        SELECT 1 FROM "DocumentItem" di
+        INNER JOIN "Asset" a ON a."id" = di."assetId"
+        WHERE di."documentId" = d."id" AND a."deletedAt" IS NULL
+          AND (a."code" ILIKE ${pattern} OR a."name" ILIKE ${pattern})
+      )
+    )`)
+  }
+  if (parsed.status === 'Vencido') conditions.push(Prisma.sql`current."expiryDate" < ${today}`)
+  if (parsed.status === 'Por vencer') conditions.push(Prisma.sql`current."expiryDate" >= ${today} AND current."expiryDate" <= ${soon}`)
+  if (parsed.status === 'Vigente') conditions.push(Prisma.sql`(current."expiryDate" IS NULL OR current."expiryDate" > ${soon})`)
+
+  const offset = (parsed.page - 1) * parsed.limit
+  const ids = await prisma.$queryRaw<Array<{ id: number; total: bigint | number }>>(Prisma.sql`
+    SELECT d."id" AS id, COUNT(*) OVER() AS total
+    FROM "Document" d
+    LEFT JOIN LATERAL (
+      SELECT dv."expiryDate"
+      FROM "DocumentVersion" dv
+      WHERE dv."documentId" = d."id"
+      ORDER BY dv."version" DESC
+      LIMIT 1
+    ) current ON TRUE
+    WHERE ${Prisma.join(conditions, ' AND ')}
+    ORDER BY d."updatedAt" DESC, d."id" ASC
+    OFFSET ${offset} LIMIT ${parsed.limit}
+  `)
+  const total = ids.length === 0 ? 0 : Number(ids[0].total)
+  const order = new Map(ids.map((row, index) => [Number(row.id), index]))
+  const rows = ids.length === 0 ? [] : await prisma.document.findMany({ where: { id: { in: ids.map((row) => Number(row.id)) } }, select: documentListSelect })
+  rows.sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0))
+  res.json({ data: rows.map(serializeDocumentList), total, page: parsed.page, totalPages: Math.max(1, Math.ceil(total / parsed.limit)) })
 }))
 
-router.get('/kpis', asyncHandler(async (_req, res) => {
-  const documents = await prisma.document.findMany({ include: documentInclude })
-  const kpis = { vigente: 0, porVencer: 0, vencido: 0, total: documents.length }
-  for (const document of documents) {
-    const status = documentStatus(document.versions[0]?.expiryDate ?? null)
-    if (status === 'Vigente') kpis.vigente += 1
-    if (status === 'Por vencer') kpis.porVencer += 1
-    if (status === 'Vencido') kpis.vencido += 1
-  }
-  res.json(kpis)
+router.get('/kpis', asyncHandler(async (req, res) => {
+  const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
+  const projectId = Number.isInteger(requestedProjectId) && requestedProjectId! > 0 ? requestedProjectId : null
+  const now = nowClock()
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + 30)
+  const rows = await prisma.$queryRaw<Array<{ vigente: bigint | number; porVencer: bigint | number; vencido: bigint | number; total: bigint | number }>>(Prisma.sql`
+    SELECT
+      COUNT(*) FILTER (WHERE current."expiryDate" IS NULL OR current."expiryDate" > ${soon}) AS vigente,
+      COUNT(*) FILTER (WHERE current."expiryDate" >= ${today} AND current."expiryDate" <= ${soon}) AS "porVencer",
+      COUNT(*) FILTER (WHERE current."expiryDate" < ${today}) AS vencido,
+      COUNT(*) AS total
+    FROM "Document" d
+    LEFT JOIN LATERAL (
+      SELECT dv."expiryDate" FROM "DocumentVersion" dv
+      WHERE dv."documentId" = d."id" ORDER BY dv."version" DESC LIMIT 1
+    ) current ON TRUE
+    WHERE ${projectId === null ? Prisma.sql`TRUE` : Prisma.sql`d."projectId" = ${projectId}`}
+  `)
+  const row = rows[0] ?? { vigente: 0, porVencer: 0, vencido: 0, total: 0 }
+  res.json({ vigente: Number(row.vigente), porVencer: Number(row.porVencer), vencido: Number(row.vencido), total: Number(row.total) })
 }))
 
 router.get('/:id', asyncHandler(async (req, res) => {

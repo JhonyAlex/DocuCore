@@ -30,6 +30,7 @@ export default function AssetsView() {
   const { session, reload: reloadSession } = useSession()
   const selection = useSelection<number>()
   const [selectedAsset, setSelectedAsset] = useState<ApiAsset | null>(null)
+  const assetDetailRequestRef = useRef(0)
   const [assets, setAssets] = useState<ApiAsset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -79,7 +80,8 @@ export default function AssetsView() {
       const res = await fetchAssets(params)
       if (requestId !== latestLoadRequest.current) return
       setAssets(res.data)
-      setSelectedAsset((current) => current && !trashMode ? res.data.find((asset) => asset.id === current.id) ?? current : current)
+      // List rows are deliberately light DTOs. Keep an already loaded detail
+      // DTO intact instead of replacing it with a list row after a refresh.
       setTotal(res.total)
       setTotalPages(res.totalPages)
     } catch {
@@ -273,6 +275,24 @@ export default function AssetsView() {
     setRemovalTarget({ ids, label: `${ids.length} ${ids.length === 1 ? 'activo' : 'activos'}`, kind: 'purge' })
   }
 
+  const refreshSelectedAsset = async () => {
+    await loadAssets()
+    if (!selectedAsset) return
+    const refreshed = await fetchAsset(selectedAsset.id)
+    setSelectedAsset(refreshed)
+  }
+
+  const openAssetDetail = (assetId: number, afterLoad?: () => void) => {
+    const request = ++assetDetailRequestRef.current
+    void fetchAsset(assetId).then((asset) => {
+      if (request !== assetDetailRequestRef.current) return
+      setSelectedAsset(asset)
+      afterLoad?.()
+    }).catch(() => {
+      if (request === assetDetailRequestRef.current) setError('No se pudo cargar la ficha completa del activo.')
+    })
+  }
+
   const requestBulkDelete = () => {
     const ids = selection.selectedIds
     if (ids.length === 0) return
@@ -378,10 +398,9 @@ export default function AssetsView() {
         selectedIds={selection.selected}
         onToggleSelect={selection.toggle}
         onToggleSelectPage={selection.toggleAll}
-        onRowClick={(asset) => !trashMode && setSelectedAsset(assets.find((apiAsset) => apiAsset.id === asset.id) ?? null)}
+        onRowClick={(asset) => { if (!trashMode) openAssetDetail(asset.id) }}
         onDuplicate={(asset) => {
-          setSelectedAsset(assets.find((apiAsset) => apiAsset.id === asset.id) ?? null)
-          setFormMode('duplicate')
+          openAssetDetail(asset.id, () => setFormMode('duplicate'))
         }}
         onDelete={(asset) => { setRemovalError(null); setRemovalTarget({ ids: [asset.id], label: `${asset.code} · ${asset.name}`, kind: 'trash' }) }}
         onRestore={(asset) => { void handleRestore(asset).catch((writeError: unknown) => setError(writeError instanceof Error ? writeError.message : 'No se pudo restaurar el activo.')) }}
@@ -389,7 +408,7 @@ export default function AssetsView() {
         onPageChange={handlePageChange}
         onRetry={() => void loadAssets()}
       />
-      <AssetModal asset={selectedAsset} statuses={statuses} initialPreventiveExecutionId={selectedAsset?.id === deepLinkedAssetId && Number.isInteger(deepLinkedPreventiveExecutionId) && deepLinkedPreventiveExecutionId > 0 ? deepLinkedPreventiveExecutionId : null} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={handleDelete} onDocumentsChanged={loadAssets} onImageChanged={handleImageChanged} />
+      <AssetModal asset={selectedAsset} statuses={statuses} initialPreventiveExecutionId={selectedAsset?.id === deepLinkedAssetId && Number.isInteger(deepLinkedPreventiveExecutionId) && deepLinkedPreventiveExecutionId > 0 ? deepLinkedPreventiveExecutionId : null} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={handleDelete} onDocumentsChanged={refreshSelectedAsset} onImageChanged={handleImageChanged} />
       {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
       <ConfirmDialog
         open={removalTarget !== null}

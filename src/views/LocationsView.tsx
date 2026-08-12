@@ -33,8 +33,8 @@ interface TreeNode {
 
 const PREVIEW_ASSET_COUNT = 3
 
-// Construye el árbol completo: todas las ubicaciones son visibles y
-// administrables al expandir su rama. El contador agrega toda la subrama.
+// Construye únicamente las ramas ya pedidas al servidor. Nunca fuerza la
+// descarga del árbol completo para que el usuario abra una ubicación.
 function buildTree(locations: ApiLocation[]): TreeNode[] {
   const byParent = new Map<number | null, ApiLocation[]>()
   for (const location of locations) {
@@ -55,21 +55,9 @@ function buildTree(locations: ApiLocation[]): TreeNode[] {
   return (byParent.get(null) ?? []).map(toNode)
 }
 
-function flattenTree(nodes: TreeNode[]): TreeNode[] {
-  const flat: TreeNode[] = []
-  const walk = (list: TreeNode[]) => {
-    for (const node of list) {
-      flat.push(node)
-      walk(node.children)
-    }
-  }
-  walk(nodes)
-  return flat
-}
-
 // Una ubicación con hijos se renderiza como rama <details>; el resto son hojas.
 function isBranch(node: TreeNode): boolean {
-  return node.children.length > 0
+  return node.location.childCount > 0
 }
 
 const chevronDown = <svg className="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
@@ -100,6 +88,9 @@ export default function LocationsView() {
   const [detailVersion, setDetailVersion] = useState(0)
   const latestDetailRequest = useRef(0)
   const latestCatalogRequest = useRef(0)
+  const selectedIdRef = useRef<number | null>(null)
+
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
 
   const loadCatalog = useCallback(async () => {
     const requestId = latestCatalogRequest.current + 1
@@ -107,9 +98,17 @@ export default function LocationsView() {
     setLoading(true)
     setError(null)
     try {
-      const [nextCatalog, nextUsers] = await Promise.all([fetchLocations(), fetchUsers()])
+      const [nextCatalog, nextUsers] = await Promise.all([fetchLocations({ parentId: null }), fetchUsers()])
       if (requestId !== latestCatalogRequest.current) return
-      setCatalog(nextCatalog)
+      // A refresh may happen while a nested location is selected (for example
+      // after editing an asset in its ficha). Keep only that selected node as
+      // an extra DTO; never rebuild its entire ancestor branch.
+      const selectedId = selectedIdRef.current
+      const selected = selectedId && !nextCatalog.locations.some((location) => location.id === selectedId)
+        ? await fetchLocation(selectedId).catch(() => null)
+        : null
+      if (requestId !== latestCatalogRequest.current) return
+      setCatalog(selected ? { ...nextCatalog, locations: [...nextCatalog.locations, selected] } : nextCatalog)
       setUsers(nextUsers)
     } catch {
       if (requestId !== latestCatalogRequest.current) return
@@ -143,11 +142,12 @@ export default function LocationsView() {
 
   const tree = useMemo(() => (catalog ? buildTree(catalog.locations) : []), [catalog])
 
-  // Selección inicial: primera hoja con activos, replicando el HTML de referencia.
+  // La primera rama se solicita bajo demanda; no hay búsqueda de una hoja
+  // recorriendo ubicaciones que el usuario todavía no ha abierto.
   useEffect(() => {
     if (!catalog || selectedId !== null) return
-    const firstWithAssets = flattenTree(tree).find((node) => node.location.assetCount > 0)
-    if (firstWithAssets) setSelectedId(firstWithAssets.location.id)
+    const first = tree.find((node) => node.location.assetCount > 0) ?? tree[0]
+    if (first) setSelectedId(first.location.id)
   }, [catalog, tree, selectedId])
 
   // Mantener abierta la rama de la ubicación seleccionada.
@@ -210,6 +210,13 @@ export default function LocationsView() {
     })
   }
 
+  const loadChildren = (parentId: number) => {
+    if (!catalog || catalog.locations.some((location) => location.parentId === parentId)) return
+    void fetchLocations({ parentId }).then((result) => {
+      setCatalog((current) => current ? { ...current, locations: [...current.locations, ...result.locations.filter((next) => !current.locations.some((known) => known.id === next.id))] } : current)
+    }).catch(() => setError('No se pudieron cargar las ubicaciones hijas.'))
+  }
+
   const toUserError = (writeError: unknown) => toUserWriteError(writeError, {
     conflict: 'Ya existe una ubicación con ese código.',
     notFound: 'La ubicación ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
@@ -270,8 +277,7 @@ export default function LocationsView() {
   const createLocationFromAssetForm = async (locationValues: LocationFormValues): Promise<ApiLocation> => {
     try {
       const created = await createLocation({ ...locationValues, projectId: catalog?.project.id ?? 0 })
-      const nextCatalog = await fetchLocations()
-      setCatalog(nextCatalog)
+      setCatalog((current) => current ? { ...current, locations: [...current.locations, created] } : current)
       return created
     } catch (writeError) {
       throw new Error(toUserError(writeError))
@@ -307,6 +313,7 @@ export default function LocationsView() {
           onClick={(event) => {
             event.preventDefault()
             toggleBranch(location.id)
+            loadChildren(location.id)
             setSelectedId(location.id)
           }}
           className={`flex items-center gap-2 p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800${location.id === selectedId ? ' bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300' : ''}`}

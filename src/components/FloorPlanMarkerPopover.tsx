@@ -13,7 +13,7 @@ interface FloorPlanMarkerPopoverProps {
 
 export default function FloorPlanMarkerPopover({ marker, anchor, onClose, onView, onRemove }: FloorPlanMarkerPopoverProps) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const nextEvent = marker.asset.nextEvents[0]
+  const nextEvent = marker.asset.nextEvents?.[0]
   const alert = floorPlanAlert(marker.asset)
 
   useEffect(() => {

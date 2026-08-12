@@ -211,6 +211,8 @@ model Asset {
   @@index([projectId])
   @@index([responsibleId])
   @@index([deletedAt])
+  @@index([projectId, deletedAt, id])
+  @@index([projectId, deletedAt, typeId, statusId])
 }
 
 model Status {
@@ -238,6 +240,7 @@ model Document {
   versions DocumentVersion[]
 
   @@index([projectId])
+  @@index([projectId, updatedAt, id])
 }
 
 model DocumentItem {
@@ -268,6 +271,7 @@ model DocumentVersion {
   @@unique([documentId, version])
   @@index([documentId, uploadedAt])
   @@index([expiryDate])
+  @@index([documentId, version(sort: Desc)])
 }
 
 model Event {
@@ -285,6 +289,7 @@ model Event {
 
   @@index([projectId])
   @@index([assetId])
+  @@index([projectId, date])
 }
 
 // A catalog task is reusable, while executions retain their own immutable copy.
@@ -378,6 +383,7 @@ model AssetDateOccurrence {
   schedule AssetDateSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@index([scheduleId, completedAt, scheduledDate])
+  @@index([scheduledDate])
 }
 
 // An assigned preventive plan instance on an asset. Each execution snapshots its own checklist.
@@ -412,6 +418,7 @@ model PreventiveExecution {
   tasks PreventiveExecutionTask[]
 
   @@index([planId, completedAt, scheduledDate])
+  @@index([scheduledDate, completedAt])
 }
 
 model PreventiveExecutionTask {
@@ -464,6 +471,7 @@ model Location {
 
   @@index([parentId])
   @@index([projectId])
+  @@index([projectId, parentId])
 }
 
 model FloorPlan {

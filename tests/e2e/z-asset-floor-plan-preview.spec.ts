@@ -3,8 +3,9 @@ import { expect, test } from './fixtures'
 test.describe.serial('PLAN-04 ficha de activo y planos', () => {
   test('loads a centered DZI preview and follows its reproducible plan link', async ({ page, consoleIssues }) => {
     const plansResponse = await page.request.get('/api/floor-plans?projectId=1')
-    const plans = (await plansResponse.json()).data as Array<{ id: number; markers: Array<{ assetId: number }> }>
-    const plan = plans.find((candidate) => candidate.markers.length > 0)!
+    const plans = (await plansResponse.json()).data as Array<{ id: number }>
+    const details = await Promise.all(plans.map(async (candidate) => await (await page.request.get(`/api/floor-plans/${candidate.id}`)).json() as { id: number; markers: Array<{ assetId: number }> }))
+    const plan = details.find((candidate) => candidate.markers.length > 0)!
     const marker = plan.markers[0]!
     const assetResponse = await page.request.get(`/api/assets/${marker.assetId}`)
     const asset = await assetResponse.json() as { id: number; code: string; name: string }

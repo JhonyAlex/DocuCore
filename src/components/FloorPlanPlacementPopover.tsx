@@ -1,21 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ApiFloorPlanAsset } from '@/lib/api'
 
 interface FloorPlanPlacementPopoverProps {
   anchor: { x: number; y: number }
-  assets: ApiFloorPlanAsset[]
+  searchAssets: (query: string) => Promise<ApiFloorPlanAsset[]>
   onChoose: (asset: ApiFloorPlanAsset) => void
   onClose: () => void
 }
 
-function matches(asset: ApiFloorPlanAsset, query: string): boolean {
-  return `${asset.name} ${asset.code} ${asset.type.name}`.toLocaleLowerCase('es').includes(query.toLocaleLowerCase('es'))
-}
-
-export default function FloorPlanPlacementPopover({ anchor, assets, onChoose, onClose }: FloorPlanPlacementPopoverProps) {
+export default function FloorPlanPlacementPopover({ anchor, searchAssets, onChoose, onClose }: FloorPlanPlacementPopoverProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
-  const matchingAssets = useMemo(() => assets.filter((asset) => matches(asset, query.trim())).slice(0, 8), [assets, query])
+  const [matchingAssets, setMatchingAssets] = useState<ApiFloorPlanAsset[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    const timer = window.setTimeout(() => {
+      void searchAssets(query.trim()).then((assets) => { if (active) setMatchingAssets(assets) }).catch(() => { if (active) setMatchingAssets([]) }).finally(() => { if (active) setLoading(false) })
+    }, query.trim() ? 250 : 0)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [query, searchAssets])
 
   useEffect(() => {
     const closeOutside = (event: PointerEvent) => {
@@ -57,7 +63,8 @@ export default function FloorPlanPlacementPopover({ anchor, assets, onChoose, on
             <span className="block truncate text-xs text-slate-500">{asset.code} · {asset.type.name}</span>
           </button>
         ))}
-        {matchingAssets.length === 0 && <p className="px-2 py-3 text-xs text-slate-500">No hay activos pendientes de colocar que coincidan.</p>}
+        {loading && <p className="px-2 py-3 text-xs text-slate-500">Buscando activos…</p>}
+        {!loading && matchingAssets.length === 0 && <p className="px-2 py-3 text-xs text-slate-500">No hay activos pendientes de colocar que coincidan.</p>}
       </div>
     </div>
   )

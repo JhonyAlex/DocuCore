@@ -76,9 +76,11 @@ describe('dynamic fields API', () => {
   it('keeps the canonical seed free of the retired dynamic maintenance duplicate', async () => {
     const assets = await api('/api/assets?search=CNC-05&limit=10')
     expect(assets.status).toBe(200)
-    const payload = await assets.json() as { data: Array<{ id: number; dynamicFields: Array<{ fieldName: string }> }> }
+    const payload = await assets.json() as { data: Array<{ id: number }> }
     const cnc = payload.data.find((asset) => asset.id > 0)
-    expect(cnc?.dynamicFields.some((field) => field.fieldName === 'Próximo mantenimiento')).toBe(false)
+    const detail = await api(`/api/assets/${cnc?.id}`)
+    const fullAsset = await detail.json() as { dynamicFields: Array<{ fieldName: string }> }
+    expect(fullAsset.dynamicFields.some((field) => field.fieldName === 'Próximo mantenimiento')).toBe(false)
     const history = await api(`/api/assets/${cnc?.id}/events`)
     expect(await history.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ source: 'event', title: 'Mant. preventivo' })]))
   })

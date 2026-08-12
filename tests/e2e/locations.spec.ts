@@ -10,6 +10,11 @@ async function goToLocations(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Ubicaciones', exact: true })).toBeVisible()
 }
 
+async function selectNaveA(page: Page): Promise<void> {
+  await page.locator('summary', { hasText: 'Nave Principal' }).click()
+  await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+}
+
 async function createLocationViaApi(page: Page, data: { name: string; code: string; surface: string; parentId?: number | null; label?: string }): Promise<LocationRow> {
   const usersResponse = await page.request.get('/api/users')
   const users = await usersResponse.json() as Array<{ id: number }>
@@ -40,9 +45,11 @@ test.describe('Locations', () => {
     await expect(page.locator('summary', { hasText: 'Nave Principal' })).toBeVisible()
     await expect(page.locator('summary', { hasText: 'Anexo Oficinas' })).toBeVisible()
     await expect(page.locator('summary', { hasText: 'Almacén exterior' })).toBeVisible()
-    // Hojas visibles con sus conteos del prototipo.
+    // PERF-01: cada rama se solicita solo al expandirla.
+    await page.locator('summary', { hasText: 'Nave Principal' }).click()
     await expect(page.locator('a', { hasText: 'Planta 1 · Nave A' })).toBeVisible()
     await expect(page.locator('a', { hasText: 'Sala compresores' })).toBeVisible()
+    await page.locator('summary', { hasText: 'Anexo Oficinas' }).click()
     await expect(page.locator('a', { hasText: 'Laboratorio' })).toBeVisible()
     // Toda ubicación es visible al expandir su rama (sin nodos ocultos).
     await page.locator('summary', { hasText: 'Planta 1 · Nave B' }).click()
@@ -54,7 +61,7 @@ test.describe('Locations', () => {
   test('shows the detail of a selected location from the API', async ({ page, consoleIssues }) => {
     await goToLocations(page)
 
-    await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+    await selectNaveA(page)
 
     await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
     await expect(page.getByText('PIN-NA-01A', { exact: true })).toBeVisible()
@@ -250,7 +257,7 @@ test.describe('Locations', () => {
 
   test('opens the asset ficha from the location detail without leaving the view (LOC-02)', async ({ page, consoleIssues }) => {
     await goToLocations(page)
-    await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+    await selectNaveA(page)
     await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
 
     // El activo del detalle abre la misma ficha que en Activos.
@@ -273,7 +280,7 @@ test.describe('Locations', () => {
   test('edits an asset from the ficha and refreshes the location detail (LOC-02)', async ({ page, consoleIssues }) => {
     const newName = `Bomba hidráulica ${Date.now().toString().slice(-6)}`
     await goToLocations(page)
-    await page.locator('a', { hasText: 'Planta 1 · Nave A' }).click()
+    await selectNaveA(page)
     await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
 
     // BH-04 es uno de los activos del preview del detalle de Nave A.

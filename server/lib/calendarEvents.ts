@@ -12,6 +12,7 @@ import {
   type CalendarEventSource,
 } from './calendarDomain'
 import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from './periodicity'
+import { MAX_CALENDAR_EVENTS } from './performance'
 
 export { CALENDAR_EVENT_CATEGORIES, CALENDAR_EVENT_SOURCES }
 export type { CalendarEventCategory, CalendarEventOccurrence, CalendarEventSource }
@@ -26,12 +27,14 @@ export interface CalendarListInput {
   status?: CalendarEventOccurrence['status']
   assetId?: number
   search?: string
+  limit?: number
 }
 
 export interface CalendarListResult {
   today: string
   events: CalendarEventOccurrence[]
   counts: { total: number; overdue: number; today: number; upcoming: number }
+  truncated: boolean
 }
 
 const assetSelect = {
@@ -73,11 +76,16 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
   const dateRange = rangeWhere(from, to)
   const activeAssetWhere = { projectId: input.projectId, deletedAt: null, ...(input.assetId ? { id: input.assetId } : {}) }
   const requested = input.source ? new Set<CalendarEventSource>([input.source]) : new Set<CalendarEventSource>(CALENDAR_EVENT_SOURCES)
+  // A bounded probe per source keeps a busy three-month calendar responsive.
+  // `truncated` is deliberately raised when a source reaches this probe cap;
+  // the client must narrow the range/filter instead of forcing a huge payload.
+  const sourceLimit = MAX_CALENDAR_EVENTS + 1
   const sources = await Promise.all([
     requested.has('event')
       ? db.event.findMany({
         where: { projectId: input.projectId, ...(input.assetId ? { assetId: input.assetId } : {}), ...(dateRange ? { date: dateRange } : {}) },
         include: { asset: { select: assetSelect } },
+        take: sourceLimit,
       })
       : Promise.resolve([]),
     requested.has('document')
@@ -93,14 +101,16 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
         },
         include: {
           versions: { orderBy: { version: 'desc' }, take: 1, select: { expiryDate: true } },
-          assets: { where: { asset: activeAssetWhere }, include: { asset: { select: assetSelect } } },
+          assets: { where: { asset: activeAssetWhere }, include: { asset: { select: assetSelect } }, take: 20 },
         },
+        take: sourceLimit,
       })
       : Promise.resolve([]),
     requested.has('dynamic-date')
       ? db.assetDateOccurrence.findMany({
         where: { ...(dateRange ? { scheduledDate: dateRange } : {}), schedule: { asset: activeAssetWhere } },
         include: { schedule: { include: { definition: { select: { fieldName: true } }, asset: { select: assetSelect } } } },
+        take: sourceLimit,
       })
       : Promise.resolve([]),
     requested.has('preventive')
@@ -111,6 +121,7 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
           OR: [{ plan: { isActive: true } }, { completedAt: { not: null } }],
         },
         include: { plan: { include: { asset: { select: assetSelect } } }, tasks: { select: { completedAt: true } } },
+        take: sourceLimit,
       })
       : Promise.resolve([]),
   ])
@@ -171,15 +182,18 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
     .filter((event) => !input.status || event.status === input.status)
     .filter((event) => matchesSearch(event, input.search))
     .sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id))
+  const limit = Math.min(input.limit ?? MAX_CALENDAR_EVENTS, MAX_CALENDAR_EVENTS)
+  const sourceTruncated = sources.some((source) => source.length >= sourceLimit)
   return {
     today: now.toISOString().slice(0, 10),
-    events: visibleEvents,
+    events: visibleEvents.slice(0, limit),
     counts: {
       total: visibleEvents.length,
       overdue: visibleEvents.filter((event) => event.status === 'overdue').length,
       today: visibleEvents.filter((event) => event.status === 'today').length,
       upcoming: visibleEvents.filter((event) => event.status === 'upcoming').length,
     },
+    truncated: sourceTruncated || visibleEvents.length > limit,
   }
 }
 

@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import DocumentModal from '@/components/DocumentModal'
 import DocumentsTable from '@/components/DocumentsTable'
+import DocumentsFilters, { type DocumentFilters } from '@/components/DocumentsFilters'
+import ListPagination from '@/components/ListPagination'
 import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import { deleteDocument, downloadDocument, fetchDocumentKpis, fetchDocuments, type ApiDocument } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
+import { useSession } from '@/contexts/SessionContext'
+
+const LIMIT = 5
 
 export default function DocumentsView() {
+  const { session } = useSession()
   const selection = useSelection<number>()
   const [documents, setDocuments] = useState<ApiDocument[]>([])
   const [kpis, setKpis] = useState({ vigente: 0, porVencer: 0, vencido: 0, total: 0 })
@@ -16,18 +22,30 @@ export default function DocumentsView() {
   const [deleteTarget, setDeleteTarget] = useState<{ ids: number[]; label: string } | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [filters, setFilters] = useState<DocumentFilters>({})
+  const [deferredFilters, setDeferredFilters] = useState<DocumentFilters>({})
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDeferredFilters(filters), 250)
+    return () => window.clearTimeout(timer)
+  }, [filters])
 
   const load = useCallback(async () => {
     setError(null)
     try {
-      const [list, nextKpis] = await Promise.all([fetchDocuments({ limit: 5 }), fetchDocumentKpis()])
+      const [list, nextKpis] = await Promise.all([fetchDocuments({ ...deferredFilters, page, limit: LIMIT, projectId: session?.project.id }), fetchDocumentKpis(session?.project.id)])
       setDocuments(list.data)
+      setTotal(list.total)
+      setTotalPages(list.totalPages)
       setKpis(nextKpis)
     } catch {
       setError('No se pudieron cargar los documentos. Inténtalo de nuevo.')
       setDocuments([])
     }
-  }, [])
+  }, [deferredFilters, page, session?.project.id])
 
   useEffect(() => { void load() }, [load])
 
@@ -81,6 +99,7 @@ export default function DocumentsView() {
         <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
       </BulkActionBar>
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div>}
+      <DocumentsFilters filters={filters} onChange={(next) => { setFilters(next); setPage(1); selection.clear() }} />
       <DocumentsTable
         documents={documents}
         selection={selection}
@@ -88,6 +107,7 @@ export default function DocumentsView() {
         onDownload={(document) => void downloadDocument(document.id)}
         onDelete={(document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
       />
+      <ListPagination page={page} total={total} totalPages={totalPages} limit={LIMIT} onPageChange={(next) => { setPage(next); selection.clear() }} />
       {editing !== undefined && <DocumentModal document={editing} onClose={() => setEditing(undefined)} onChanged={load} />}
       <ConfirmDialog
         open={deleteTarget !== null}

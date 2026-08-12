@@ -4,6 +4,7 @@ import PortalListbox from '@/components/PortalListbox'
 export type SearchableOption = { value: string; label: string; hint?: string }
 
 type SearchablePickerProps = {
+  id?: string
   value: string | null
   selectedLabel: string | null
   placeholder: string
@@ -16,7 +17,7 @@ type SearchablePickerProps = {
   emptyText?: string
 }
 
-export default function SearchablePicker({ value, selectedLabel, placeholder, ariaLabel, onSearch, onSelect, disabled, allowClear, clearLabel = 'Sin activo', emptyText = 'Sin resultados' }: SearchablePickerProps) {
+export default function SearchablePicker({ id, value, selectedLabel, placeholder, ariaLabel, onSearch, onSelect, disabled, allowClear, clearLabel = 'Sin activo', emptyText = 'Sin resultados' }: SearchablePickerProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [options, setOptions] = useState<SearchableOption[]>([])
@@ -71,6 +72,7 @@ export default function SearchablePicker({ value, selectedLabel, placeholder, ar
   return (
     <div ref={rootRef}>
       <input
+        id={id}
         type="text"
         role="combobox"
         aria-expanded={open}

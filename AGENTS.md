@@ -102,6 +102,23 @@ docker compose up    # Levantar todo (DB + app)
 - No modificar migraciones ya aplicadas.
 - No desactivar lint ni pruebas.
 
+## Escalabilidad y carga diferida
+
+`docs/architecture/PERFORMANCE.md` es el contrato técnico vinculante de rendimiento. Toda funcionalidad nueva debe aplicar estas reglas y explicar explícitamente su comportamiento con 10.000 y 100.000 registros:
+
+1. Los listados se paginan y limitan en servidor; los límites máximos se validan con Zod.
+2. Filtros, búsquedas, ordenación y KPI se resuelven en PostgreSQL, nunca después de descargar el conjunto completo.
+3. Autocomplete y búsqueda interactiva son remotos, con debounce y cancelación o ignorancia de respuestas obsoletas.
+4. Cada recurso separa DTO ligero de lista y DTO completo de detalle.
+5. Relaciones potencialmente grandes se cargan bajo demanda y siempre acotadas.
+6. Los árboles se expanden progresivamente por rama; no se materializa el árbol completo para navegar una rama.
+7. Historiales son paginados; una ficha no descarga su historial completo.
+8. Los rangos temporales tienen máximo explícito y las respuestas de calendario tienen límite.
+9. Los índices se diseñan desde las consultas reales, evitando índices duplicados o especulativos.
+10. Está prohibido `findMany()` sin límite para entidades de volumen variable, salvo catálogo pequeño y documentado.
+11. Está prohibido traer todo para hacer `slice`, buscar, filtrar, ordenar o calcular KPI en Node o React.
+12. Un endpoint de detalle pesado nunca alimenta una tabla, selector o autocomplete.
+
 ## Fase actual
 
 **Fase 1 — Recuperación e integridad**: COMPLETADA

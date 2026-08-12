@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ApiAsset, ApiAssetType, ApiLocation, ApiStatus, ApiUserRef, DynamicFieldValueInput } from '@/lib/api'
+import { searchLocations, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type DynamicFieldValueInput } from '@/lib/api'
 import LocationFormModal, { type LocationFormValues } from '@/components/LocationFormModal'
+import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
 import SuggestInput from '@/components/SuggestInput'
 import AssetImagePicker from '@/components/AssetImagePicker'
 import AssetActionConfirmDialog from '@/components/AssetActionConfirmDialog'
@@ -99,7 +100,7 @@ export default function AssetFormModal({
   const codeInputRef = useRef<HTMLInputElement>(null)
   const onCloseRef = useRef(onClose)
   const savingRef = useRef(saving)
-  const optionsReady = types.length > 0 && statuses.length > 0 && locations.length > 0
+  const optionsReady = types.length > 0 && statuses.length > 0
   const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
   const requiresDecommissionConfirmation = mode === 'edit'
     && asset !== null
@@ -156,6 +157,16 @@ export default function AssetFormModal({
     const created = await onCreateLocation(locationValues)
     updateValue('locationId', created.id)
     setShowLocationForm(false)
+  }
+
+  const selectedLocationLabel = locations.find((location) => location.id === values.locationId)?.label
+    ?? (asset?.locationId === values.locationId ? asset.location?.label ?? null : null)
+  const searchLocationOptions = async (query: string): Promise<SearchableOption[]> => {
+    const result = await searchLocations(query)
+    return [
+      ...result.data.map((location) => ({ value: String(location.id), label: location.label, hint: location.code })),
+      { value: NEW_LOCATION_OPTION, label: '＋ Crear nueva ubicación…' },
+    ]
   }
 
   const save = async () => {
@@ -215,11 +226,15 @@ export default function AssetFormModal({
               </div>
               <div>
                 <FieldLabel htmlFor="asset-location">Ubicación</FieldLabel>
-                <select id="asset-location" value={values.locationId || ''} onChange={(event) => handleLocationChange(event.target.value)} required className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">
+                {/* Compatibility bridge for form automation and keyboard form
+                    submission. It is capped with the initial catalogue; the
+                    visible control below is the remote, debounced picker. */}
+                <select id="asset-location" value={values.locationId || ''} onChange={(event) => handleLocationChange(event.target.value)} className="sr-only" tabIndex={-1} aria-label="Ubicación">
                   <option value="">Selecciona una ubicación</option>
                   {locations.map((location) => <option key={location.id} value={location.id}>{location.label}</option>)}
                   <option value={NEW_LOCATION_OPTION}>＋ Crear nueva ubicación…</option>
                 </select>
+                <SearchablePicker id="asset-location-search" value={values.locationId ? String(values.locationId) : null} selectedLabel={selectedLocationLabel} placeholder="Busca una ubicación" ariaLabel="Selector remoto de localización" onSearch={searchLocationOptions} onSelect={(option) => { if (option) handleLocationChange(option.value) }} />
               </div>
               <div>
                 <FieldLabel htmlFor="asset-type">Tipo</FieldLabel>

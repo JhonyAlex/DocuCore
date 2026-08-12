@@ -80,7 +80,7 @@ export default function DocumentsTable({ documents, selection, onRowClick, onDow
                 { label: 'Eliminar', variant: 'danger', onSelect: () => onDelete(document) },
               ]
 
-              const assetList = document.assets && document.assets.length > 0 ? document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ') : '—'
+              const assetList = document.assets && document.assets.length > 0 ? `${document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ')}${(document.assetCount ?? document.assets.length) > document.assets.length ? ` +${(document.assetCount ?? 0) - document.assets.length}` : ''}` : '—'
 
               return (
                 <tr key={document.id} onClick={() => onRowClick(document)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">

@@ -85,7 +85,7 @@ test.describe.serial('floor plans', () => {
     await expect(marker.locator(`[data-asset-icon="${asset.type.iconKey}"]`)).toBeVisible()
     const beforeHoverTransform = await marker.evaluate((element) => getComputedStyle(element).transform)
     await marker.hover()
-    await expect.poll(() => marker.evaluate((element) => getComputedStyle(element).transform)).toBe(beforeHoverTransform)
+    await expect.poll(() => marker.evaluate((element) => getComputedStyle(element).transform || 'none')).toBe(beforeHoverTransform || 'none')
     await expect(marker).toHaveAttribute('data-lod', 'dot')
 
     await page.getByLabel('Buscar activo').fill(asset.name)

@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { createLocationSchema, updateLocationSchema } from '../lib/validate'
+import { descendantLocationIds } from '../lib/locationTree'
+import { LOCATION_PREVIEW_SIZE, pageLimit } from '../lib/performance'
 
 const router: Router = Router()
 
@@ -29,25 +31,6 @@ function serializeLocation(location: LocationWithRelations) {
     assetCount: _count.assets,
     childCount: _count.children,
   }
-}
-
-// Ids de una ubicación y todos sus descendientes (visibles y ocultos).
-async function collectSubtreeIds(rootId: number): Promise<number[]> {
-  const all = await prisma.location.findMany({ select: { id: true, parentId: true } })
-  const byParent = new Map<number | null, number[]>()
-  for (const loc of all) {
-    const siblings = byParent.get(loc.parentId) ?? []
-    siblings.push(loc.id)
-    byParent.set(loc.parentId, siblings)
-  }
-  const ids: number[] = []
-  const stack = [rootId]
-  while (stack.length > 0) {
-    const current = stack.pop() as number
-    ids.push(current)
-    stack.push(...(byParent.get(current) ?? []))
-  }
-  return ids
 }
 
 // Una ubicación no puede colgar de sí misma ni de uno de sus descendientes.
@@ -89,19 +72,75 @@ function toNumberId(value: string | undefined): number | null {
 
 router.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const project = await prisma.project.findUniqueOrThrow({
       where: { code: CURRENT_PROJECT_CODE },
       select: { id: true, code: true, name: true, assetCount: true },
     })
+    const hasParentQuery = typeof req.query.parentId === 'string'
+    const parentId = req.query.parentId === 'root' ? null : hasParentQuery ? toNumberId(req.query.parentId as string) : undefined
+    if (hasParentQuery && parentId === null && req.query.parentId !== 'root') return res.status(400).json({ error: 'Invalid parentId' })
+    const limit = pageLimit(req.query.limit, 100, 100)
     const locations = await prisma.location.findMany({
-      where: { projectId: project.id },
+      where: { projectId: project.id, parentId: hasParentQuery ? parentId : undefined },
       include: locationInclude,
       orderBy: { id: 'asc' },
+      // Compatibility callers without `parentId` receive a bounded catalogue;
+      // hierarchy screens use parentId=root/ID to load branches on demand.
+      take: limit,
     })
     res.json({ project, locations: locations.map(serializeLocation) })
   }),
 )
+
+// Remote catalogue for selectors. It is intentionally separate from the
+// progressive tree endpoint so forms never need a complete location list.
+router.get('/search', asyncHandler(async (req, res) => {
+  const project = await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
+  const locations = await prisma.location.findMany({
+    where: {
+      projectId: project.id,
+      ...(search ? { OR: [
+        { label: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
+      ] } : {}),
+    },
+    include: locationInclude,
+    orderBy: [{ label: 'asc' }, { id: 'asc' }],
+    take: pageLimit(req.query.limit, 20, 50),
+  })
+  res.json({ data: locations.map(serializeLocation) })
+}))
+
+const locationAssetSelect = {
+  id: true, code: true, name: true, installDate: true, initials: true,
+  type: { select: { id: true, name: true, iconKey: true } },
+  status: { select: { id: true, name: true, pulseDot: true } },
+} satisfies Prisma.AssetSelect
+
+function serializeLocationAsset(asset: Prisma.AssetGetPayload<{ select: typeof locationAssetSelect }>) {
+  return { ...asset, installDate: asset.installDate.toISOString() }
+}
+
+// Detail is deliberately a preview. A separate endpoint is the only way to
+// request the complete, paged location inventory.
+router.get('/:id/assets', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  if (id === null) return res.status(400).json({ error: 'Invalid id' })
+  const page = pageLimit(req.query.page, 1, 1_000_000)
+  const limit = pageLimit(req.query.limit, 20, 100)
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
+  const location = await prisma.location.findUnique({ where: { id }, select: { id: true } })
+  if (!location) return res.status(404).json({ error: 'Not found' })
+  const where: Prisma.AssetWhereInput = { locationId: id, deletedAt: null, ...(search ? { OR: [{ code: { contains: search, mode: 'insensitive' } }, { name: { contains: search, mode: 'insensitive' } }] } : {}) }
+  const [rows, total] = await prisma.$transaction([
+    prisma.asset.findMany({ where, select: locationAssetSelect, orderBy: { id: 'asc' }, skip: (page - 1) * limit, take: limit }),
+    prisma.asset.count({ where }),
+  ])
+  res.json({ data: rows.map(serializeLocationAsset), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) })
+}))
 
 router.get(
   '/:id',
@@ -134,27 +173,20 @@ router.get(
     const assets = await prisma.asset.findMany({
       where: { locationId: id, deletedAt: null },
       orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        installDate: true,
-        initials: true,
-        type: { select: { id: true, name: true, iconKey: true } },
-        status: { select: { id: true, name: true, pulseDot: true } },
-      },
+      select: locationAssetSelect,
+      take: LOCATION_PREVIEW_SIZE,
     })
 
     // El detalle comparte el conteo de subrama del árbol (activos directos e
     // hijos), de modo que árbol y detalle muestran siempre el mismo número.
-    const subtreeIds = await collectSubtreeIds(id)
+    const subtreeIds = await descendantLocationIds(prisma, id)
     const subtreeAssets = await prisma.asset.count({ where: { locationId: { in: subtreeIds }, deletedAt: null } })
 
     res.json({
       ...serializeLocation(location),
       assetCount: subtreeAssets,
       ancestors,
-      assets: assets.map((asset) => ({ ...asset, installDate: asset.installDate.toISOString() })),
+      assets: assets.map(serializeLocationAsset),
     })
   }),
 )
@@ -273,7 +305,7 @@ router.delete(
       res.status(404).json({ error: 'Not found' })
       return
     }
-    const subtreeIds = await collectSubtreeIds(id)
+    const subtreeIds = await descendantLocationIds(prisma, id)
     // Cuenta todos los activos de la subrama (incluida la papelera): la FK con
     // Restrict impide borrar la ubicación mientras exista el activo físico.
     const [subtreeAssets, anyChildren] = await Promise.all([

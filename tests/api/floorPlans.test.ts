@@ -107,16 +107,19 @@ describe('floor plan API', () => {
     expect((await api(`/api/floor-plans/${planId}/markers/${marker.id}`, { method: 'DELETE' })).status).toBe(204)
   })
 
-  it('returns the same derived events as the asset API and removes a marker if the asset leaves the plan subtree', async () => {
+  it('keeps plan markers lightweight, searches available assets remotely and removes a marker if the asset leaves the subtree', async () => {
     const planId = createdPlanId as number
-    const plan = await (await api(`/api/floor-plans/${planId}`)).json() as { projectId: number; locationId: number; availableAssets: Array<{ id: number; locationId: number; nextEvents: unknown[] }> }
-    const asset = plan.availableAssets[0]!
+    const plan = await (await api(`/api/floor-plans/${planId}`)).json() as { projectId: number; locationId: number; availableAssets?: unknown; markers: Array<{ asset: Record<string, unknown> }> }
+    expect(plan.availableAssets).toBeUndefined()
+    expect(plan.markers.every((marker) => marker.asset.nextEvents === undefined)).toBe(true)
+    const available = await (await api(`/api/floor-plans/${planId}/assets?limit=20`)).json() as { data: Array<{ id: number; locationId: number }> }
+    expect(available.data).toHaveLength(20)
+    const asset = available.data[0]!
     const placed = await api(`/api/floor-plans/${planId}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: asset.id, x: 0.25, y: 0.4 }) })
     expect(placed.status).toBe(201)
 
-    const assetResponse = await (await api(`/api/assets/${asset.id}`)).json() as { nextEvents: unknown[] }
-    const withMarker = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ assetId: number; asset: { nextEvents: unknown[] } }> }
-    expect(withMarker.markers.find((marker) => marker.assetId === asset.id)?.asset.nextEvents).toEqual(assetResponse.nextEvents)
+    const withMarker = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ assetId: number; asset: { nextEvents?: unknown } }> }
+    expect(withMarker.markers.find((marker) => marker.assetId === asset.id)?.asset.nextEvents).toBeUndefined()
 
     const users = await (await api('/api/users')).json() as Array<{ id: number }>
     const outside = await api('/api/locations', {
@@ -127,9 +130,10 @@ describe('floor plan API', () => {
     const outsideLocation = await outside.json() as { id: number }
     const moved = await api(`/api/assets/${asset.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locationId: outsideLocation.id }) })
     expect(moved.status).toBe(200)
-    const afterMove = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ assetId: number }>; availableAssets: Array<{ id: number }> }
+    const afterMove = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ assetId: number }> }
+    const afterMoveAssets = await (await api(`/api/floor-plans/${planId}/assets?limit=20`)).json() as { data: Array<{ id: number }> }
     expect(afterMove.markers.some((marker) => marker.assetId === asset.id)).toBe(false)
-    expect(afterMove.availableAssets.some((candidate) => candidate.id === asset.id)).toBe(false)
+    expect(afterMoveAssets.data.some((candidate) => candidate.id === asset.id)).toBe(false)
 
     expect((await api(`/api/assets/${asset.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locationId: asset.locationId }) })).status).toBe(200)
     expect((await api(`/api/locations/${outsideLocation.id}`, { method: 'DELETE' })).status).toBe(204)

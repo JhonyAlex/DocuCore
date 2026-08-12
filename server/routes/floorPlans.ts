@@ -5,7 +5,8 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { ALLOWED_FLOOR_PLAN_MIME_TYPES, MAX_FLOOR_PLAN_SIZE_BYTES, readFloorPlanDzi, readFloorPlanOriginal, readFloorPlanTile, removeFloorPlanFiles, storeFloorPlan } from '../lib/floorPlanStorage'
 import { createFloorPlanMarkerSchema, createFloorPlanSchema, floorPlanListQuerySchema, updateFloorPlanMarkerSchema, updateFloorPlanSchema } from '../lib/validate'
-import { deriveAssetEventsExcludingAcknowledged } from '../lib/assetEvents'
+import { descendantLocationIds } from '../lib/locationTree'
+import { MAX_AUTOCOMPLETE_SIZE, MAX_MARKER_PAGE_SIZE, pageLimit } from '../lib/performance'
 
 const router: Router = Router()
 const ACTOR_USER_ID = 1
@@ -22,12 +23,6 @@ const floorPlanAssetSelect = {
   id: true, code: true, name: true, locationId: true,
   type: { select: { id: true, name: true, iconKey: true } },
   status: { select: { id: true, name: true, pulseDot: true } },
-  events: { select: { id: true, title: true, date: true, type: true, completedAt: true } },
-  documentAssets: { include: { document: { select: { id: true, name: true, eventTitle: true, type: true, versions: { orderBy: { version: 'desc' as const }, take: 1, select: { expiryDate: true } } } } } },
-  dynamicFieldValues: { include: { definition: { select: { id: true, fieldName: true, fieldType: true, isActive: true } } } },
-  dateSchedules: { where: { isActive: true }, include: { definition: { select: { fieldName: true } }, occurrences: { orderBy: { id: 'asc' as const }, select: { id: true, scheduledDate: true, completedAt: true } } } },
-  preventivePlans: { where: { isActive: true }, include: { executions: { orderBy: { id: 'asc' as const }, include: { tasks: { select: { completedAt: true } } } } } },
-  eventAcknowledgements: { select: { sourceKey: true } },
 } satisfies Prisma.AssetSelect
 type PlanAsset = Prisma.AssetGetPayload<{ select: typeof floorPlanAssetSelect }>
 
@@ -36,6 +31,7 @@ const planInclude = {
   versions: { orderBy: { version: 'desc' as const }, take: 1 },
   markers: {
     orderBy: { id: 'asc' as const },
+    take: MAX_MARKER_PAGE_SIZE,
     include: {
       asset: {
         select: floorPlanAssetSelect,
@@ -45,22 +41,38 @@ const planInclude = {
 } satisfies Prisma.FloorPlanInclude
 type PlanWithCurrent = Prisma.FloorPlanGetPayload<{ include: typeof planInclude }>
 
+// The plan selector is intentionally distinct from the editor selector: the
+// left-hand plan list never needs to deserialize a marker collection.
+const planListInclude = {
+  location: { select: { id: true, name: true, label: true, code: true, parentId: true } },
+  versions: { orderBy: { version: 'desc' as const }, take: 1 },
+} satisfies Prisma.FloorPlanInclude
+type PlanListItem = Prisma.FloorPlanGetPayload<{ include: typeof planListInclude }>
+
 function httpError(status: number, message: string): Error & { status: number } { return Object.assign(new Error(message), { status }) }
 function id(value: string): number | null { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null }
 function versionOf(plan: PlanWithCurrent): number | null { return plan.versions[0]?.version ?? null }
 function serializeVersion(version: { id: number; version: number; originalName: string; mimeType: string; sizeBytes: number; width: number; height: number; uploadedAt: Date }) { return { ...version, uploadedAt: version.uploadedAt.toISOString() } }
 function serializeAsset(asset: PlanAsset) {
-  const acknowledgements = asset.eventAcknowledgements.map((entry) => entry.sourceKey)
-  const documents = asset.documentAssets.map((entry) => entry.document)
-  const nextEvents = deriveAssetEventsExcludingAcknowledged({ ...asset, documents }, acknowledgements)
-  return { id: asset.id, code: asset.code, name: asset.name, locationId: asset.locationId, type: asset.type, status: asset.status, nextEvents }
+  return { id: asset.id, code: asset.code, name: asset.name, locationId: asset.locationId, type: asset.type, status: asset.status, alert: 'normal' as const }
 }
-function serializePlan(plan: PlanWithCurrent, availableAssets: PlanAsset[] = []) {
+function serializeMarker(marker: PlanWithCurrent['markers'][number]) {
+  return { id: marker.id, floorPlanId: marker.floorPlanId, assetId: marker.assetId, x: marker.x, y: marker.y, createdAt: marker.createdAt.toISOString(), updatedAt: marker.updatedAt.toISOString(), asset: serializeAsset(marker.asset) }
+}
+function serializePlan(plan: PlanWithCurrent, markerTotal = plan.markers.length) {
   return {
     id: plan.id, name: plan.name, projectId: plan.projectId, locationId: plan.locationId, createdAt: plan.createdAt.toISOString(), updatedAt: plan.updatedAt.toISOString(), location: plan.location,
     currentVersion: plan.versions[0] ? serializeVersion(plan.versions[0]) : null,
-    markers: plan.markers.map((marker) => ({ id: marker.id, floorPlanId: marker.floorPlanId, assetId: marker.assetId, x: marker.x, y: marker.y, createdAt: marker.createdAt.toISOString(), updatedAt: marker.updatedAt.toISOString(), asset: serializeAsset(marker.asset) })),
-    availableAssets: availableAssets.map(serializeAsset),
+    markers: plan.markers.map(serializeMarker),
+    markerTotal,
+    markersTruncated: markerTotal > plan.markers.length,
+  }
+}
+function serializePlanList(plan: PlanListItem) {
+  return {
+    id: plan.id, name: plan.name, projectId: plan.projectId, locationId: plan.locationId, createdAt: plan.createdAt.toISOString(), updatedAt: plan.updatedAt.toISOString(), location: plan.location,
+    currentVersion: plan.versions[0] ? serializeVersion(plan.versions[0]) : null,
+    markers: [],
   }
 }
 
@@ -70,15 +82,6 @@ async function getPlan(planId: number): Promise<PlanWithCurrent> {
   const plan = await prisma.floorPlan.findUnique({ where: { id: planId }, include: planInclude })
   if (!plan) throw httpError(404, 'Floor plan not found')
   return plan
-}
-
-async function assetsForPlan(plan: PlanWithCurrent): Promise<PlanAsset[]> {
-  const locations = await prisma.location.findMany({ where: { projectId: plan.projectId }, select: { id: true, parentId: true } })
-  const children = new Map<number | null, number[]>()
-  for (const location of locations) children.set(location.parentId, [...(children.get(location.parentId) ?? []), location.id])
-  const ids: number[] = []; const stack = [plan.locationId]
-  while (stack.length) { const current = stack.pop() as number; ids.push(current); stack.push(...(children.get(current) ?? [])) }
-  return prisma.asset.findMany({ where: { projectId: plan.projectId, locationId: { in: ids }, deletedAt: null }, select: floorPlanAssetSelect, orderBy: { code: 'asc' } })
 }
 
 async function assertLocation(projectId: number, locationId: number): Promise<void> {
@@ -91,26 +94,69 @@ async function assertAssetPlacement(projectId: number, planLocationId: number, a
   const asset = await prisma.asset.findFirst({ where: { id: assetId, deletedAt: null }, select: { projectId: true, locationId: true } })
   if (!asset) throw httpError(404, 'Asset not found')
   if (asset.projectId !== projectId) throw httpError(400, 'Asset must belong to the floor plan project')
-  const visited = new Set<number>()
-  let locationId: number | null = asset.locationId
-  while (locationId !== null && !visited.has(locationId)) {
-    if (locationId === planLocationId) return
-    visited.add(locationId)
-    const location: { parentId: number | null } | null = await prisma.location.findUnique({ where: { id: locationId }, select: { parentId: true } })
-    locationId = location?.parentId ?? null
-  }
+  const allowedLocationIds = await descendantLocationIds(prisma, planLocationId)
+  if (allowedLocationIds.includes(asset.locationId)) return
   throw httpError(400, 'Asset location must be the floor plan location or a descendant')
 }
 
 async function assertMoveAllowed(plan: PlanWithCurrent, projectId: number, locationId: number): Promise<void> {
   await assertLocation(projectId, locationId)
-  await Promise.all(plan.markers.map((marker) => assertAssetPlacement(projectId, locationId, marker.assetId)))
+  // This is a write-time integrity guard, not a list DTO. It checks every
+  // marker in one SQL statement, including markers beyond the editor's first
+  // page, so moving a large plan cannot silently invalidate hidden markers.
+  const invalid = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+    WITH RECURSIVE subtree AS (
+      SELECT id FROM "Location" WHERE id = ${locationId}
+      UNION ALL
+      SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id
+    )
+    SELECT COUNT(*)::bigint AS count
+    FROM "FloorPlanMarker" marker
+    JOIN "Asset" asset ON asset.id = marker."assetId"
+    WHERE marker."floorPlanId" = ${plan.id}
+      AND (asset."projectId" <> ${projectId} OR asset."deletedAt" IS NOT NULL OR NOT EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId"))
+  `)
+  if (Number(invalid[0]?.count ?? 0) > 0) throw httpError(400, 'All marker assets must belong to the floor plan location or a descendant')
 }
 
 router.get('/', asyncHandler(async (req, res) => {
   const query = floorPlanListQuerySchema.parse(req.query)
-  const plans = await prisma.floorPlan.findMany({ where: { projectId: query.projectId, locationId: query.locationId }, include: planInclude, orderBy: [{ locationId: 'asc' }, { name: 'asc' }] })
-  res.json({ data: plans.map((plan) => serializePlan(plan)) })
+  const where = { projectId: query.projectId, locationId: query.locationId }
+  const [plans, total] = await prisma.$transaction([
+    prisma.floorPlan.findMany({ where, include: planListInclude, orderBy: [{ locationId: 'asc' }, { name: 'asc' }], take: query.limit }),
+    prisma.floorPlan.count({ where }),
+  ])
+  res.json({ data: plans.map(serializePlanList), total, truncated: total > plans.length })
+}))
+
+router.get('/:id/assets', asyncHandler(async (req, res) => {
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
+  const plan = await getPlan(planId)
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
+  const locationIds = await descendantLocationIds(prisma, plan.locationId)
+  const assets = await prisma.asset.findMany({
+    where: { projectId: plan.projectId, deletedAt: null, locationId: { in: locationIds }, ...(search ? { OR: [{ code: { contains: search, mode: 'insensitive' } }, { name: { contains: search, mode: 'insensitive' } }] } : {}) },
+    select: floorPlanAssetSelect,
+    orderBy: [{ code: 'asc' }, { id: 'asc' }],
+    take: pageLimit(req.query.limit, MAX_AUTOCOMPLETE_SIZE, MAX_AUTOCOMPLETE_SIZE),
+  })
+  res.json({ data: assets.map(serializeAsset) })
+}))
+
+// The editor receives the first chunk with the plan. Larger plans can append
+// marker chunks explicitly without making the opening request proportional to
+// every marker ever placed on the floor.
+router.get('/:id/markers', asyncHandler(async (req, res) => {
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
+  const page = pageLimit(req.query.page, 1, 1_000_000)
+  const limit = pageLimit(req.query.limit, MAX_MARKER_PAGE_SIZE, MAX_MARKER_PAGE_SIZE)
+  const plan = await prisma.floorPlan.findUnique({ where: { id: planId }, select: { id: true } })
+  if (!plan) return res.status(404).json({ error: 'Floor plan not found' })
+  const [markers, total] = await prisma.$transaction([
+    prisma.floorPlanMarker.findMany({ where: { floorPlanId: planId }, orderBy: { id: 'asc' }, skip: (page - 1) * limit, take: limit, include: { asset: { select: floorPlanAssetSelect } } }),
+    prisma.floorPlanMarker.count({ where: { floorPlanId: planId } }),
+  ])
+  res.json({ data: markers.map((marker) => serializeMarker(marker as PlanWithCurrent['markers'][number])), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) })
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
@@ -217,7 +263,11 @@ router.get('/:id/versions/:version/tiles/:level/:tile', asyncHandler(async (req,
   const bytes = await readFloorPlanTile(version.dziKey, req.params.level, req.params.tile); const extension = req.params.tile.split('.').pop()?.toLowerCase(); res.set('Cache-Control', 'private, max-age=3600').type(extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg').send(bytes)
 }))
 
-router.get('/:id', asyncHandler(async (req, res) => { const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId); res.json(serializePlan(plan, await assetsForPlan(plan))) }))
+router.get('/:id', asyncHandler(async (req, res) => {
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
+  const [plan, markerTotal] = await Promise.all([getPlan(planId), prisma.floorPlanMarker.count({ where: { floorPlanId: planId } })])
+  res.json(serializePlan(plan, markerTotal))
+}))
 
 router.delete('/:id', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId)

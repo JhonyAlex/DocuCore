@@ -10,7 +10,8 @@ export function floorPlanTypeColor(typeId: number): string {
 }
 
 export function floorPlanAlert(asset: ApiFloorPlanAsset): FloorPlanAlert {
-  const urgency = asset.nextEvents[0]?.urgency
+  if (asset.alert) return asset.alert
+  const urgency = asset.nextEvents?.[0]?.urgency
   return urgency === 'red' ? 'overdue' : urgency === 'amber' ? 'soon' : 'normal'
 }
 

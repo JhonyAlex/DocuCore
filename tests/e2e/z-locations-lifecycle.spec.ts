@@ -254,7 +254,8 @@ test.describe('Locations lifecycle', () => {
 
   test('tree and detail show the same count for a branch', async ({ page }) => {
     await goToLocations(page)
-    // Hijo E2E es la selección por defecto (contiene el activo) y su rama está abierta.
+    // PERF-01: cargar cada nivel de esta rama es explícito y perezoso.
+    await page.locator('summary', { hasText: 'Raíz E2E' }).click()
     await page.locator('summary', { hasText: 'Hijo E2E' }).click()
 
     // Hijo E2E tiene el activo ACT-E2E en su subrama (nieto vacío).
@@ -316,6 +317,7 @@ test.describe('Locations lifecycle', () => {
 
     // El nieto está vacío y sin hijos: la UI exige confirmación y permite borrarlo.
     await goToLocations(page)
+    await page.locator('summary', { hasText: root.name }).click()
     await page.locator('summary', { hasText: child.name }).click()
     await page.locator('a', { hasText: grandchild.name }).click()
     await expect(page.getByRole('heading', { name: grandchild.name, exact: true })).toBeVisible()
@@ -333,13 +335,14 @@ test.describe('Locations lifecycle', () => {
     const project1 = tree.filter((l) => l.code !== 'ECC-PL1')
 
     await goToLocations(page)
-    // Cada ubicación del proyecto (más el nodo raíz) está renderizada en el
-    // árbol: no quedan filas ocultas ni inaccesibles.
-    const treeNodes = page.locator('.xl\\:col-span-1 details summary, .xl\\:col-span-1 a')
-    await expect(treeNodes).toHaveCount(project1.length + 1)
-    for (const location of project1) {
-      await expect(page.locator('summary, a', { hasText: location.name }).first()).toBeVisible()
-    }
+    // PERF-01: las ubicaciones hijas no están presentes hasta que se abre su
+    // padre; esa expansión solicita la rama y la hace accesible sin descargar
+    // el árbol completo al entrar.
+    const root = project1.find((location) => location.code === 'R-E2E')!
+    const child = project1.find((location) => location.code === 'H-E2E')!
+    await expect(page.locator('summary, a', { hasText: child.name })).toHaveCount(0)
+    await page.locator('summary', { hasText: root.name }).click()
+    await expect(page.locator('summary, a', { hasText: child.name }).first()).toBeVisible()
 
     // Persistencia: el nieto borrado ya no aparece y el resto sigue.
     await page.reload()

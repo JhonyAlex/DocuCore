@@ -10,6 +10,8 @@ import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDoc
 import { completeDynamicDateSchema, dateScheduleValueSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
 import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setAssetDateSchedule } from '../lib/assetSchedules'
 import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/calendarEvents'
+import { descendantLocationIds, isLocationDescendantOf } from '../lib/locationTree'
+import { MAX_AUTOCOMPLETE_SIZE } from '../lib/performance'
 
 const router: Router = Router()
 
@@ -21,6 +23,7 @@ const completeEventSchema = z.object({ source: z.enum(['event', 'document', 'dyn
 // ITEM-05: un activo en la papelera se puede recuperar hasta 30 días después
 // de su eliminación; pasada esa ventana, la purga lo borra físicamente.
 const TRASH_RETENTION_DAYS = 30
+const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
 
 // IMG-01: la imagen del activo viaja como multipart (campo `image`), se guarda
 // en el storage gestionado de DocuCore y en BD solo queda la clave + MIME + tamaño.
@@ -103,6 +106,18 @@ const assetInclude = {
   dateSchedules: { where: { isActive: true }, include: { definition: { select: { fieldName: true } }, occurrences: { orderBy: { id: 'asc' }, select: { id: true, scheduledDate: true, completedAt: true } } } },
   preventivePlans: { where: { isActive: true }, include: { executions: { orderBy: { id: 'asc' }, include: { tasks: { orderBy: { sortOrder: 'asc' }, select: { id: true, code: true, name: true, completedAt: true } } } } } },
   eventAcknowledgements: { select: { sourceKey: true } },
+} satisfies Prisma.AssetInclude
+
+// A list row needs its presentation relations and at most the earliest subset
+// required to derive the visible next event. Full histories stay on GET /:id.
+const assetListInclude = {
+  ...assetInclude,
+  events: { where: { completedAt: null }, orderBy: { date: 'asc' as const }, take: 20, select: { id: true, title: true, date: true, type: true, completedAt: true } },
+  documentAssets: { ...assetInclude.documentAssets, take: 20 },
+  dynamicFieldValues: { ...assetInclude.dynamicFieldValues, take: 100 },
+  dateSchedules: { ...assetInclude.dateSchedules, take: 20 },
+  preventivePlans: { ...assetInclude.preventivePlans, take: 20 },
+  eventAcknowledgements: { select: { sourceKey: true }, take: 100 },
 } satisfies Prisma.AssetInclude
 
 type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
@@ -236,23 +251,19 @@ async function replaceDynamicValues(
   }
 }
 
-// Filtrar por una ubicación incluye los activos de toda su rama jerárquica.
-async function collectLocationSubtree(rootId: number): Promise<number[]> {
-  const locations = await prisma.location.findMany({ select: { id: true, parentId: true } })
-  const childrenByParent = new Map<number | null, number[]>()
-  for (const location of locations) {
-    const siblings = childrenByParent.get(location.parentId) ?? []
-    siblings.push(location.id)
-    childrenByParent.set(location.parentId, siblings)
-  }
-  const ids: number[] = []
-  const stack = [rootId]
-  while (stack.length > 0) {
-    const id = stack.pop() as number
-    ids.push(id)
-    stack.push(...(childrenByParent.get(id) ?? []))
-  }
-  return ids
+async function activeProjectId(requested: string | undefined): Promise<number> {
+  const value = toNumberId(requested)
+  if (value !== null) return value
+  const project = await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })
+  return project.id
+}
+
+// Keep the list DTO intentionally narrower than the asset ficha. Relations
+// are only used transiently to calculate the one visible next event.
+function withAssetList(asset: AssetWithRelations) {
+  const detail = withDerivedEvents(asset)
+  const { dynamicFields: _dynamicFields, documents: _documents, preventivePlans: _preventivePlans, ...list } = detail
+  return list
 }
 
 // ITEM-05: purga perezosa de la papelera — borra físicamente los activos cuyo
@@ -262,6 +273,9 @@ async function purgeExpiredTrashedAssets(now = assetEventClock()): Promise<void>
   const expired = await prisma.asset.findMany({
     where: { deletedAt: { not: null, lt: cutoff } },
     select: { id: true, code: true, name: true, imageStorageKey: true },
+    // El purgado perezoso avanza por lotes para no bloquear la lista de
+    // Papelera si hay un histórico muy grande que ya ha vencido.
+    take: 1_000,
   })
   if (expired.length === 0) return
   await prisma.$transaction([
@@ -281,15 +295,7 @@ async function purgeExpiredTrashedAssets(now = assetEventClock()): Promise<void>
 }
 
 async function locationIsDescendantOf(tx: Prisma.TransactionClient, locationId: number, ancestorId: number): Promise<boolean> {
-  const visited = new Set<number>()
-  let current: number | null = locationId
-  while (current !== null && !visited.has(current)) {
-    if (current === ancestorId) return true
-    visited.add(current)
-    const location: { parentId: number | null } | null = await tx.location.findUnique({ where: { id: current }, select: { parentId: true } })
-    current = location?.parentId ?? null
-  }
-  return false
+  return isLocationDescendantOf(tx, locationId, ancestorId)
 }
 
 async function removeInvalidFloorPlanMarkers(tx: Prisma.TransactionClient, assetId: number, projectId: number, locationId: number): Promise<number> {
@@ -312,6 +318,7 @@ router.get(
     const typeId = toNumberId(typeof q.typeId === 'string' ? q.typeId : undefined)
     const statusId = toNumberId(typeof q.statusId === 'string' ? q.statusId : undefined)
     const locationId = toNumberId(typeof q.locationId === 'string' ? q.locationId : undefined)
+    const projectId = await activeProjectId(typeof q.projectId === 'string' ? q.projectId : undefined)
     const trashed = q.trashed === 'true'
 
     const page = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1
@@ -320,7 +327,7 @@ router.get(
     // Al consultar la papelera se purgan primero los activos vencidos.
     if (trashed) await purgeExpiredTrashedAssets()
 
-    const where: Prisma.AssetWhereInput = { deletedAt: trashed ? { not: null } : null }
+    const where: Prisma.AssetWhereInput = { projectId, deletedAt: trashed ? { not: null } : null }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -330,12 +337,12 @@ router.get(
     }
     if (typeId !== null) where.typeId = typeId
     if (statusId !== null) where.statusId = statusId
-    if (locationId !== null) where.locationId = { in: await collectLocationSubtree(locationId) }
+    if (locationId !== null) where.locationId = { in: await descendantLocationIds(prisma, locationId) }
 
     const [rows, total] = await prisma.$transaction([
       prisma.asset.findMany({
         where,
-        include: assetInclude,
+        include: assetListInclude,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: trashed ? { deletedAt: 'desc' } : { id: 'asc' },
@@ -344,7 +351,7 @@ router.get(
     ])
 
     const totalPages = total === 0 ? 1 : Math.ceil(total / limit)
-    res.json({ data: rows.map(withDerivedEvents), total, page, totalPages })
+    res.json({ data: rows.map(withAssetList), total, page, totalPages })
   }),
 )
 
@@ -374,7 +381,7 @@ router.get(
       distinct: [field],
       select: { code: true, name: true, initials: true },
       orderBy: { [field]: 'asc' },
-      take: 20,
+      take: MAX_AUTOCOMPLETE_SIZE,
     })
     res.json({ values })
   }),
@@ -402,13 +409,20 @@ router.get('/:id/history', asyncHandler(async (req, res) => {
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
   const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
-  const rows = await prisma.auditLog.findMany({
-    where: { entityId: { in: [asset.code, `asset:${asset.id}`] } },
-    include: { user: { select: { name: true, initials: true } } },
-    orderBy: { timestamp: 'desc' },
-    take: 100,
-  })
-  res.json(rows.map((row) => ({ id: row.id, action: row.action, detail: row.detail, timestamp: row.timestamp.toISOString(), user: row.user })))
+  const page = Number.isInteger(Number(req.query.page)) && Number(req.query.page) > 0 ? Number(req.query.page) : 1
+  const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100)
+  const where = { entityId: { in: [asset.code, `asset:${asset.id}`] } }
+  const [rows, total] = await prisma.$transaction([
+    prisma.auditLog.findMany({
+      where,
+      include: { user: { select: { name: true, initials: true } } },
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.auditLog.count({ where }),
+  ])
+  res.json({ data: rows.map((row) => ({ id: row.id, action: row.action, detail: row.detail, timestamp: row.timestamp.toISOString(), user: row.user })), total, page, totalPages: Math.max(1, Math.ceil(total / limit)) })
 }))
 
 router.post('/:id/events/complete', asyncHandler(async (req, res) => {
@@ -571,6 +585,7 @@ router.get(
     const markers = await prisma.floorPlanMarker.findMany({
       where: { assetId: id },
       orderBy: [{ floorPlanId: 'asc' }, { id: 'asc' }],
+      take: 100,
       select: {
         id: true, floorPlanId: true, x: true, y: true,
         floorPlan: {
