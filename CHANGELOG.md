@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Coherencia de ficha de activo (ASSET-COHERENCE-01)**: las características se editan junto con el resto del activo desde el único formulario global; el Resumen consume solo ocurrencias derivadas (evento, documento, fecha dinámica o preventivo), los documentos asociados exponen «Ver» además de «Descargar», Eventos redirige los preventivos a su ejecución enfocada y la pestaña Historial muestra la auditoría propia del activo. Preventivos incorpora «Completar todas las tareas» con confirmación y una única operación transaccional; completar la ejecución permanece separado para registrar la realización y generar la siguiente ocurrencia.
+
 - **Planos operativos (PLAN-02)**: capas dinámicas de los `AssetType` realmente presentes (color estable y contador), filtros de tipo/estado/urgencia, búsqueda y centrado de activos, detalle de próximo evento/origen y LOD de marcador (punto, código, código + nombre) sobre OpenSeadragon. La urgencia se deriva exclusivamente de `deriveAssetEvents`: vencidos se señalan en rojo con pulso sutil; próximos a 21 días, en ámbar; el estado operativo queda separado del color de tipo.
 - **Conversión local PDF → plano**: «Importar desde PDF» permite elegir página, delimitar una región y renderizar únicamente ese recorte a calidad configurable usando `pdfjs-dist`. Se sube solo el PNG generado al pipeline existente de versiones/DZI; el PDF origen no se envía ni se almacena.
 - **Vista previa por versión documental**: cada entrada del historial de «Gestionar documento» incorpora «Ver» junto a «Descargar»; `GET /api/documents/:id/versions/:version/preview` sirve exactamente la versión elegida inline sin alterar la versión vigente.
@@ -42,6 +44,8 @@
 - Documentación operativa para desarrollo, Docker y Dokploy.
 
 ### Changed
+
+- El mantenimiento preventivo deja de tener flag, checkbox o contrato genérico en `Asset`: la asignación activa `AssetPreventivePlan` es la única fuente de verdad. Se elimina `Asset.hasPreventive` mediante la migración `20260812120000_remove_asset_has_preventive`, el campo dinámico de seed «Próximo mantenimiento» y el evento manual preventivo duplicado de CNC-05; las fechas dinámicas legítimas siguen siendo independientes.
 
 - Las barras de desplazamiento de toda la aplicación pasan a 5 px, con pista transparente y pulgar sutil que gana contraste al pasar el puntero.
 - Los modales con acciones mantienen cabecera y pie visibles; solo se desplaza el cuerpo, incluidos formularios de activo/ubicación, gestión documental y confirmaciones.
