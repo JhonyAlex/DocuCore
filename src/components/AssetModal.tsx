@@ -8,11 +8,12 @@ import SearchablePicker, { type SearchableOption } from '@/components/Searchable
 import AssetCharacteristics from '@/components/AssetCharacteristics'
 import AssetEventsPanel from '@/components/AssetEventsPanel'
 import AssetPreventivesPanel from '@/components/AssetPreventivesPanel'
+import AssetHistoryPanel from '@/components/AssetHistoryPanel'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
 
-const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Preventivos', 'Historial', 'Plano']
+const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Preventivos', 'Historial']
 
 const eventCardStyles = {
   amber: 'bg-amber-50/70 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50',
@@ -57,6 +58,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   // Visor de la foto del activo: abierto desde el cuadro de imagen; guardia
   // para que Escape cierre solo el visor sin cerrar la ficha (patrón DOC-03).
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
+  const [focusedPreventiveExecutionId, setFocusedPreventiveExecutionId] = useState<number | null>(null)
   const imagePreviewOpenRef = useRef(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
@@ -76,6 +78,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setConfirmedAction(null)
     setImagePreviewOpen(false)
     imagePreviewOpenRef.current = false
+    setFocusedPreventiveExecutionId(null)
   }, [assetId])
 
   useEffect(() => {
@@ -133,6 +136,25 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   const decommissionedStatus = statuses.find((status) => status.name === 'Fuera de servicio')
   const activeStatus = statuses.find((status) => status.name === 'Activo')
   const isDecommissioned = asset.statusId === decommissionedStatus?.id
+
+  const openPreventiveExecution = (executionId: number) => {
+    setFocusedPreventiveExecutionId(executionId)
+    setActiveTab(4)
+  }
+
+  const handleNextEventAction = (event: (typeof nextEvents)[number]) => {
+    const relatedId = Number(event.id.split(':')[1])
+    if (!Number.isInteger(relatedId) || relatedId <= 0) return
+    if (event.source === 'preventive') {
+      openPreventiveExecution(relatedId)
+    } else if (event.source === 'document') {
+      void documentDialog.openAssociated(relatedId)
+    } else if (event.source === 'dynamic-date') {
+      setActiveTab(1)
+    } else {
+      setActiveTab(3)
+    }
+  }
 
   const changeStatus = async (statusId: number) => {
     setStatusError(null)
@@ -280,7 +302,6 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             </div>
 
             <h4 className="font-medium mb-3">Próximos eventos</h4>
-            <AssetPreventivesPanel asset={asset} onChanged={onImageChanged} />
             <div className="space-y-2 mb-5">
               {nextEvents.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 p-4 text-sm text-slate-500 dark:text-slate-400">
@@ -299,8 +320,8 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                     <div className="text-sm font-medium">{event.label}</div>
                     <div className="text-xs text-slate-600 dark:text-slate-400">{event.calendarDate} · {event.sourceLabel}</div>
                   </div>
-                  <button type="button" className="px-3 py-1.5 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                    {event.source === 'event' ? 'Completar' : 'Detalles'}
+                  <button type="button" onClick={() => handleNextEventAction(event)} className="px-3 py-1.5 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                    {event.source === 'preventive' ? 'Ver preventivo' : event.source === 'document' ? 'Ver documento' : event.source === 'dynamic-date' ? 'Ver característica' : 'Ver eventos'}
                   </button>
                 </div>
               ))}
@@ -338,13 +359,15 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
           </div>
         )}
 
-        {activeTab === 3 && <AssetEventsPanel asset={asset} onChanged={onImageChanged} />}
+        {activeTab === 3 && <AssetEventsPanel asset={asset} onChanged={onImageChanged} onOpenPreventive={openPreventiveExecution} />}
 
         {activeTab === 4 && (
           <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">
-            <AssetPreventivesPanel asset={asset} onChanged={onImageChanged} />
+            <AssetPreventivesPanel asset={asset} onChanged={onImageChanged} focusExecutionId={focusedPreventiveExecutionId} onFocusHandled={() => setFocusedPreventiveExecutionId(null)} />
           </div>
         )}
+
+        {activeTab === 5 && <AssetHistoryPanel asset={asset} />}
 
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>

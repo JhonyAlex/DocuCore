@@ -14,6 +14,7 @@ describe('dynamic fields API', () => {
   let assetId: number
   let definitionId: number
   let taskId: number
+  let secondTaskId: number
   let planTemplateId: number
   let universalPlanId: number
   let assignedPlanId: number
@@ -72,7 +73,35 @@ describe('dynamic fields API', () => {
     expect(response.status).toBe(400)
   })
 
-  it('creates date field definitions and calculates scheduled occurrences', async () => {
+  it('keeps the canonical seed free of the retired dynamic maintenance duplicate', async () => {
+    const assets = await api('/api/assets?search=CNC-05&limit=10')
+    expect(assets.status).toBe(200)
+    const payload = await assets.json() as { data: Array<{ id: number; dynamicFields: Array<{ fieldName: string }> }> }
+    const cnc = payload.data.find((asset) => asset.id > 0)
+    expect(cnc?.dynamicFields.some((field) => field.fieldName === 'Próximo mantenimiento')).toBe(false)
+    const history = await api(`/api/assets/${cnc?.id}/events`)
+    expect(await history.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ source: 'event', title: 'Mant. preventivo' })]))
+  })
+
+  it('rejects the retired hasPreventive write contract', async () => {
+    const response = await api(`/api/assets/${assetId}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hasPreventive: true }),
+    })
+    expect(response.status).toBe(400)
+  })
+
+  it('accepts dynamic characteristics only through the unified asset PUT contract', async () => {
+    const response = await api(`/api/assets/${assetId}/dynamic-fields`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ values: [] }),
+    })
+    expect(response.status).toBe(404)
+  })
+
+  it('keeps legitimate dynamic dates and their recurrence working', async () => {
     const definitionResponse = await api('/api/projects/1/dynamic-fields', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -88,11 +117,11 @@ describe('dynamic fields API', () => {
     expect(definitionResponse.status).toBe(201)
     definitionId = (await definitionResponse.json() as { id: number }).id
 
-    const updateResponse = await api(`/api/assets/${assetId}/dynamic-fields`, {
+    const updateResponse = await api(`/api/assets/${assetId}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        values: [{
+        dynamicFields: [{
           definitionId,
           value: { date: '2026-09-15', periodicity: 'Trimestral', periodicityMode: 'Calendario' },
         }],
@@ -126,12 +155,16 @@ describe('dynamic fields API', () => {
     expect(response.status).toBe(400)
   })
 
-  it('snapshots preventive tasks from standalone templates, completes an execution and creates the next one', async () => {
+  it('completes all pending preventive tasks in one operation and keeps execution completion separate', async () => {
     const taskResponse = await api('/api/projects/1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: `QA-TASK-${Date.now()}`, name: 'Verificar resguardo de seguridad' }) })
     expect(taskResponse.status).toBe(201)
     taskId = (await taskResponse.json() as { id: number }).id
 
-    const planTemplateResponse = await api('/api/projects/1/preventive-plans', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `Plan QA ${Date.now()}`, description: 'Plan de prueba', periodicity: 'Mensual', periodicityMode: 'Calendario', taskIds: [taskId], assetTypeIds: [1] }) })
+    const secondTaskResponse = await api('/api/projects/1/tasks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: `QA-TASK-SECOND-${Date.now()}`, name: 'Comprobar resguardo y señalización' }) })
+    expect(secondTaskResponse.status).toBe(201)
+    secondTaskId = (await secondTaskResponse.json() as { id: number }).id
+
+    const planTemplateResponse = await api('/api/projects/1/preventive-plans', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: `Plan QA ${Date.now()}`, description: 'Plan de prueba', periodicity: 'Mensual', periodicityMode: 'Calendario', taskIds: [taskId, secondTaskId], assetTypeIds: [1] }) })
     expect(planTemplateResponse.status).toBe(201)
     planTemplateId = (await planTemplateResponse.json() as { id: number }).id
 
@@ -141,8 +174,7 @@ describe('dynamic fields API', () => {
 
     const planResponse = await api(`/api/assets/${assetId}/preventives`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ planId: planTemplateId, scheduledDate: '2026-10-01' }) })
     expect(planResponse.status).toBe(201)
-    const planAsset = await planResponse.json() as { hasPreventive: boolean; preventivePlans: Array<{ id: number; executions: Array<{ id: number; tasks: Array<{ id: number }> }> }> }
-    expect(planAsset.hasPreventive).toBe(true)
+    const planAsset = await planResponse.json() as { preventivePlans: Array<{ id: number; executions: Array<{ id: number; tasks: Array<{ id: number; completedAt: string | null }> }> }> }
     assignedPlanId = planAsset.preventivePlans[0].id
     const execution = planAsset.preventivePlans[0].executions[0]
 
@@ -150,14 +182,20 @@ describe('dynamic fields API', () => {
     const dupResponse = await api(`/api/assets/${assetId}/preventives`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ planId: planTemplateId, scheduledDate: '2026-10-01' }) })
     expect(dupResponse.status).toBe(409)
 
-    // Complete tasks and execution
+    // A task can be completed individually; the bulk endpoint touches only the
+    // remaining pending task in one transactional request.
     const taskCompletion = await api(`/api/assets/${assetId}/preventives/executions/${execution.id}/tasks/${execution.tasks[0].id}/complete`, { method: 'POST' })
     expect(taskCompletion.status).toBe(200)
+    const completeAll = await api(`/api/assets/${assetId}/preventives/executions/${execution.id}/tasks/complete`, { method: 'POST' })
+    expect(completeAll.status).toBe(200)
+    const afterBulk = await completeAll.json() as { preventivePlans: Array<{ executions: Array<{ id: number; tasks: Array<{ completedAt: string | null }> }> }> }
+    const completedExecution = afterBulk.preventivePlans.flatMap((plan) => plan.executions).find((candidate) => candidate.id === execution.id)
+    expect(completedExecution?.tasks.every((task) => task.completedAt !== null)).toBe(true)
     const completion = await api(`/api/assets/${assetId}/events/complete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'preventive', id: execution.id, performedDate: '2026-10-02' }) })
     expect(completion.status).toBe(200)
     const history = await api(`/api/assets/${assetId}/events`)
     expect(await history.json()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: 'preventive', id: execution.id, completedAt: expect.any(String), progress: { completed: 1, total: 1 } }),
+      expect.objectContaining({ source: 'preventive', id: execution.id, completedAt: expect.any(String), progress: { completed: 2, total: 2 } }),
       expect.objectContaining({ source: 'preventive', date: '2026-11-01T00:00:00.000Z', completedAt: null }),
     ]))
   })
@@ -196,7 +234,7 @@ describe('dynamic fields API', () => {
     expect(updateTypeRes.status).toBe(400)
   })
 
-  it('unassigns preventive plan, syncs hasPreventive flag, and excludes pending execution from events while keeping completed history', async () => {
+  it('unassigns a preventive plan and excludes its pending execution while keeping completed history', async () => {
     // Unassign universal plan first
     const activePlansRes = await api(`/api/assets/${assetId}`)
     const activeAsset = await activePlansRes.json() as { preventivePlans: Array<{ id: number; planId: number }> }
@@ -206,8 +244,7 @@ describe('dynamic fields API', () => {
     // Unassign initial plan
     const unassignRes = await api(`/api/assets/${assetId}/preventives/${assignedPlanId}`, { method: 'DELETE' })
     expect(unassignRes.status).toBe(200)
-    const unassignedAsset = await unassignRes.json() as { hasPreventive: boolean; nextEvents: Array<{ source: string }> }
-    expect(unassignedAsset.hasPreventive).toBe(false)
+    const unassignedAsset = await unassignRes.json() as { nextEvents: Array<{ source: string }> }
     expect(unassignedAsset.nextEvents.some((e) => e.source === 'preventive')).toBe(false)
 
     // Completed execution remains in history, uncompleted pending execution does not

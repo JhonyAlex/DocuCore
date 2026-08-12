@@ -8,7 +8,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void
   onCancel: () => void
   error?: string | null
-  variant?: 'danger'
+  variant?: 'danger' | 'primary'
   busy?: boolean
   busyLabel?: string
 }
@@ -41,9 +41,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, onCo
 
   if (!open) return null
 
-  const confirmClass = variant === 'danger'
-    ? 'bg-red-600 hover:bg-red-700 text-white'
-    : 'bg-brand-600 hover:bg-brand-700 text-white'
+  const confirmClass = variant === 'danger' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-brand-600 hover:bg-brand-700 text-white'
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && !busy && onCancel()}>

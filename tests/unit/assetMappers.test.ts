@@ -15,13 +15,12 @@ function apiAsset(overrides: Partial<ApiAsset>): ApiAsset {
     projectId: 1,
     responsibleId: 2,
     initials: 'CN',
-    hasPreventive: false,
     imageUrl: null,
     imageMimeType: null,
     imageSizeBytes: null,
     nextEvents: [{
       id: 'event:1',
-      title: 'Mant. preventivo',
+      title: 'Mantenimiento preventivo trimestral',
       date: '2026-08-27T00:00:00.000Z',
       daysUntil: 21,
       urgency: 'amber',
@@ -51,7 +50,7 @@ describe('mapApiAssetToDisplay', () => {
       serialLabel: 'SN: HA20-2024-8821',
       nextEvent: {
         id: 'event:1',
-        label: 'Mant. preventivo',
+        label: 'Mantenimiento preventivo trimestral',
         date: '27/08/2026 · 21d',
         urgency: 'amber',
         source: 'event',

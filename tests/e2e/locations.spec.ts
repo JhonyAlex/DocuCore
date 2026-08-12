@@ -259,7 +259,7 @@ test.describe('Locations', () => {
     await expect(modal).toBeVisible()
     await expect(modal.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toBeVisible()
     // Paridad con Activos: próximo evento derivado de las relaciones.
-    await expect(modal.getByText('Mant. preventivo', { exact: true })).toBeVisible()
+    await expect(modal.getByText('Mantenimiento preventivo trimestral', { exact: true })).toBeVisible()
 
     // Cerrar con Escape vuelve a Ubicaciones, sin navegar.
     await page.keyboard.press('Escape')

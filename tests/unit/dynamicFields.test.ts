@@ -9,9 +9,9 @@ describe('dynamic field configuration and values', () => {
     expect(result.assetTypeIds).toEqual([1, 2])
   })
 
-  it('rejects selection fields without options and requires tasks for a preventive plan', () => {
+  it('rejects selection fields without options and unknown field types', () => {
     expect(() => dynamicFieldDefinitionSchema.parse({ fieldName: 'Criticidad', groupName: 'General', fieldType: 'SELECT', required: false, assetTypeIds: [1], options: [] })).toThrow()
-    expect(() => dynamicFieldDefinitionSchema.parse({ fieldName: 'Plan', groupName: 'General', fieldType: 'PREVENTIVE', required: false, assetTypeIds: [1], options: [] })).toThrow()
+    expect(() => dynamicFieldDefinitionSchema.parse({ fieldName: 'Plan', groupName: 'General', fieldType: 'NOT_A_FIELD', required: false, assetTypeIds: [1], options: [] })).toThrow()
   })
 
   it('validates numbers and stable option keys', () => {

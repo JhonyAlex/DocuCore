@@ -33,10 +33,6 @@ export const dynamicFieldDefinitionSchema = dynamicFieldDefinitionBaseSchema.sup
 
 export const dynamicFieldDefinitionUpdateSchema = dynamicFieldDefinitionBaseSchema.partial().superRefine(validateDefinition)
 
-export const dynamicFieldValuesSchema = z.object({
-  values: z.array(z.object({ definitionId: z.number().int().positive(), value: z.unknown() }).strict()).max(200),
-}).strict()
-
 export const completeDynamicDateSchema = z.object({
   performedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 }).strict()

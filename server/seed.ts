@@ -177,9 +177,8 @@ async function main(): Promise<void> {
     locationCode: string
     responsibleEmail: string
     initials: string
-    hasPreventive?: boolean
   }> = [
-    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN', hasPreventive: true },
+    { code: 'CNC-05', name: 'Torno CNC Haas ST-20', serialNumber: 'HA20-2024-8821', installDate: '04/02/2024', typeName: 'Máquina', statusName: 'Activo', locationCode: 'PIN-NA-01A', responsibleEmail: 'jr@docucore.local', initials: 'CN' },
     { code: 'CP-02', name: 'Compresor Atlas Copco GA37', serialNumber: 'AC-37-2021-04', installDate: '12/03/2021', typeName: 'Máquina', statusName: 'Fuera de servicio', locationCode: 'PIN-SC-02', responsibleEmail: 'agomez@docucore.local', initials: 'CP' },
     { code: 'MG-203', name: 'Manómetro digital WIKA CPH6600', serialNumber: 'WK-2023-05412', installDate: '19/07/2023', typeName: 'Instrumento', statusName: 'En revisión', locationCode: 'PIN-LB-03', responsibleEmail: 'ltorres@docucore.local', initials: 'MG' },
     { code: 'EXT-A12', name: 'Extintor CO2 5kg', serialNumber: 'EXT-2024-A12', installDate: '24/07/2024', typeName: 'Extintor', statusName: 'Activo', locationCode: 'PIN-NB-P3', responsibleEmail: 'jr@docucore.local', initials: 'EX' },
@@ -196,7 +195,6 @@ async function main(): Promise<void> {
         serialNumber: asset.serialNumber,
         installDate: isoFromEu(asset.installDate),
         initials: asset.initials,
-        hasPreventive: asset.hasPreventive ?? false,
         type: { connect: { projectId_name: { projectId: 1, name: asset.typeName } } },
         status: { connect: { name: asset.statusName } },
         location: { connect: { code: asset.locationCode } },
@@ -255,7 +253,7 @@ async function main(): Promise<void> {
   const plan1 = await prisma.preventivePlan.create({
     data: {
       projectId: 1,
-      name: 'Mantenimiento Trimestral Climatización / Hidráulica',
+      name: 'Mantenimiento preventivo trimestral',
       description: 'Revisión periódica de presión, filtros y paradas de emergencia.',
       periodicity: 'Trimestral',
       periodicityMode: 'Calendario',
@@ -329,7 +327,7 @@ async function main(): Promise<void> {
   const initialExecution = await prisma.preventiveExecution.create({
     data: {
       planId: assignedPlan.id,
-      scheduledDate: new Date('2026-10-01T00:00:00.000Z'),
+      scheduledDate: new Date('2026-08-05T00:00:00.000Z'),
     },
   })
   await prisma.preventiveExecutionTask.createMany({
@@ -356,7 +354,6 @@ async function main(): Promise<void> {
     { typeName: 'Máquina', name: 'Modelo', fieldType: 'TEXT', group: 'Identificación' },
     { typeName: 'Máquina', name: 'Potencia', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'kW' },
     { typeName: 'Máquina', name: 'Tensión', fieldType: 'NUMBER', group: 'Especificaciones', unit: 'V' },
-    { typeName: 'Máquina', name: 'Próximo mantenimiento', fieldType: 'DATE', group: 'Mantenimiento' },
     { typeName: 'Máquina', name: 'Zona ATEX', fieldType: 'BOOLEAN', group: 'Seguridad' },
     { typeName: 'Máquina', name: 'Criticidad', fieldType: 'SELECT', group: 'Seguridad', options: ['Baja', 'Media', 'Alta', 'Crítica'] },
     { typeName: 'Máquina', name: 'Observaciones técnicas', fieldType: 'TEXTAREA', group: 'General' },
@@ -408,9 +405,8 @@ async function main(): Promise<void> {
     await prisma.assetDynamicFieldValue.create({ data: { assetId: cnc.id, definitionId: definition.id, textValue: 'textValue' in value ? value.textValue : undefined, numberValue: 'numberValue' in value ? value.numberValue : undefined, booleanValue: 'booleanValue' in value ? value.booleanValue : undefined } })
   }
 
-  console.log('  • Related events (4) + document versions (207 logical documents)')
+  console.log('  • Related events (3) + document versions (207 logical documents)')
   const eventData = [
-    { assetCode: 'CNC-05', title: 'Mant. preventivo', date: '05/08/2026', type: 'Recurrente cada 3 meses' },
     { assetCode: 'CP-02', title: 'Revisión urgente', date: '12/07/2026', type: 'Mantenimiento correctivo' },
     { assetCode: 'EXT-A12', title: 'Revisión anual', date: '24/07/2026', type: 'Inspección reglamentaria' },
     { assetCode: 'SRV-03', title: 'Revisión firmware', date: '12/08/2026', type: 'Mantenimiento de sistemas' },

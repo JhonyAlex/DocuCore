@@ -134,7 +134,6 @@ export interface AssetWriteInput {
   projectId: number
   responsibleId: number
   initials: string
-  hasPreventive?: boolean
   dynamicFields?: DynamicFieldValueInput[]
 }
 
@@ -164,7 +163,6 @@ export interface ApiAsset {
   projectId: number
   responsibleId: number
   initials: string
-  hasPreventive: boolean
   deletedAt?: string | null
   imageUrl: string | null
   imageMimeType?: string | null
@@ -216,6 +214,7 @@ export interface PreventivePlanInput {
 }
 
 export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
+export interface ApiAssetHistoryEntry { id: number; action: string; detail: string; timestamp: string; user: { name: string; initials: string } }
 
 export interface ApiLocation {
   id: number
@@ -569,20 +568,18 @@ export function duplicatePreventivePlan(projectId: number, id: number): Promise<
 export function deletePreventivePlan(projectId: number, id: number): Promise<void> { return request(`/projects/${projectId}/preventive-plans/${id}`, { method: 'DELETE' }) }
 export function bulkUpdatePreventivePlans(projectId: number, action: 'deactivate' | 'delete', ids: number[]): Promise<void> { return request(`/projects/${projectId}/preventive-plans/bulk`, { method: 'POST', body: JSON.stringify({ action, ids }) }) }
 
-export function updateAssetDynamicFields(assetId: number, values: DynamicFieldValueInput[]): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${assetId}/dynamic-fields`, { method: 'PUT', body: JSON.stringify({ values }) })
-}
-
 export function completeAssetDynamicDate(assetId: number, definitionId: number, performedDate: string): Promise<ApiAsset> {
   return request<ApiAsset>(`/assets/${assetId}/dynamic-fields/${definitionId}/complete`, { method: 'POST', body: JSON.stringify({ performedDate }) })
 }
 
 export function fetchAssetEventHistory(assetId: number): Promise<ApiAssetEventHistory[]> { return request(`/assets/${assetId}/events`) }
+export function fetchAssetHistory(assetId: number): Promise<ApiAssetHistoryEntry[]> { return request(`/assets/${assetId}/history`) }
 export function completeAssetEvent(assetId: number, source: ApiAssetEventHistory['source'], id: number, performedDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/events/complete`, { method: 'POST', body: JSON.stringify({ source, id, performedDate }) }) }
 export function createAssetPreventive(assetId: number, input: { planId: number; scheduledDate: string }): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives`, { method: 'POST', body: JSON.stringify(input) }) }
 export function updateAssetPreventiveDate(assetId: number, planId: number, scheduledDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'PATCH', body: JSON.stringify({ scheduledDate }) }) }
 export function deleteAssetPreventive(assetId: number, planId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'DELETE' }) }
 export function completePreventiveTask(assetId: number, executionId: number, taskId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/${taskId}/complete`, { method: 'POST' }) }
+export function completeAllPreventiveTasks(assetId: number, executionId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/complete`, { method: 'POST' }) }
 
 export function fetchStatuses(): Promise<ApiStatus[]> {
   return request<ApiStatus[]>('/statuses')

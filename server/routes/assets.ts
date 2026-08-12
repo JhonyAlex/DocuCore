@@ -7,7 +7,7 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { assetEventClock, deriveAssetEventsExcludingAcknowledged } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
-import { completeDynamicDateSchema, dateScheduleValueSchema, dynamicFieldValuesSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
+import { completeDynamicDateSchema, dateScheduleValueSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
 import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setAssetDateSchedule } from '../lib/assetSchedules'
 
 const router: Router = Router()
@@ -422,6 +422,22 @@ router.get('/:id/events', asyncHandler(async (req, res) => {
   res.json(rows)
 }))
 
+// Auditoría propia del activo. «Eventos» conserva las ocurrencias operativas;
+// «Historial» muestra las acciones trazables que se han realizado sobre él.
+router.get('/:id/history', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  if (id === null) return res.status(400).json({ error: 'Invalid id' })
+  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true } })
+  if (!asset) return res.status(404).json({ error: 'Not found' })
+  const rows = await prisma.auditLog.findMany({
+    where: { entityId: { in: [asset.code, `asset:${asset.id}`] } },
+    include: { user: { select: { name: true, initials: true } } },
+    orderBy: { timestamp: 'desc' },
+    take: 100,
+  })
+  res.json(rows.map((row) => ({ id: row.id, action: row.action, detail: row.detail, timestamp: row.timestamp.toISOString(), user: row.user })))
+}))
+
 router.post('/:id/events/complete', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
@@ -478,7 +494,6 @@ router.post('/:id/preventives', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'La plantilla del plan no es compatible con el tipo de este activo' })
   }
   await prisma.$transaction(async (tx) => {
-    await tx.asset.update({ where: { id }, data: { hasPreventive: true } })
     const plan = await tx.assetPreventivePlan.create({
       data: {
         assetId: id,
@@ -503,12 +518,6 @@ router.delete('/:id/preventives/:planId', asyncHandler(async (req, res) => {
   if (!plan) return res.status(404).json({ error: 'Preventive plan assignment not found' })
   await prisma.$transaction(async (tx) => {
     await tx.assetPreventivePlan.update({ where: { id: planId }, data: { isActive: false } })
-    const remainingActive = await tx.assetPreventivePlan.count({
-      where: { assetId: id, id: { not: planId }, isActive: true },
-    })
-    if (remainingActive === 0) {
-      await tx.asset.update({ where: { id }, data: { hasPreventive: false } })
-    }
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `asset:${id}`, detail: `Plan periódico "${plan.name}" desvinculado`, timestamp: new Date() } })
   })
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
@@ -544,6 +553,30 @@ router.patch('/:id/preventives/:planId', asyncHandler(async (req, res) => {
   res.json(withDerivedEvents(updated))
 }))
 
+// Una única operación transaccional para evitar que React complete una tarea
+// por petición. Solo afecta a tareas aún pendientes; completar la ejecución
+// sigue siendo una acción separada porque calcula la siguiente ocurrencia.
+router.post('/:id/preventives/executions/:executionId/tasks/complete', asyncHandler(async (req, res) => {
+  const id = toNumberId(req.params.id)
+  const executionId = toNumberId(req.params.executionId)
+  if (id === null || executionId === null) return res.status(400).json({ error: 'Invalid id' })
+  const updated = await prisma.$transaction(async (tx) => {
+    const asset = await tx.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true } })
+    if (!asset) throw Object.assign(new Error('Asset not found'), { status: 404 })
+    const execution = await tx.preventiveExecution.findFirst({
+      where: { id: executionId, plan: { assetId: id } },
+      include: { plan: { select: { name: true, isActive: true } } },
+    })
+    if (!execution) throw Object.assign(new Error('Preventive execution not found'), { status: 404 })
+    if (execution.completedAt || !execution.plan.isActive) throw Object.assign(new Error('Preventive execution is not pending'), { status: 409 })
+    const completed = await tx.preventiveExecutionTask.updateMany({ where: { executionId, completedAt: null }, data: { completedAt: new Date() } })
+    if (completed.count === 0) throw Object.assign(new Error('All preventive tasks are already complete'), { status: 409 })
+    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Tareas preventivas completadas', entityId: asset.code, detail: `${completed.count} tareas pendientes completadas en "${execution.plan.name}"`, timestamp: new Date() } })
+    return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
+  })
+  res.json(withDerivedEvents(updated))
+}))
+
 router.post('/:id/preventives/executions/:executionId/tasks/:taskId/complete', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   const executionId = toNumberId(req.params.executionId)
@@ -555,23 +588,6 @@ router.post('/:id/preventives/executions/:executionId/tasks/:taskId/complete', a
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
   res.json(withDerivedEvents(updated))
 }))
-
-router.put(
-  '/:id/dynamic-fields',
-  asyncHandler(async (req, res) => {
-    const id = toNumberId(req.params.id)
-    if (id === null) return res.status(400).json({ error: 'Invalid id' })
-    const input = dynamicFieldValuesSchema.parse(req.body)
-    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true, typeId: true } })
-    if (!asset) return res.status(404).json({ error: 'Not found' })
-    const updated = await prisma.$transaction(async (tx) => {
-      await replaceDynamicValues(tx, id, asset.projectId, asset.typeId, input.values)
-      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Actualización', entityId: asset.code, detail: 'Características dinámicas actualizadas', timestamp: new Date() } })
-      return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
-    })
-    res.json(withDerivedEvents(updated))
-  }),
-)
 
 router.post(
   '/:id/dynamic-fields/:definitionId/complete',
@@ -656,7 +672,7 @@ router.put(
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
     const existing = await prisma.asset.findFirst({
       where: { id, deletedAt: null },
-      select: { projectId: true, typeId: true, locationId: true, responsibleId: true, hasPreventive: true },
+      select: { projectId: true, typeId: true, locationId: true, responsibleId: true },
     })
     if (!existing) {
       res.status(404).json({ error: 'Not found' })
@@ -692,12 +708,6 @@ router.put(
     }
     const updated = await prisma.$transaction(async (tx) => {
       await tx.asset.update({ where: { id }, data })
-      if (rest.hasPreventive === false && existing.hasPreventive === true) {
-        await tx.assetPreventivePlan.updateMany({
-          where: { assetId: id, isActive: true },
-          data: { isActive: false },
-        })
-      }
       const finalProjectId = projectId ?? existing.projectId
       const finalTypeId = typeId ?? existing.typeId
       const finalLocationId = locationId ?? existing.locationId

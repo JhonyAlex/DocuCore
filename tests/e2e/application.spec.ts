@@ -89,13 +89,14 @@ test.describe('DocuCore application', () => {
   test('opens and closes the asset modal', async ({ page, consoleIssues }) => {
     await goToAssets(page)
     const canonicalRow = page.locator('tbody tr').filter({ hasText: 'CNC-05' })
-    await expect(canonicalRow).toContainText('Mant. preventivo')
+    await expect(canonicalRow).toContainText('Mantenimiento preventivo trimestral')
     await expect(canonicalRow).toContainText('05/08/2026 · 21d')
     await canonicalRow.click()
     const dialog = page.getByRole('dialog', { name: 'Torno CNC Haas ST-20' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole('heading', { name: 'Próximos eventos', exact: true })).toBeVisible()
-    await expect(dialog.getByText('Mant. preventivo', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Mantenimiento preventivo trimestral', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Progreso de tareas', { exact: false })).toHaveCount(0)
     await expect(dialog.getByText('Manual técnico Haas ST-20 v2', { exact: true })).toBeVisible()
 
     await dialog.getByText('Cerrar', { exact: true }).click()

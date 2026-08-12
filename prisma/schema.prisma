@@ -184,7 +184,6 @@ model Asset {
   projectId       Int
   responsibleId   Int
   initials        String
-  hasPreventive   Boolean   @default(false)
   deletedAt       DateTime? @db.Timestamptz(6)
   imageStorageKey String?   @unique
   imageMimeType   String?

@@ -23,7 +23,7 @@ export default function DynamicFieldsFormSection({ projectId, assetTypeId, initi
   useEffect(() => { onChangeRef.current = onChange }, [onChange])
 
   useEffect(() => {
-    if (!projectId || !assetTypeId) { setDefinitions([]); setValues({}); onChangeRef.current([]); return }
+    if (!projectId || !assetTypeId) { setDefinitions([]); setValues({}); return }
     let active = true
     setLoading(true)
     setError(false)
@@ -38,19 +38,25 @@ export default function DynamicFieldsFormSection({ projectId, assetTypeId, initi
         }))
         setDefinitions(next)
         setValues(nextValues)
-        onChangeRef.current(next.map((definition) => ({ definitionId: definition.id, value: nextValues[definition.id] })))
       })
       .catch(() => { if (active) setError(true) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [assetTypeId, duplicate, projectId])
 
+  // La propagación al formulario padre ocurre después de renderizar los nuevos
+  // valores. Hacerla dentro del actualizador de `setValues` provoca una
+  // actualización cruzada durante el render de React.
+  useEffect(() => {
+    if (!projectId || !assetTypeId || definitions.length === 0) {
+      onChangeRef.current([])
+      return
+    }
+    onChangeRef.current(definitions.map((definition) => ({ definitionId: definition.id, value: values[definition.id] })))
+  }, [assetTypeId, definitions, projectId, values])
+
   const update = (definitionId: number, value: unknown) => {
-    setValues((current) => {
-      const next = { ...current, [definitionId]: value }
-      onChangeRef.current(definitions.map((definition) => ({ definitionId: definition.id, value: next[definition.id] })))
-      return next
-    })
+    setValues((current) => ({ ...current, [definitionId]: value }))
   }
 
   if (!assetTypeId) return null
