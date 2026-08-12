@@ -1,10 +1,12 @@
 import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
+import type { AssetIconKey } from '../../shared/assetIconCatalog'
 
 const API_BASE = '/api'
 
 export interface ApiAssetType {
   id: number
   name: string
+  iconKey: AssetIconKey
   projectId?: number
   sortOrder?: number
   isActive?: boolean
@@ -14,6 +16,7 @@ export interface ApiAssetType {
 
 export interface AssetTypeInput {
   name: string
+  iconKey?: AssetIconKey
   sortOrder?: number
   isActive?: boolean
 }
@@ -171,7 +174,7 @@ export interface ApiAsset {
   documentCount: number
   documents?: ApiAssetDocument[]
   eventCount: number
-  type?: { id: number; name: string }
+  type?: { id: number; name: string; iconKey?: AssetIconKey }
   status?: { id: number; name: string; pulseDot: string | null }
   location?: ApiLocationRef
   responsible?: ApiUserRef
@@ -241,7 +244,7 @@ export interface ApiLocationAsset {
   name: string
   installDate: string
   initials: string
-  type: { id: number; name: string }
+  type: { id: number; name: string; iconKey?: AssetIconKey }
   status: { id: number; name: string; pulseDot: string | null }
   typeName?: string
   statusName?: string
@@ -276,7 +279,7 @@ export interface ApiFloorPlanAsset {
   code: string
   name: string
   locationId: number
-  type: { id: number; name: string }
+  type: { id: number; name: string; iconKey?: AssetIconKey }
   status: { id: number; name: string; pulseDot: string | null }
   nextEvents: ApiAssetEvent[]
 }
@@ -303,6 +306,17 @@ export interface ApiFloorPlan {
   currentVersion: ApiFloorPlanVersion | null
   markers: ApiFloorPlanMarker[]
   availableAssets?: ApiFloorPlanAsset[]
+}
+
+export interface ApiAssetFloorPlanPlacement {
+  planId: number
+  planName: string
+  location: ApiLocationRef
+  currentVersion: ApiFloorPlanVersion
+  dziUrl: string
+  markerId: number
+  x: number
+  y: number
 }
 
 export interface FloorPlanWriteInput {
@@ -614,6 +628,10 @@ export function fetchFloorPlans(projectId: number, locationId?: number): Promise
 
 export function fetchFloorPlan(id: number): Promise<ApiFloorPlan> {
   return request(`/floor-plans/${id}`)
+}
+
+export function fetchAssetFloorPlanPlacements(assetId: number): Promise<{ data: ApiAssetFloorPlanPlacement[] }> {
+  return request(`/assets/${assetId}/floor-plans`)
 }
 
 function floorPlanFormData(input: FloorPlanWriteInput, file: File): FormData {

@@ -12,6 +12,8 @@ test.describe('CFG-TYPE-01 tipos de activo', () => {
     await page.getByRole('button', { name: 'Nuevo tipo' }).click()
     const createDialog = page.getByRole('dialog', { name: 'Nuevo tipo de activo' })
     await createDialog.getByLabel('Nombre del tipo').fill(originalName)
+    await createDialog.locator('button[data-icon-key="wrench"]').click()
+    await expect(createDialog.getByRole('option', { name: 'Llave inglesa' })).toHaveAttribute('aria-selected', 'true')
     await createDialog.getByRole('button', { name: 'Crear tipo' }).click()
     await expect(page.getByRole('row').filter({ hasText: originalName })).toBeVisible()
 
@@ -20,8 +22,10 @@ test.describe('CFG-TYPE-01 tipos de activo', () => {
     await page.getByRole('menuitem', { name: 'Editar' }).click()
     const editDialog = page.getByRole('dialog', { name: 'Editar tipo de activo' })
     await editDialog.getByLabel('Nombre del tipo').fill(renamedName)
+    await editDialog.locator('button[data-icon-key="server"]').click()
     await editDialog.getByRole('button', { name: 'Guardar cambios' }).click()
     await expect(page.getByRole('row').filter({ hasText: renamedName })).toBeVisible()
+    await expect(page.getByRole('row').filter({ hasText: renamedName }).locator('[data-asset-icon="server"]')).toBeVisible()
 
     await page.goto('/assets')
     await page.getByRole('button', { name: 'Nuevo activo' }).click()

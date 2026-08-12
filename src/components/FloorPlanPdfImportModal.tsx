@@ -57,7 +57,7 @@ export default function FloorPlanPdfImportModal({ open, onClose, onImport }: Pro
   }
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4">
       <div role="dialog" aria-modal="true" aria-label="Importar desde PDF" className="w-full max-w-4xl rounded-xl bg-white p-5 shadow-2xl dark:bg-slate-900">
         <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Importar desde PDF</h2><button type="button" aria-label="Cerrar" onClick={onClose}>×</button></div>
         <p className="mt-1 text-sm text-slate-500">El PDF se procesa solo en este navegador; se subirá únicamente la región convertida.</p>

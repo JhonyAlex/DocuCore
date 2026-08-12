@@ -59,6 +59,7 @@ const assetInclude = {
     select: {
       id: true,
       name: true,
+      iconKey: true,
       fieldDefinitions: {
         where: { definition: { isActive: true } },
         include: {
@@ -138,7 +139,7 @@ function withDerivedEvents(asset: AssetWithRelations) {
   return {
     ...base,
     imageUrl: _imageStorageKey ? `/api/assets/${base.id}/image` : null,
-    type: { id: type.id, name: type.name },
+    type: { id: type.id, name: type.name, iconKey: type.iconKey },
     dynamicFields,
     documentCount: documents.length,
     documents: documents.map((document) => ({
@@ -607,6 +608,52 @@ router.post(
       return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
     })
     res.json(withDerivedEvents(updated))
+  }),
+)
+
+// PLAN-04: consulta indexada por assetId. Devuelve solo los planos que ya
+// contienen el activo y la versión necesaria para abrir el visor DZI.
+router.get(
+  '/:id/floor-plans',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) return res.status(400).json({ error: 'Invalid id' })
+    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true } })
+    if (!asset) return res.status(404).json({ error: 'Not found' })
+    const markers = await prisma.floorPlanMarker.findMany({
+      where: { assetId: id },
+      orderBy: [{ floorPlanId: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true, floorPlanId: true, x: true, y: true,
+        floorPlan: {
+          select: {
+            name: true,
+            location: { select: { id: true, name: true, label: true, code: true } },
+            versions: {
+              orderBy: { version: 'desc' },
+              take: 1,
+              select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, width: true, height: true, uploadedAt: true },
+            },
+          },
+        },
+      },
+    })
+    res.json({
+      data: markers.flatMap((marker) => {
+        const currentVersion = marker.floorPlan.versions[0]
+        if (!currentVersion) return []
+        return [{
+          planId: marker.floorPlanId,
+          planName: marker.floorPlan.name,
+          location: marker.floorPlan.location,
+          currentVersion: { ...currentVersion, uploadedAt: currentVersion.uploadedAt.toISOString() },
+          dziUrl: `/api/floor-plans/${marker.floorPlanId}/versions/${currentVersion.version}/dzi`,
+          markerId: marker.id,
+          x: marker.x,
+          y: marker.y,
+        }]
+      }),
+    })
   }),
 )
 

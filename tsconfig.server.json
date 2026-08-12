@@ -7,6 +7,6 @@
     "noEmit": true,
     "composite": false
   },
-  "include": ["server"],
+  "include": ["server", "shared"],
   "exclude": ["src", "dist", "node_modules"]
 }

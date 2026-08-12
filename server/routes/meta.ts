@@ -36,7 +36,7 @@ router.get(
     const types = await prisma.assetType.findMany({
       where: { projectId, isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-      select: { id: true, name: true },
+      select: { id: true, name: true, iconKey: true },
     })
     res.json(types)
   }),

@@ -11,15 +11,6 @@ interface PlanEditorControlsProps {
   onSave: () => void
 }
 
-export function PlanModeToggle({ editMode, onModeChange }: { editMode: boolean; onModeChange: (editMode: boolean) => void }) {
-  return (
-    <div className="flex items-center bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-1">
-      <button type="button" onClick={() => onModeChange(false)} aria-pressed={!editMode} className={`px-3 py-1.5 text-sm rounded-md ${!editMode ? 'bg-brand-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>Ver</button>
-      <button type="button" onClick={() => onModeChange(true)} aria-pressed={editMode} className={`px-3 py-1.5 text-sm rounded-md ${editMode ? 'bg-brand-600 text-white' : 'text-slate-600 dark:text-slate-300'}`}>Editar</button>
-    </div>
-  )
-}
-
 export default function PlanEditorControls({ dirty, canUndo, canRedo, saving, actions, onUndo, onRedo, onSave }: PlanEditorControlsProps) {
   return (
     <>

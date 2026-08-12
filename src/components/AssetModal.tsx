@@ -9,11 +9,12 @@ import AssetCharacteristics from '@/components/AssetCharacteristics'
 import AssetEventsPanel from '@/components/AssetEventsPanel'
 import AssetPreventivesPanel from '@/components/AssetPreventivesPanel'
 import AssetHistoryPanel from '@/components/AssetHistoryPanel'
+import AssetFloorPlanPreview from '@/components/AssetFloorPlanPreview'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
 
-const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Preventivos', 'Historial']
+const tabs = ['Resumen', 'Características', 'Documentos', 'Eventos', 'Preventivos', 'Historial', 'Plano']
 
 const eventCardStyles = {
   amber: 'bg-amber-50/70 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50',
@@ -368,6 +369,12 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
         )}
 
         {activeTab === 5 && <AssetHistoryPanel asset={asset} />}
+
+        {activeTab === 6 && (
+          <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">
+            <AssetFloorPlanPreview asset={asset} />
+          </div>
+        )}
 
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>

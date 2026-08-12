@@ -20,7 +20,7 @@ const upload = multer({
 
 const floorPlanAssetSelect = {
   id: true, code: true, name: true, locationId: true,
-  type: { select: { id: true, name: true } },
+  type: { select: { id: true, name: true, iconKey: true } },
   status: { select: { id: true, name: true, pulseDot: true } },
   events: { select: { id: true, title: true, date: true, type: true, completedAt: true } },
   documentAssets: { include: { document: { select: { id: true, name: true, eventTitle: true, type: true, versions: { orderBy: { version: 'desc' as const }, take: 1, select: { expiryDate: true } } } } } },

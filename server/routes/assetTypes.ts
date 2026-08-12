@@ -50,7 +50,7 @@ router.post('/', asyncHandler(async (req, res) => {
   await assertUniqueName(projectId, input.name)
   const sortOrder = input.sortOrder ?? ((await prisma.assetType.aggregate({ where: { projectId }, _max: { sortOrder: true } }))._max.sortOrder ?? -1) + 1
   const created = await prisma.$transaction(async (tx) => {
-    const type = await tx.assetType.create({ data: { projectId, name: input.name, sortOrder }, include: includeUsage })
+    const type = await tx.assetType.create({ data: { projectId, name: input.name, iconKey: input.iconKey, sortOrder }, include: includeUsage })
     await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Creación', entityId: `asset-type:${type.id}`, detail: `Tipo de activo "${type.name}" creado`, timestamp: new Date() } })
     return type
   })

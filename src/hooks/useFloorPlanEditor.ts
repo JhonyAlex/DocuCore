@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFloorPlanMarker, deleteFloorPlanMarker, updateFloorPlanMarker, type ApiFloorPlan, type ApiFloorPlanMarker, type ApiFloorPlanAsset } from '@/lib/api'
 import { clampNormalized, type NormalizedPoint } from '@/lib/floorPlanCoordinates'
 
@@ -14,11 +14,13 @@ export function useFloorPlanEditor(plan: ApiFloorPlan | null) {
   const [markers, setMarkers] = useState<EditableFloorPlanMarker[]>(source)
   const [past, setPast] = useState<EditableFloorPlanMarker[][]>([])
   const [future, setFuture] = useState<EditableFloorPlanMarker[][]>([])
+  const dragBaselineRef = useRef<EditableFloorPlanMarker[] | null>(null)
 
   useEffect(() => {
     setMarkers(copy(plan?.markers ?? []))
     setPast([])
     setFuture([])
+    dragBaselineRef.current = null
   }, [plan]) // Se resetea solo al cargar/cambiar un plano persistido.
 
   const commit = useCallback((next: EditableFloorPlanMarker[]) => {
@@ -41,6 +43,25 @@ export function useFloorPlanEditor(plan: ApiFloorPlan | null) {
 
   const remove = useCallback((markerId: number) => commit(markers.filter((marker) => marker.id !== markerId)), [commit, markers])
   const move = useCallback((markerId: number, point: NormalizedPoint) => commit(markers.map((marker) => marker.id === markerId ? { ...marker, x: clampNormalized(point.x), y: clampNormalized(point.y) } : marker)), [commit, markers])
+  const beginMove = useCallback((markerId: number) => {
+    if (!markers.some((marker) => marker.id === markerId)) return
+    dragBaselineRef.current = copy(markers)
+  }, [markers])
+  const previewMove = useCallback((markerId: number, point: NormalizedPoint) => {
+    if (!dragBaselineRef.current) return
+    setMarkers((current) => current.map((marker) => marker.id === markerId ? { ...marker, x: clampNormalized(point.x), y: clampNormalized(point.y) } : marker))
+  }, [])
+  const endMove = useCallback(() => {
+    const baseline = dragBaselineRef.current
+    dragBaselineRef.current = null
+    if (!baseline) return
+    setMarkers((current) => {
+      if (same(baseline, current)) return current
+      setPast((history) => [...history, copy(baseline)])
+      setFuture([])
+      return current
+    })
+  }, [])
   const undo = useCallback(() => setPast((history) => {
     const previous = history.at(-1)
     if (!previous) return history
@@ -69,5 +90,5 @@ export function useFloorPlanEditor(plan: ApiFloorPlan | null) {
     }
   }, [markers, plan, source])
 
-  return { markers, dirty, canUndo: past.length > 0, canRedo: future.length > 0, place, move, remove, undo, redo, save }
+  return { markers, dirty, canUndo: past.length > 0, canRedo: future.length > 0, place, move, beginMove, previewMove, endMove, remove, undo, redo, save }
 }

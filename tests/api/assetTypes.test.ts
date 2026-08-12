@@ -38,33 +38,38 @@ describe('asset types API', () => {
     const projectTwo = await api('/api/projects/2/asset-types')
     expect((await projectTwo.json() as Array<{ name: string }>).map((type) => type.name)).toEqual(['Máquina', 'Extintor', 'Vehículo', 'Servidor', 'Instrumento'])
 
-    const response = await api('/api/projects/1/asset-types', json('POST', { name: `Equipo QA ${Date.now()}` }))
+    const response = await api('/api/projects/1/asset-types', json('POST', { name: `Equipo QA ${Date.now()}`, iconKey: 'wrench' }))
     expect(response.status).toBe(201)
-    const created = await response.json() as { id: number; name: string; projectId: number; assetCount: number; fieldCount: number }
+    const created = await response.json() as { id: number; name: string; iconKey: string; projectId: number; assetCount: number; fieldCount: number }
     createdId = created.id
-    expect(created).toMatchObject({ projectId: 1, assetCount: 0, fieldCount: 0 })
+    expect(created).toMatchObject({ projectId: 1, iconKey: 'wrench', assetCount: 0, fieldCount: 0 })
     expect((await (await api('/api/projects/2/asset-types')).json() as Array<{ id: number }>).some((type) => type.id === createdId)).toBe(false)
   })
 
   it('renames immediately and rejects a case-insensitive duplicate', async () => {
-    const renamed = await api(`/api/projects/1/asset-types/${createdId}`, json('PATCH', { name: 'Equipo especializado QA' }))
+    const renamed = await api(`/api/projects/1/asset-types/${createdId}`, json('PATCH', { name: 'Equipo especializado QA', iconKey: 'server' }))
     expect(renamed.status).toBe(200)
-    expect(await renamed.json()).toMatchObject({ name: 'Equipo especializado QA' })
+    expect(await renamed.json()).toMatchObject({ name: 'Equipo especializado QA', iconKey: 'server' })
 
     const duplicate = await api('/api/projects/1/asset-types', json('POST', { name: 'máquina' }))
     expect(duplicate.status).toBe(409)
   })
 
   it('propagates a renamed type through assets and dynamic field configuration', async () => {
-    const rename = await api('/api/projects/1/asset-types/1', json('PATCH', { name: 'Maquinaria QA' }))
+    const rename = await api('/api/projects/1/asset-types/1', json('PATCH', { name: 'Maquinaria QA', iconKey: 'cog' }))
     expect(rename.status).toBe(200)
 
-    const asset = await (await api('/api/assets/1')).json() as { type: { id: number; name: string } }
-    expect(asset.type).toEqual({ id: 1, name: 'Maquinaria QA' })
-    const definitions = await (await api('/api/projects/1/dynamic-fields')).json() as Array<{ assetTypes: Array<{ id: number; name: string }> }>
-    expect(definitions.some((field) => field.assetTypes.some((type) => type.id === 1 && type.name === 'Maquinaria QA'))).toBe(true)
+    const asset = await (await api('/api/assets/1')).json() as { type: { id: number; name: string; iconKey: string } }
+    expect(asset.type).toEqual({ id: 1, name: 'Maquinaria QA', iconKey: 'cog' })
+    const definitions = await (await api('/api/projects/1/dynamic-fields')).json() as Array<{ assetTypes: Array<{ id: number; name: string; iconKey: string }> }>
+    expect(definitions.some((field) => field.assetTypes.some((type) => type.id === 1 && type.name === 'Maquinaria QA' && type.iconKey === 'cog'))).toBe(true)
 
-    expect((await api('/api/projects/1/asset-types/1', json('PATCH', { name: 'Máquina' }))).status).toBe(200)
+    expect((await api('/api/projects/1/asset-types/1', json('PATCH', { name: 'Máquina', iconKey: 'factory' }))).status).toBe(200)
+  })
+
+  it('rejects an icon outside the controlled catalog', async () => {
+    const response = await api('/api/projects/1/asset-types', json('POST', { name: `Icono inválido ${Date.now()}`, iconKey: 'rocket' }))
+    expect(response.status).toBe(400)
   })
 
   it('blocks archiving a referenced type', async () => {

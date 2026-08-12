@@ -52,10 +52,14 @@ body {
 }
 
 .pin {
+  transition: box-shadow 0.15s ease;
+}
+.pin .floor-plan-marker-content {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.pin:hover {
-  transform: translate(-50%, -100%) scale(1.08);
+.pin:hover .floor-plan-marker-content {
+  transform: scale(1.03);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.24);
 }
 
 .pulse-dot {

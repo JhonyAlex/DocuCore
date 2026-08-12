@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import { expect, test } from './fixtures'
+
+test.use({ hasTouch: true })
 
 function multiPagePdf(): Buffer {
   const stream = (text: string) => {
@@ -25,101 +25,110 @@ function multiPagePdf(): Buffer {
 }
 
 test.describe.serial('floor plans', () => {
-  test('creates a plan, places and moves an asset, persists it, versions it and removes its association', async ({ page, consoleIssues }) => {
+  test('uses direct contextual placement, marker interaction and PDF creation without an edit mode', async ({ page, consoleIssues }) => {
     const locationsResponse = await page.request.get('/api/locations')
     const locations = await locationsResponse.json() as { locations: Array<{ id: number; parentId: number | null }> }
     const root = locations.locations.find((location) => location.parentId === null)!
     const assetsResponse = await page.request.get(`/api/assets?locationId=${root.id}&limit=100`)
-    const assets = (await assetsResponse.json()).data as Array<{ id: number; code: string; name: string; type: { name: string } }>
+    const assets = (await assetsResponse.json()).data as Array<{ id: number; code: string; name: string; type: { name: string; iconKey: string } }>
     const asset = assets.find((candidate) => candidate.code === 'CP-02')!
-    const soonAsset = assets.find((candidate) => candidate.code === 'MG-203')!
-    const image = await readFile(path.join(process.cwd(), 'public', 'floor-plan.png'))
-    const name = `Plano E2E ${Date.now()}`
+    const name = `Plano PDF E2E ${Date.now()}`
 
     await page.goto(`/plans?locationId=${root.id}`)
     await page.getByRole('button', { name: 'Crear plano', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Crear plano' })
-    await dialog.getByLabel('Nombre').fill(name)
-    await dialog.getByLabel('Ubicación').selectOption(String(root.id))
-    await dialog.getByLabel('Imagen del plano').setInputFiles({ name: 'plano-e2e.png', mimeType: 'image/png', buffer: image })
-    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/floor-plans'))
-    await dialog.getByRole('button', { name: 'Crear plano', exact: true }).click()
-    const created = await (await createResponse).json() as { id: number }
-    const planId = created.id
-    await expect(dialog).toBeHidden()
-    await expect(page.getByTestId('floor-plan-viewer')).toBeVisible()
-
-    await page.getByRole('button', { name: 'Editar', exact: true }).click()
-    await page.locator('#floor-plan-asset').selectOption(String(asset.id))
-    const viewer = page.getByTestId('floor-plan-viewer')
-    const createMarkerResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/floor-plans/${planId}/markers`))
-    await viewer.click({ position: { x: 320, y: 320 } })
-    await page.locator('#floor-plan-asset').selectOption(String(soonAsset.id))
-    await viewer.click({ position: { x: 430, y: 350 } })
-    await page.getByRole('button', { name: 'Guardar posiciones', exact: true }).click()
-    expect((await createMarkerResponse).status()).toBe(201)
-    const marker = page.getByRole('button', { name: `Abrir ficha de ${asset.code}` })
-    await expect(marker).toBeVisible()
-    await expect(marker).toHaveAttribute('data-alert', 'overdue')
-    await expect(page.getByRole('button', { name: `Abrir ficha de ${soonAsset.code}` })).toHaveAttribute('data-alert', 'soon')
-    await page.getByLabel('Alerta').selectOption('overdue')
-    await expect(page.getByText(`${asset.code} · ${asset.name} · Colocado`)).toBeVisible()
-    await page.getByLabel('Alerta').selectOption('all')
-    await expect(page.getByText(asset.type.name).first()).toBeVisible()
-
-    await expect(marker).toHaveAttribute('data-lod', 'dot')
-    for (let step = 0; step < 2; step += 1) await page.getByLabel('Acercar').click()
-    await expect(marker).toHaveAttribute('data-lod', 'code')
-    for (let step = 0; step < 2; step += 1) await page.getByLabel('Acercar').click()
-    await expect(marker).toHaveAttribute('data-lod', 'detail')
-    const before = await (await page.request.get(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ id: number; x: number; y: number }> }
-    const initial = before.markers.find((item) => item.id > 0)!
-
-    await page.getByRole('button', { name: `Mover ${asset.code} · ${asset.name}` }).click()
-    const moveResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes(`/api/floor-plans/${planId}/markers/`))
-    await page.getByLabel('Desplazar a la derecha').click()
-    await page.getByRole('button', { name: 'Guardar posiciones', exact: true }).click()
-    expect((await moveResponse).status()).toBe(200)
-
-    await page.reload()
-    await expect(page.getByTestId('floor-plan-viewer')).toBeVisible()
-    const moved = await (await page.request.get(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ id: number; x: number; y: number }> }
-    const persisted = moved.markers.find((item) => item.id === initial.id)!
-    expect(persisted.x !== initial.x || persisted.y !== initial.y).toBe(true)
-
-    const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/floor-plans/${planId}/versions`))
-    await page.getByLabel('Subir nueva versión').setInputFiles({ name: 'plano-e2e-v2.png', mimeType: 'image/png', buffer: image })
-    expect((await versionResponse).status()).toBe(201)
-    await expect(page.getByText(/v2 · Subido:/)).toBeVisible()
-
-    await page.getByRole('button', { name: 'Importar desde PDF', exact: true }).click()
+    const createDialog = page.getByRole('dialog', { name: 'Crear plano' })
+    await createDialog.getByLabel('Nombre').fill(name)
+    await createDialog.getByLabel('Ubicación').selectOption(String(root.id))
+    await createDialog.getByRole('button', { name: 'Importar desde PDF', exact: true }).click()
     const pdfDialog = page.getByRole('dialog', { name: 'Importar desde PDF' })
     await pdfDialog.getByLabel('Elegir PDF').setInputFiles({ name: 'plano-multipagina.pdf', mimeType: 'application/pdf', buffer: multiPagePdf() })
     await pdfDialog.getByLabel('Página PDF').selectOption('2')
     const pdfCanvas = pdfDialog.locator('canvas')
     await expect(pdfCanvas).toBeVisible()
-    const box = await pdfCanvas.boundingBox()
-    if (!box) throw new Error('PDF preview canvas is not available')
-    await page.mouse.move(box.x + 25, box.y + 25); await page.mouse.down(); await page.mouse.move(box.x + Math.min(150, box.width - 10), box.y + Math.min(100, box.height - 10)); await page.mouse.up()
-    const importResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/floor-plans/${planId}/versions`))
+    const pdfBox = await pdfCanvas.boundingBox()
+    if (!pdfBox) throw new Error('PDF preview canvas is not available')
+    await page.mouse.move(pdfBox.x + 20, pdfBox.y + 20); await page.mouse.down(); await page.mouse.move(pdfBox.x + Math.min(180, pdfBox.width - 10), pdfBox.y + Math.min(120, pdfBox.height - 10)); await page.mouse.up()
     await pdfDialog.getByRole('button', { name: 'Convertir e importar', exact: true }).click()
-    expect((await importResponse).status()).toBe(201)
-    await expect(page.getByText(/v3 · Subido:/)).toBeVisible()
+    await expect(pdfDialog).toBeHidden()
+    await expect(createDialog.getByLabel('Nombre')).toHaveValue(name)
+    await expect(createDialog.getByLabel('Ubicación')).toHaveValue(String(root.id))
+    await expect(createDialog.getByText(/Convertido desde PDF/)).toBeVisible()
+    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/floor-plans'))
+    await createDialog.getByRole('button', { name: 'Crear plano', exact: true }).click()
+    const created = await (await createResponse).json() as { id: number }
+    const planId = created.id
+    await expect(createDialog).toBeHidden()
+    const viewer = page.getByTestId('floor-plan-viewer')
+    await expect(viewer).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Editar', exact: true })).toHaveCount(0)
 
-    const markerAfterReload = page.getByRole('button', { name: `Abrir ficha de ${asset.code}` })
-    await markerAfterReload.click()
-    const assetDialog = page.getByRole('dialog', { name: new RegExp(asset.name) })
-    await expect(assetDialog).toBeVisible()
-    await assetDialog.getByLabel('Cerrar').click()
-    await page.getByRole('button', { name: 'Editar', exact: true }).click()
-    await page.getByRole('button', { name: 'Quitar asociación', exact: true }).click()
-    const confirm = page.getByRole('dialog', { name: 'Quitar asociación del plano' })
-    await confirm.getByRole('button', { name: 'Quitar asociación', exact: true }).click()
+    const viewerBox = await viewer.boundingBox()
+    if (!viewerBox) throw new Error('Floor plan viewer is not available')
+    await page.mouse.move(viewerBox.x + 420, viewerBox.y + 420); await page.mouse.down(); await page.mouse.move(viewerBox.x + 500, viewerBox.y + 440); await page.mouse.up()
+    await expect(page.getByTestId('floor-plan-placement-popover')).toHaveCount(0)
+
+    await viewer.click({ position: { x: 360, y: 350 } })
+    const placement = page.getByRole('dialog', { name: 'Añadir activo aquí' })
+    await expect(placement).toBeVisible()
+    await placement.getByLabel('Buscar activo para colocar').fill(asset.name)
+    const createMarkerResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/floor-plans/${planId}/markers`))
+    await placement.getByRole('button').filter({ hasText: asset.code }).click()
+    await page.getByRole('button', { name: 'Guardar posiciones', exact: true }).click()
+    expect((await createMarkerResponse).status()).toBe(201)
+
+    const marker = page.getByRole('button', { name: `Abrir activo ${asset.name}` })
+    await expect(marker).toBeVisible()
+    await expect(marker.locator(`[data-asset-icon="${asset.type.iconKey}"]`)).toBeVisible()
+    const beforeHoverTransform = await marker.evaluate((element) => getComputedStyle(element).transform)
+    await marker.hover()
+    await expect.poll(() => marker.evaluate((element) => getComputedStyle(element).transform)).toBe(beforeHoverTransform)
+    await expect(marker).toHaveAttribute('data-lod', 'dot')
+
+    await page.getByLabel('Buscar activo').fill(asset.name)
+    const results = page.getByRole('listbox', { name: 'Resultados de activos' })
+    await expect(results.getByText('Colocado')).toBeVisible()
+    await results.getByRole('button').filter({ hasText: asset.code }).click()
+    await expect(marker).toHaveAttribute('data-lod', 'detail')
+    await expect(marker).toContainText(asset.name)
+    await expect(marker).toContainText(asset.code)
+    await page.getByLabel('Buscar activo').fill('')
+
+    await marker.tap()
+    const markerPopover = page.getByTestId('floor-plan-marker-popover')
+    await expect(markerPopover).toBeVisible()
+    await expect(markerPopover).toContainText(asset.name)
+    await expect(markerPopover).toContainText(asset.code)
+    await expect(markerPopover).toContainText(asset.type.name)
+    await expect(markerPopover).toContainText('Arrastra el marcador directamente para moverlo.')
+    await markerPopover.getByRole('button', { name: 'Cerrar activo del plano' }).click()
+
+    const before = await (await page.request.get(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ id: number; x: number; y: number }> }
+    const initial = before.markers.find((item) => item.id > 0)!
+    const markerBox = await marker.boundingBox()
+    if (!markerBox) throw new Error('Marker is not available for dragging')
+    await page.mouse.move(markerBox.x + markerBox.width / 2, markerBox.y + markerBox.height / 2)
+    await page.mouse.down(); await page.mouse.move(markerBox.x + markerBox.width / 2 + 70, markerBox.y + markerBox.height / 2 + 28, { steps: 6 }); await page.mouse.up()
+    await expect(page.getByRole('button', { name: 'Guardar posiciones', exact: true })).toBeEnabled()
+    const moveResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes(`/api/floor-plans/${planId}/markers/`))
+    await page.getByRole('button', { name: 'Guardar posiciones', exact: true }).click()
+    expect((await moveResponse).status()).toBe(200)
+    await page.reload()
+    await expect(viewer).toBeVisible()
+    const moved = await (await page.request.get(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ id: number; x: number; y: number }> }
+    const persisted = moved.markers.find((item) => item.id === initial.id)!
+    expect(persisted.x !== initial.x || persisted.y !== initial.y).toBe(true)
+
+    const movedMarker = page.getByRole('button', { name: `Abrir activo ${asset.name}` })
+    await movedMarker.click()
+    await expect(page.getByTestId('floor-plan-marker-popover')).toBeVisible()
+    await page.getByRole('button', { name: 'Quitar del plano', exact: true }).click()
+    const confirm = page.getByRole('dialog', { name: 'Quitar activo del plano' })
+    await confirm.getByRole('button', { name: 'Quitar del plano', exact: true }).click()
     const removeResponse = page.waitForResponse((response) => response.request().method() === 'DELETE' && response.url().includes(`/api/floor-plans/${planId}/markers/`))
     await page.getByRole('button', { name: 'Guardar posiciones', exact: true }).click()
     expect((await removeResponse).status()).toBe(204)
     await page.reload()
-    await expect(page.getByRole('button', { name: `Abrir ficha de ${asset.code}` })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Abrir activo ${asset.name}` })).toHaveCount(0)
     expect(consoleIssues).toEqual([])
   })
 })

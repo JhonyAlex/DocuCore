@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import FloorPlanPdfImportModal from '@/components/FloorPlanPdfImportModal'
 import type { ApiLocation, FloorPlanWriteInput } from '@/lib/api'
 
 interface FloorPlanCreateModalProps {
@@ -16,6 +17,7 @@ export default function FloorPlanCreateModal({ open, locations, projectId, initi
   const [name, setName] = useState('')
   const [locationId, setLocationId] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [pdfImportOpen, setPdfImportOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -24,6 +26,7 @@ export default function FloorPlanCreateModal({ open, locations, projectId, initi
     setLocationId(location ? String(location.id) : '')
     setName(location ? `Plano ${location.label}` : '')
     setFile(null)
+    setPdfImportOpen(false)
   }, [initialLocationId, locations, open])
 
   if (!open) return null
@@ -39,12 +42,19 @@ export default function FloorPlanCreateModal({ open, locations, projectId, initi
         <div className="p-5 space-y-4">
           <label className="block text-sm font-medium">Nombre<input required value={name} onChange={(event) => setName(event.target.value)} className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" /></label>
           <label className="block text-sm font-medium">Ubicación<select required value={locationId} onChange={(event) => setLocationId(event.target.value)} className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"><option value="">Selecciona una ubicación</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.label}</option>)}</select></label>
-          <label className="block text-sm font-medium">Imagen del plano<input ref={fileRef} required type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-1 block w-full text-sm" /></label>
-          {file && <p className="text-xs text-slate-500">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>}
+          <div>
+            <p className="text-sm font-medium">Imagen del plano</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <label className="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Subir imagen<input ref={fileRef} aria-label="Imagen del plano" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" /></label>
+              <button type="button" onClick={() => setPdfImportOpen(true)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Importar desde PDF</button>
+            </div>
+            {file && <p className="mt-2 text-xs text-slate-500">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB{file.type === 'image/png' && file.name.startsWith('plano-pdf-') ? ' · Convertido desde PDF' : ''}</p>}
+          </div>
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
         <div className="p-5 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cancelar</button><button type="submit" disabled={busy || !file || !name.trim() || !locationId} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{busy ? 'Creando…' : 'Crear plano'}</button></div>
       </form>
+      <FloorPlanPdfImportModal open={pdfImportOpen} onClose={() => setPdfImportOpen(false)} onImport={async (importedFile) => { setFile(importedFile) }} />
     </div>
   )
 }

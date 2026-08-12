@@ -3,17 +3,20 @@ import { useSearchParams } from 'react-router-dom'
 import AssetFormModal from '@/components/AssetFormModal'
 import AssetModal from '@/components/AssetModal'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import FloorPlanCreateModal from '@/components/FloorPlanCreateModal'
-import FloorPlanViewer, { type FloorPlanViewerActions } from '@/components/FloorPlanViewer'
-import FloorPlanPdfImportModal from '@/components/FloorPlanPdfImportModal'
 import FloorPlanAssetPanel from '@/components/FloorPlanAssetPanel'
+import FloorPlanAssetSearch from '@/components/FloorPlanAssetSearch'
+import FloorPlanCreateModal from '@/components/FloorPlanCreateModal'
+import FloorPlanMarkerPopover from '@/components/FloorPlanMarkerPopover'
+import FloorPlanPdfImportModal from '@/components/FloorPlanPdfImportModal'
+import FloorPlanPlacementPopover from '@/components/FloorPlanPlacementPopover'
+import FloorPlanViewer, { type FloorPlanOverlayAnchor, type FloorPlanViewerActions } from '@/components/FloorPlanViewer'
+import PlanEditorControls from '@/components/PlanEditorControls'
 import type { LocationFormValues } from '@/components/LocationFormModal'
-import PlanEditorControls, { PlanModeToggle } from '@/components/PlanEditorControls'
-import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, type ApiAssetType, type ApiFloorPlan, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
-import { floorPlanDziUrl } from '@/lib/api'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useFloorPlanEditor } from '@/hooks/useFloorPlanEditor'
-import { filterFloorPlanAssets, floorPlanAlert, floorPlanEventOrigin } from '@/lib/floorPlanPresentation'
+import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
+import { type NormalizedPoint } from '@/lib/floorPlanCoordinates'
+import { filterFloorPlanAssets } from '@/lib/floorPlanPresentation'
 
 function sizeLabel(bytes: number): string { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB` }
 function rootLocationId(locationId: number, locations: ApiLocation[]): number {
@@ -24,9 +27,14 @@ function rootLocationId(locationId: number, locations: ApiLocation[]): number {
   return current?.id ?? locationId
 }
 
+type PlacementPopover = { point: NormalizedPoint; anchor: FloorPlanOverlayAnchor }
+type MarkerPopover = { markerId: number; anchor: FloorPlanOverlayAnchor }
+
 export default function PlansView() {
   const [searchParams] = useSearchParams()
   const requestedLocationId = Number(searchParams.get('locationId')) || null
+  const requestedPlanId = Number(searchParams.get('planId')) || null
+  const requestedAssetId = Number(searchParams.get('assetId')) || null
   const [catalog, setCatalog] = useState<ApiLocationsResponse | null>(null)
   const [types, setTypes] = useState<ApiAssetType[]>([])
   const [statuses, setStatuses] = useState<ApiStatus[]>([])
@@ -34,12 +42,10 @@ export default function PlansView() {
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(requestedLocationId)
   const [plans, setPlans] = useState<ApiFloorPlan[]>([])
   const [plan, setPlan] = useState<ApiFloorPlan | null>(null)
-  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null)
   const [visibleTypes, setVisibleTypes] = useState<Set<number>>(new Set())
   const [assetSearch, setAssetSearch] = useState('')
   const [alertFilter, setAlertFilter] = useState<'all' | 'overdue' | 'soon' | 'normal'>('all')
   const [statusFilterId, setStatusFilterId] = useState<number | null>(null)
-  const [editMode, setEditMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -48,31 +54,46 @@ export default function PlansView() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [createBusy, setCreateBusy] = useState(false)
   const [pdfImportOpen, setPdfImportOpen] = useState(false)
-  const [selectedMarkerId, setSelectedMarkerId] = useState<number | null>(null)
-  const [movingMarkerId, setMovingMarkerId] = useState<number | null>(null)
+  const [placementPopover, setPlacementPopover] = useState<PlacementPopover | null>(null)
+  const [placementTarget, setPlacementTarget] = useState<ApiFloorPlanAsset | null>(null)
+  const [markerPopover, setMarkerPopover] = useState<MarkerPopover | null>(null)
   const [markerRemovalId, setMarkerRemovalId] = useState<number | null>(null)
   const [confirmPlanDelete, setConfirmPlanDelete] = useState(false)
   const [viewerActionState, setViewerActionState] = useState<FloorPlanViewerActions | null>(null)
   const viewerActions = useRef<FloorPlanViewerActions | null>(null)
+  const preferredPlanIdRef = useRef<number | null>(requestedPlanId)
+  const [focusedAssetId, setFocusedAssetId] = useState<number | null>(requestedAssetId)
+  const focusedMarkerRef = useRef<string | null>(null)
 
   const loadCatalog = useCallback(async () => {
     setLoading(true)
     try {
       const locations = await fetchLocations()
       const [nextTypes, nextStatuses, nextUsers] = await Promise.all([fetchAssetTypes(locations.project.id), fetchStatuses(), fetchUsers()])
+      let requestedPlan: ApiFloorPlan | null = null
+      if (requestedPlanId) {
+        try {
+          const candidate = await fetchFloorPlan(requestedPlanId)
+          if (candidate.projectId === locations.project.id) requestedPlan = candidate
+        } catch {
+          setError('No se encontró el plano solicitado en el enlace.')
+        }
+      }
       setCatalog(locations); setTypes(nextTypes); setStatuses(nextStatuses); setUsers(nextUsers)
       setVisibleTypes(new Set(nextTypes.map((type) => type.id)))
-      setSelectedLocationId((current) => current && locations.locations.some((location) => location.id === current) ? current : locations.locations.find((location) => location.hasFloorPlan)?.id ?? locations.locations[0]?.id ?? null)
+      if (requestedPlan) preferredPlanIdRef.current = requestedPlan.id
+      setSelectedLocationId((current) => requestedPlan?.locationId ?? (current && locations.locations.some((location) => location.id === current) ? current : locations.locations.find((location) => location.hasFloorPlan)?.id ?? locations.locations[0]?.id ?? null))
     } catch { setError('No se pudieron cargar las ubicaciones y los planos.') } finally { setLoading(false) }
-  }, [])
+  }, [requestedPlanId])
 
   const loadPlans = useCallback(async (locationId: number, projectId: number, preferredPlanId?: number | null) => {
     try {
       const result = await fetchFloorPlans(projectId, locationId)
       setPlans(result.data)
-      const selected = result.data.find((candidate) => candidate.id === preferredPlanId) ?? result.data[0] ?? null
+      const selected = result.data.find((candidate) => candidate.id === (preferredPlanId ?? preferredPlanIdRef.current)) ?? result.data[0] ?? null
+      preferredPlanIdRef.current = selected?.id ?? null
       setPlan(selected ? await fetchFloorPlan(selected.id) : null)
-      setSelectedAssetId(null)
+      setPlacementPopover(null); setPlacementTarget(null); setMarkerPopover(null)
     } catch { setError('No se pudo cargar el plano seleccionado.') }
   }, [])
 
@@ -82,10 +103,9 @@ export default function PlansView() {
   }, [catalog, loadPlans, plan?.id, selectedLocationId])
 
   useEffect(() => { void loadCatalog() }, [loadCatalog])
-  useEffect(() => { if (catalog && selectedLocationId) void loadPlans(selectedLocationId, catalog.project.id) }, [catalog, loadPlans, selectedLocationId]) // La selección de ubicación es la fuente de los planos.
+  useEffect(() => { if (catalog && selectedLocationId) void loadPlans(selectedLocationId, catalog.project.id, preferredPlanIdRef.current) }, [catalog, loadPlans, selectedLocationId])
 
   const ficha = useAssetFicha({ onAssetChanged: () => { void refreshPlan() } })
-
   const editor = useFloorPlanEditor(plan)
   const location = catalog?.locations.find((item) => item.id === selectedLocationId) ?? null
   const buildingId = location && catalog ? rootLocationId(location.id, catalog.locations) : null
@@ -95,17 +115,27 @@ export default function PlansView() {
   const planTypes = types.filter((type) => planAssets.some((asset) => asset.type.id === type.id))
   const filteredAssets = filterFloorPlanAssets(planAssets, { search: assetSearch, typeIds: visibleTypes, statusIds: statusFilterId ? new Set([statusFilterId]) : new Set(), alert: alertFilter })
   const shownMarkers = editor.markers.filter((marker) => visibleTypes.has(marker.asset.type.id) && filteredAssets.some((asset) => asset.id === marker.assetId))
-  const selectedMarker = editor.markers.find((marker) => marker.id === selectedMarkerId) ?? null
+  const unplacedAssets = planAssets.filter((asset) => !editor.markers.some((marker) => marker.assetId === asset.id))
   const markerForRemoval = editor.markers.find((marker) => marker.id === markerRemovalId) ?? null
+  const activeMarker = editor.markers.find((marker) => marker.id === markerPopover?.markerId) ?? null
   const currentVersion = plan?.currentVersion ?? null
+
+  useEffect(() => {
+    if (!focusedAssetId || !plan || !viewerActionState) return
+    const marker = editor.markers.find((candidate) => candidate.assetId === focusedAssetId)
+    if (!marker) return
+    const focusKey = `${plan.id}:${marker.id}:${focusedAssetId}`
+    if (focusedMarkerRef.current === focusKey) return
+    focusedMarkerRef.current = focusKey
+    viewerActions.current?.focus(marker)
+  }, [editor.markers, focusedAssetId, plan, viewerActionState])
 
   const createPlan = async (input: FloorPlanWriteInput, file: File) => {
     setCreateBusy(true); setCreateError(null)
-    try { const created = await createFloorPlan(input, file); setSelectedLocationId(input.locationId); await loadPlans(input.locationId, input.projectId, created.id); setCreateOpen(false) }
+    try { const created = await createFloorPlan(input, file); preferredPlanIdRef.current = created.id; setSelectedLocationId(input.locationId); await loadPlans(input.locationId, input.projectId, created.id); setCreateOpen(false) }
     catch { setCreateError('No se pudo crear el plano. Revisa el nombre, la ubicación y la imagen.') }
     finally { setCreateBusy(false) }
   }
-
   const uploadVersion = async (file: File | null) => {
     if (!plan || !file) return
     setUploading(true); setError(null)
@@ -113,13 +143,11 @@ export default function PlansView() {
     catch (uploadError) { setError('No se pudo subir la nueva versión del plano.'); throw uploadError }
     finally { setUploading(false) }
   }
-
   const savePositions = async () => {
     setSaving(true); setError(null)
     try { await editor.save(); await refreshPlan() } catch { setError('No se pudieron guardar las posiciones. No se han descartado los cambios locales.') } finally { setSaving(false) }
   }
-
-  const removeAssociation = () => { if (markerRemovalId !== null) editor.remove(markerRemovalId); setMarkerRemovalId(null); setSelectedMarkerId(null) }
+  const removeAssociation = () => { if (markerRemovalId !== null) editor.remove(markerRemovalId); setMarkerRemovalId(null); setMarkerPopover(null) }
   const deleteCurrentPlan = async () => {
     if (!plan) return
     setSaving(true); setError(null)
@@ -132,61 +160,45 @@ export default function PlansView() {
     await loadCatalog()
     return created
   }
-
+  const placeAsset = (asset: ApiFloorPlanAsset, point: NormalizedPoint) => {
+    editor.place(asset, point)
+    setPlacementPopover(null); setPlacementTarget(null); setAssetSearch('')
+  }
   const markViewerReady = useCallback((actions: FloorPlanViewerActions) => setViewerActionState(actions), [])
 
-  return (
-    <section className="fade-in">
-      <div className="flex items-end justify-between mb-6">
-        <div><h1 className="text-2xl font-semibold tracking-tight">Planos interactivos</h1><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Visualiza y gestiona la ubicación de los activos sobre los planos</p></div>
-        <div className="flex items-center gap-2">
-          <PlanModeToggle editMode={editMode} onModeChange={setEditMode} />
-          <button type="button" disabled={!plan} onClick={() => setPdfImportOpen(true)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Importar desde PDF</button>
-          <label className={`px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm ${!plan || uploading ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}> {uploading ? 'Subiendo…' : 'Subir nueva versión'}<input aria-label="Subir nueva versión" disabled={!plan || uploading} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void uploadVersion(event.target.files?.[0] ?? null).catch(() => undefined); event.currentTarget.value = '' }} /></label>
-        </div>
+  return <section className="fade-in">
+    <div className="flex items-end justify-between mb-6">
+      <div><h1 className="text-2xl font-semibold tracking-tight">Planos interactivos</h1><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Visualiza y gestiona la ubicación de los activos sobre los planos</p></div>
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={!plan} onClick={() => setPdfImportOpen(true)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Importar desde PDF</button>
+        <label className={`px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm ${!plan || uploading ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>{uploading ? 'Subiendo…' : 'Subir nueva versión'}<input aria-label="Subir nueva versión" disabled={!plan || uploading} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void uploadVersion(event.target.files?.[0] ?? null).catch(() => undefined); event.currentTarget.value = '' }} /></label>
       </div>
-      {error && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
-        <aside className="xl:col-span-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
-          <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Edificio</label><select value={buildingId ?? ''} onChange={(event) => { const next = Number(event.target.value); const first = catalog?.locations.find((item) => rootLocationId(item.id, catalog.locations) === next); setSelectedLocationId(first?.id ?? null) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{buildings.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
-          <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Planta</label><select value={selectedLocationId ?? ''} onChange={(event) => setSelectedLocationId(Number(event.target.value))} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{floors.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
-          <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Plano</label><select value={plan?.id ?? ''} onChange={(event) => { const value = event.target.value; if (value === '__new__') { setCreateError(null); setCreateOpen(true); return } const selected = plans.find((item) => item.id === Number(value)); if (selected) void fetchFloorPlan(selected.id).then(setPlan) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"><option value="">Sin plano</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="__new__">＋ Crear nuevo plano…</option></select>{currentVersion && <div className="text-xs text-slate-500 mt-1">v{currentVersion.version} · Subido: {new Date(currentVersion.uploadedAt).toLocaleDateString('es-ES')} · {sizeLabel(currentVersion.sizeBytes)}</div>}</div>
-           {plan && <FloorPlanAssetPanel
-             types={planTypes}
-             assets={planAssets}
-             statuses={statuses}
-             visibleTypes={visibleTypes}
-             search={assetSearch}
-             alert={alertFilter}
-             statusFilterId={statusFilterId}
-             filteredAssets={filteredAssets}
-             markers={editor.markers}
-             editMode={editMode}
-             selectedAssetId={selectedAssetId}
-             movingMarkerId={movingMarkerId}
-             onToggleType={(typeId, visible) => setVisibleTypes((current) => { const next = new Set(current); if (visible) next.add(typeId); else next.delete(typeId); return next })}
-             onSearchChange={setAssetSearch}
-             onAlertChange={setAlertFilter}
-             onStatusFilterChange={setStatusFilterId}
-             onAssetClick={(asset) => { const marker = editor.markers.find((entry) => entry.assetId === asset.id); if (marker) { setSelectedMarkerId(marker.id); viewerActions.current?.focus(marker) } else if (editMode) setSelectedAssetId(asset.id) }}
-             onSelectedAssetChange={(assetId) => { setSelectedAssetId(assetId); setSelectedMarkerId(null) }}
-             onMoveMarker={(marker) => { setMovingMarkerId(marker.id); setSelectedMarkerId(marker.id); viewerActions.current?.focus(marker) }}
-             onNudgeMarker={(marker, x, y) => editor.move(marker.id, { x, y })}
-           />}
-          {plan && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
-        </aside>
-        <div className="xl:col-span-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Zoom fluido · Coordenadas normalizadas (0–1)</span></div></div>
-          {loading ? <div className="h-[600px] flex items-center justify-center text-sm text-slate-500">Cargando planos…</div> : plan && currentVersion ? <FloorPlanViewer dziUrl={floorPlanDziUrl(plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} editMode={editMode} placementAssetId={selectedAssetId} actionsRef={viewerActions} onReady={markViewerReady} onPlace={(point) => { const asset = filteredAssets.find((item) => item.id === selectedAssetId && !editor.markers.some((marker) => marker.assetId === item.id)); if (asset) { editor.place(asset, point); setSelectedAssetId(null) } }} onSelectMarker={(marker) => { setSelectedMarkerId(marker.id); if (!editMode) ficha.open(marker.assetId) }} /> : <div className="h-[600px] flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-center"><p className="text-sm font-medium">No hay un plano para esta ubicación.</p><p className="mt-1 text-sm text-slate-500">Crea el primer plano con una imagen PNG, JPEG o WebP.</p><button type="button" onClick={() => { setCreateError(null); setCreateOpen(true) }} className="mt-4 px-3 py-2 rounded-lg bg-brand-600 text-white text-sm">Crear plano</button></div>}
-        </div>
+    </div>
+    {error && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
+    <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
+      <aside className="xl:col-span-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+        <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Edificio</label><select value={buildingId ?? ''} onChange={(event) => { const next = Number(event.target.value); const first = catalog?.locations.find((item) => rootLocationId(item.id, catalog.locations) === next); preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(first?.id ?? null) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{buildings.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
+        <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Planta</label><select value={selectedLocationId ?? ''} onChange={(event) => { preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(Number(event.target.value)) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{floors.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
+        <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Plano</label><select value={plan?.id ?? ''} onChange={(event) => { const value = event.target.value; if (value === '__new__') { setCreateError(null); setCreateOpen(true); return } const selected = plans.find((item) => item.id === Number(value)); if (selected) { preferredPlanIdRef.current = selected.id; setFocusedAssetId(null); void fetchFloorPlan(selected.id).then(setPlan) } }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"><option value="">Sin plano</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="__new__">＋ Crear nuevo plano…</option></select>{currentVersion && <div className="text-xs text-slate-500 mt-1">v{currentVersion.version} · Subido: {new Date(currentVersion.uploadedAt).toLocaleDateString('es-ES')} · {sizeLabel(currentVersion.sizeBytes)}</div>}</div>
+        {plan && <FloorPlanAssetPanel types={planTypes} assets={planAssets} statuses={statuses} visibleTypes={visibleTypes} alert={alertFilter} statusFilterId={statusFilterId} onToggleType={(typeId, visible) => setVisibleTypes((current) => { const next = new Set(current); if (visible) next.add(typeId); else next.delete(typeId); return next })} onAlertChange={setAlertFilter} onStatusFilterChange={setStatusFilterId} />}
+        {plan && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
+      </aside>
+      <div className="xl:col-span-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Pan y zoom siempre disponibles · Coordenadas normalizadas (0–1)</span></div></div>
+        {loading ? <div className="h-[600px] flex items-center justify-center text-sm text-slate-500">Cargando planos…</div> : plan && currentVersion ? <div className="relative">
+          <FloorPlanViewer dziUrl={floorPlanDziUrl(plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} highlightedAssetId={focusedAssetId} actionsRef={viewerActions} onReady={markViewerReady} onEmptyQuickClick={(point, anchor) => { setMarkerPopover(null); if (placementTarget && !editor.markers.some((marker) => marker.assetId === placementTarget.id)) { placeAsset(placementTarget, point); return } setPlacementPopover({ point, anchor }) }} onSelectMarker={(marker, anchor) => { setPlacementTarget(null); setPlacementPopover(null); setFocusedAssetId(marker.assetId); setMarkerPopover({ markerId: marker.id, anchor }) }} onMarkerDragStart={(markerId) => { setMarkerPopover(null); editor.beginMove(markerId) }} onMarkerDrag={(markerId, point) => editor.previewMove(markerId, point)} onMarkerDragEnd={() => editor.endMove()} />
+          <FloorPlanAssetSearch search={assetSearch} assets={filteredAssets} markers={editor.markers} onSearchChange={setAssetSearch} onFocusMarker={(marker) => { setMarkerPopover(null); viewerActions.current?.focus(marker) }} onStartPlacement={(asset) => { setAssetSearch(''); setPlacementPopover(null); setMarkerPopover(null); setPlacementTarget(asset) }} />
+          {placementTarget && <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-brand-200 bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:border-brand-800 dark:bg-slate-900/95"><span>Elige una zona para <strong>{placementTarget.name}</strong></span><button type="button" onClick={() => setPlacementTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancelar</button></div>}
+          {placementPopover && <FloorPlanPlacementPopover anchor={placementPopover.anchor} assets={unplacedAssets} onChoose={(asset) => placeAsset(asset, placementPopover.point)} onClose={() => setPlacementPopover(null)} />}
+          {activeMarker && markerPopover && <FloorPlanMarkerPopover marker={activeMarker} anchor={markerPopover.anchor} onClose={() => setMarkerPopover(null)} onView={() => { ficha.open(activeMarker.assetId); setMarkerPopover(null) }} onRemove={() => { setMarkerRemovalId(activeMarker.id); setMarkerPopover(null) }} />}
+        </div> : <div className="h-[600px] flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-center"><p className="text-sm font-medium">No hay un plano para esta ubicación.</p><p className="mt-1 text-sm text-slate-500">Crea el primer plano con una imagen PNG, JPEG o WebP.</p><button type="button" onClick={() => { setCreateError(null); setCreateOpen(true) }} className="mt-4 px-3 py-2 rounded-lg bg-brand-600 text-white text-sm">Crear plano</button></div>}
       </div>
-      {selectedMarkerId !== null && <div className="fixed bottom-5 right-5 z-40 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 shadow-lg"><p className="text-sm font-medium">{selectedMarker?.asset.code} · {selectedMarker?.asset.name}</p><p className="text-xs text-slate-500">{selectedMarker?.asset.type.name} · {selectedMarker?.asset.status.name}</p>{selectedMarker?.asset.nextEvents[0] && <p className={`mt-1 text-xs ${floorPlanAlert(selectedMarker.asset) === 'overdue' ? 'text-red-600' : floorPlanAlert(selectedMarker.asset) === 'soon' ? 'text-amber-600' : 'text-slate-500'}`}>{selectedMarker.asset.nextEvents[0].title} · {new Date(selectedMarker.asset.nextEvents[0].date).toLocaleDateString('es-ES')} · {selectedMarker.asset.nextEvents[0].daysUntil} días · {floorPlanEventOrigin(selectedMarker.asset.nextEvents[0].source)} · {selectedMarker.asset.nextEvents[0].sourceLabel}</p>}{editMode && <button type="button" onClick={() => setMarkerRemovalId(selectedMarkerId)} className="mt-1 text-xs text-red-600 hover:underline">Quitar asociación</button>}</div>}
-      <FloorPlanCreateModal open={createOpen} locations={catalog?.locations ?? []} projectId={catalog?.project.id ?? 0} initialLocationId={selectedLocationId} busy={createBusy} error={createError} onClose={() => setCreateOpen(false)} onSubmit={createPlan} />
-      <FloorPlanPdfImportModal open={pdfImportOpen} onClose={() => setPdfImportOpen(false)} onImport={uploadVersion} />
-      <AssetModal asset={ficha.asset} statuses={statuses} onClose={ficha.close} onEdit={ficha.onEdit} onChangeStatus={ficha.changeStatus} onDelete={ficha.remove} onDocumentsChanged={ficha.documentsChanged} onImageChanged={ficha.replaceAsset} />
-      {ficha.formMode && ficha.asset && catalog && <AssetFormModal mode="edit" asset={ficha.asset} types={types} statuses={statuses} locations={catalog.locations} projectName={catalog.project.name} responsibleName={ficha.asset.responsible?.name ?? ''} projectId={catalog.project.id} responsibleId={ficha.asset.responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={false} onClose={ficha.closeForm} onSubmit={ficha.save} />}
-      <ConfirmDialog open={markerRemovalId !== null} title="Quitar asociación del plano" message={<>El activo <span className="font-medium">{markerForRemoval?.asset.code} · {markerForRemoval?.asset.name}</span> dejará de estar colocado en este plano al guardar las posiciones. ¿Continuar?</>} confirmLabel="Quitar asociación" busy={false} onConfirm={removeAssociation} onCancel={() => setMarkerRemovalId(null)} />
-      <ConfirmDialog open={confirmPlanDelete} title="Eliminar plano" message={<>El plano <span className="font-medium">{plan?.name}</span>, sus versiones y sus marcadores se eliminarán de forma permanente. ¿Continuar?</>} confirmLabel="Eliminar plano" busyLabel="Eliminando…" busy={saving} onConfirm={() => void deleteCurrentPlan()} onCancel={() => setConfirmPlanDelete(false)} />
-    </section>
-  )
+    </div>
+    <FloorPlanCreateModal open={createOpen} locations={catalog?.locations ?? []} projectId={catalog?.project.id ?? 0} initialLocationId={selectedLocationId} busy={createBusy} error={createError} onClose={() => setCreateOpen(false)} onSubmit={createPlan} />
+    <FloorPlanPdfImportModal open={pdfImportOpen} onClose={() => setPdfImportOpen(false)} onImport={uploadVersion} />
+    <AssetModal asset={ficha.asset} statuses={statuses} onClose={ficha.close} onEdit={ficha.onEdit} onChangeStatus={ficha.changeStatus} onDelete={ficha.remove} onDocumentsChanged={ficha.documentsChanged} onImageChanged={ficha.replaceAsset} />
+    {ficha.formMode && ficha.asset && catalog && <AssetFormModal mode="edit" asset={ficha.asset} types={types} statuses={statuses} locations={catalog.locations} projectName={catalog.project.name} responsibleName={ficha.asset.responsible?.name ?? ''} projectId={catalog.project.id} responsibleId={ficha.asset.responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={false} onClose={ficha.closeForm} onSubmit={ficha.save} />}
+    <ConfirmDialog open={markerRemovalId !== null} title="Quitar activo del plano" message={<>El activo <span className="font-medium">{markerForRemoval?.asset.code} · {markerForRemoval?.asset.name}</span> dejará de estar colocado en este plano al guardar las posiciones. ¿Continuar?</>} confirmLabel="Quitar del plano" busy={false} onConfirm={removeAssociation} onCancel={() => setMarkerRemovalId(null)} />
+    <ConfirmDialog open={confirmPlanDelete} title="Eliminar plano" message={<>El plano <span className="font-medium">{plan?.name}</span>, sus versiones y sus marcadores se eliminarán de forma permanente. ¿Continuar?</>} confirmLabel="Eliminar plano" busyLabel="Eliminando…" busy={saving} onConfirm={() => void deleteCurrentPlan()} onCancel={() => setConfirmPlanDelete(false)} />
+  </section>
 }

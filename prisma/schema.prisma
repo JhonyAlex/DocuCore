@@ -82,6 +82,7 @@ model AssetType {
   id        Int      @id @default(autoincrement())
   projectId Int
   name      String
+  iconKey   String   @default("package")
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

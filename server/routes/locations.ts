@@ -140,7 +140,7 @@ router.get(
         name: true,
         installDate: true,
         initials: true,
-        type: { select: { id: true, name: true } },
+        type: { select: { id: true, name: true, iconKey: true } },
         status: { select: { id: true, name: true, pulseDot: true } },
       },
     })

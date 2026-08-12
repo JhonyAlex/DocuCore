@@ -13,6 +13,7 @@ let storageDir: string
 let image: Buffer
 let createdPlanId: number | null = null
 let highResolutionPlanId: number | null = null
+let secondPlacementPlanId: number | null = null
 
 async function api(pathname: string, init?: RequestInit): Promise<Response> { return fetch(`${baseUrl}${pathname}`, init) }
 function form(name: string, locationId: number, bytes = image): FormData {
@@ -38,6 +39,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (createdPlanId) await api(`/api/floor-plans/${createdPlanId}`, { method: 'DELETE' }).catch(() => undefined)
   if (highResolutionPlanId) await api(`/api/floor-plans/${highResolutionPlanId}`, { method: 'DELETE' }).catch(() => undefined)
+  if (secondPlacementPlanId) await api(`/api/floor-plans/${secondPlacementPlanId}`, { method: 'DELETE' }).catch(() => undefined)
   await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()))
   await rm(storageDir, { recursive: true, force: true })
 })
@@ -137,4 +139,47 @@ describe('floor plan API', () => {
     expect(tile.status).toBe(200)
     expect((await tile.arrayBuffer()).byteLength).toBeGreaterThan(0)
   }, 60_000)
+
+  it('locates zero, one and several placements by asset and reflects a type icon change without mutating markers', async () => {
+    const planId = createdPlanId as number
+    const plan = await (await api(`/api/floor-plans/${planId}`)).json() as { locationId: number }
+    const [types, statuses, users] = await Promise.all([
+      (await api('/api/asset-types')).json() as Promise<Array<{ id: number; iconKey: string }>>,
+      (await api('/api/statuses')).json() as Promise<Array<{ id: number }>>,
+      (await api('/api/users')).json() as Promise<Array<{ id: number }>>,
+    ])
+    const assetResponse = await api('/api/assets', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: `PLAN-04-${Date.now()}`, name: 'Activo de colocaciones PLAN-04', serialNumber: `PLAN-04-SN-${Date.now()}`, installDate: '2026-08-12', typeId: types[0]!.id, statusId: statuses[0]!.id, locationId: plan.locationId, projectId: 1, responsibleId: users[0]!.id, initials: 'P4' }),
+    })
+    expect(assetResponse.status).toBe(201)
+    const asset = await assetResponse.json() as { id: number; type: { id: number; iconKey: string } }
+
+    const zero = await (await api(`/api/assets/${asset.id}/floor-plans`)).json() as { data: unknown[] }
+    expect(zero.data).toHaveLength(0)
+
+    const firstMarkerResponse = await api(`/api/floor-plans/${planId}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: asset.id, x: 0.19, y: 0.37 }) })
+    expect(firstMarkerResponse.status).toBe(201)
+    const firstMarker = await firstMarkerResponse.json() as { id: number; x: number; y: number; asset: { type: { iconKey: string } } }
+    expect(firstMarker.asset.type.iconKey).toBe(asset.type.iconKey)
+
+    const one = await (await api(`/api/assets/${asset.id}/floor-plans`)).json() as { data: Array<{ planId: number; markerId: number; x: number; y: number; dziUrl: string; currentVersion: { width: number; height: number } }> }
+    expect(one.data).toEqual([expect.objectContaining({ planId, markerId: firstMarker.id, x: 0.19, y: 0.37, dziUrl: expect.stringContaining(`/api/floor-plans/${planId}/versions/`) })])
+    expect(one.data[0]!.currentVersion.width).toBeGreaterThan(0)
+
+    const secondPlanResponse = await api('/api/floor-plans', { method: 'POST', body: form(`QA segundo plano PLAN-04 ${Date.now()}`, plan.locationId) })
+    expect(secondPlanResponse.status).toBe(201)
+    const secondPlan = await secondPlanResponse.json() as { id: number }
+    secondPlacementPlanId = secondPlan.id
+    expect((await api(`/api/floor-plans/${secondPlan.id}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId: asset.id, x: 0.61, y: 0.42 }) })).status).toBe(201)
+    const many = await (await api(`/api/assets/${asset.id}/floor-plans`)).json() as { data: Array<{ planId: number }> }
+    expect(many.data.map((placement) => placement.planId).sort((left, right) => left - right)).toEqual([planId, secondPlan.id].sort((left, right) => left - right))
+
+    const iconChange = await api(`/api/projects/1/asset-types/${asset.type.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ iconKey: 'wrench' }) })
+    expect(iconChange.status).toBe(200)
+    const serialized = await (await api(`/api/floor-plans/${planId}`)).json() as { markers: Array<{ id: number; x: number; y: number; asset: { type: { iconKey: string } } }> }
+    expect(serialized.markers).toContainEqual(expect.objectContaining({ id: firstMarker.id, x: firstMarker.x, y: firstMarker.y, asset: expect.objectContaining({ type: expect.objectContaining({ iconKey: 'wrench' }) }) }))
+    const restoredIcon = await api(`/api/projects/1/asset-types/${asset.type.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ iconKey: asset.type.iconKey }) })
+    expect(restoredIcon.status).toBe(200)
+  })
 })
