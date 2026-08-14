@@ -9,10 +9,15 @@ import locationsRouter from './routes/locations'
 import metaRouter from './routes/meta'
 import dynamicFieldsRouter from './routes/dynamicFields'
 import assetTypesRouter from './routes/assetTypes'
+import statusesRouter from './routes/statuses'
 import tasksRouter from './routes/tasks'
 import preventivePlansRouter from './routes/preventivePlans'
 import floorPlansRouter from './routes/floorPlans'
 import calendarRouter from './routes/calendar'
+import dashboardRouter from './routes/dashboard'
+import searchRouter from './routes/search'
+import historyRouter from './routes/history'
+import notificationsRouter from './routes/notifications'
 import { errorHandler } from './middleware/error'
 
 const app = express()
@@ -28,10 +33,16 @@ app.use('/api/documents', documentsRouter)
 app.use('/api/locations', locationsRouter)
 app.use('/api/projects/:projectId/dynamic-fields', dynamicFieldsRouter)
 app.use('/api/projects/:projectId/asset-types', assetTypesRouter)
+app.use('/api/projects/:projectId/statuses', statusesRouter)
 app.use('/api/projects/:projectId/tasks', tasksRouter)
 app.use('/api/projects/:projectId/preventive-plans', preventivePlansRouter)
 app.use('/api/floor-plans', floorPlansRouter)
 app.use('/api/calendar', calendarRouter)
+app.use('/api/dashboard', dashboardRouter)
+app.use('/api/search', searchRouter)
+app.use('/api/history', historyRouter)
+app.use('/api/projects/:projectId/history', historyRouter)
+app.use('/api/notifications', notificationsRouter)
 app.use('/api', metaRouter)
 
 app.use('/api', (_req, res) => {

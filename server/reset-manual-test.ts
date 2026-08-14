@@ -19,6 +19,7 @@ async function main(): Promise<void> {
   // limpia una vez que la BD ya no referencia ninguna versión.
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "Notification",
       "AuditLog",
       "FloorPlanMarker",
       "FloorPlanVersion",
@@ -68,15 +69,24 @@ async function main(): Promise<void> {
     data: [1, 2].flatMap((projectId) => defaultAssetTypeNames.map((name, sortOrder) => ({ projectId, name, sortOrder }))),
   })
 
-  console.log('  • Estados (5)')
+  console.log('  • Estados (5 por proyecto)')
+  const defaultStatuses = [
+    { name: 'Activo', color: 'emerald', pulseDot: null },
+    { name: 'En revisión', color: 'amber', pulseDot: null },
+    { name: 'Fuera de servicio', color: 'red', pulseDot: 'red' },
+    { name: 'Vencido', color: 'red', pulseDot: 'red' },
+    { name: 'Alerta', color: 'amber', pulseDot: null },
+  ]
   await prisma.status.createMany({
-    data: [
-      { name: 'Activo', pulseDot: null },
-      { name: 'En revisión', pulseDot: null },
-      { name: 'Fuera de servicio', pulseDot: 'red' },
-      { name: 'Vencido', pulseDot: 'red' },
-      { name: 'Alerta', pulseDot: null },
-    ],
+    data: [1, 2].flatMap((projectId) =>
+      defaultStatuses.map(({ name, color, pulseDot }, sortOrder) => ({
+        projectId,
+        name,
+        color,
+        pulseDot,
+        sortOrder,
+      }))
+    ),
   })
 
   // Tras el reset de BD, limpiar los almacenamientos de forma

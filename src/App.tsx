@@ -15,6 +15,7 @@ const HistoryView = lazy(() => import('@/views/HistoryView'))
 const ConfigView = lazy(() => import('@/views/ConfigView'))
 const DynamicFieldsConfigView = lazy(() => import('@/views/DynamicFieldsConfigView'))
 const AssetTypesConfigView = lazy(() => import('@/views/AssetTypesConfigView'))
+const StatusesConfigView = lazy(() => import('@/views/StatusesConfigView'))
 const PreventivesConfigView = lazy(() => import('@/views/PreventivesConfigView'))
 
 function DeferredRoute({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/config" element={<DeferredRoute><ConfigView /></DeferredRoute>} />
         <Route path="/config/dynamic-fields" element={<DeferredRoute><DynamicFieldsConfigView /></DeferredRoute>} />
         <Route path="/config/asset-types" element={<DeferredRoute><AssetTypesConfigView /></DeferredRoute>} />
+        <Route path="/config/statuses" element={<DeferredRoute><StatusesConfigView /></DeferredRoute>} />
         <Route path="/config/preventives" element={<DeferredRoute><PreventivesConfigView /></DeferredRoute>} />
         <Route path="/config/tasks" element={<Navigate to="/config/preventives" replace />} />
       </Route>

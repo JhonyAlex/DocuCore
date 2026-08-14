@@ -13,7 +13,6 @@ export interface AssetFilters {
   statusId: number | null
   locationId: number | null
 }
-
 export interface Pagination {
   page: number
   totalPages: number
@@ -132,10 +131,11 @@ export interface DashboardKpi {
   iconKey: string
   footer?: string
   progress?: number
+  onClick?: () => void
 }
 
 export interface UpcomingExpiration {
-  id: number
+  id: string | number
   title: string
   subtitle: string
   iconBgClass: string
@@ -143,16 +143,26 @@ export interface UpcomingExpiration {
   chipText: string
   chipClass: string
   pulseDot?: PulseColor
+  targetType?: 'asset' | 'docs' | 'calendar'
+  targetId?: number
+  assetCode?: string
+  searchQuery?: string
+  onClick?: () => void
 }
 
 export interface AlertItem {
-  id: number
+  id: string | number
   title: string
   subtitle: string
   alertClass: string
   borderClass: string
   dotColorClass: string
-  pulseDot: PulseColor
+  pulseDot?: PulseColor
+  targetType?: 'asset' | 'assets-filter' | 'docs' | 'calendar'
+  targetId?: number
+  assetCode?: string
+  filterParams?: Record<string, string | number>
+  onClick?: () => void
 }
 
 export interface ActivityItem {
@@ -161,6 +171,10 @@ export interface ActivityItem {
   text: string
   detail: string
   dotColorClass: string
+  targetType?: 'asset' | 'history'
+  assetId?: number
+  entityId?: string
+  onClick?: () => void
 }
 
 export interface ChartBar {
@@ -168,7 +182,11 @@ export interface ChartBar {
   vencimientos: number
   completados: number
   incidencias: number
+  vencimientosCount?: number
+  completadosCount?: number
+  incidenciasCount?: number
   isCurrent?: boolean
+  onClick?: () => void
 }
 
 export interface NavItem {
@@ -193,4 +211,30 @@ export interface DocKpi {
   label: string
   sublabel: string
   bgClass: string
+}
+
+export type NotificationCategory = 'expiry' | 'maintenance' | 'status' | 'system'
+export type NotificationUrgency = 'critical' | 'warning' | 'info'
+export type NotificationTargetType = 'asset' | 'document' | 'calendar' | 'url'
+
+export interface ApiNotification {
+  id: number
+  projectId: number
+  userId: number | null
+  title: string
+  message: string
+  category: NotificationCategory
+  urgency: NotificationUrgency
+  targetType: NotificationTargetType | null
+  targetId: string | null
+  readAt: string | null
+  sourceKey: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface NotificationsResponse {
+  notifications: ApiNotification[]
+  unreadCount: number
+  total: number
 }

@@ -29,7 +29,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const input = taskSchema.parse(req.body)
   const created = await prisma.$transaction(async (tx) => {
     const task = await tx.task.create({ data: { projectId, ...input, isActive: input.isActive ?? true } })
-    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Creación', entityId: `task:${task.id}`, detail: `Tarea "${task.code}" creada`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `task:${task.id}`, detail: `Tarea "${task.code}" creada`, timestamp: new Date() } })
     return task
   })
   res.status(201).json(created)
@@ -44,7 +44,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (!before) return res.status(404).json({ error: 'Not found' })
   const updated = await prisma.$transaction(async (tx) => {
     const task = await tx.task.update({ where: { id }, data: input })
-    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Actualización', entityId: `task:${id}`, detail: `Tarea "${task.code}" actualizada`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Actualización', entityId: `task:${id}`, detail: `Tarea "${task.code}" actualizada`, timestamp: new Date() } })
     return task
   })
   res.json(updated)
@@ -66,10 +66,10 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   await prisma.$transaction(async (tx) => {
     if (isReferenced) {
       await tx.task.update({ where: { id }, data: { isActive: false } })
-      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `task:${id}`, detail: `Tarea "${task.code}" desactivada por estar en uso`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `task:${id}`, detail: `Tarea "${task.code}" desactivada por estar en uso`, timestamp: new Date() } })
     } else {
       await tx.task.delete({ where: { id } })
-      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Eliminación', entityId: `task:${id}`, detail: `Tarea "${task.code}" eliminada`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Eliminación', entityId: `task:${id}`, detail: `Tarea "${task.code}" eliminada`, timestamp: new Date() } })
     }
   })
   res.status(204).end()
@@ -84,7 +84,7 @@ router.post('/bulk', asyncHandler(async (req, res) => {
   await prisma.$transaction(async (tx) => {
     if (input.action === 'deactivate') {
       await tx.task.updateMany({ where: { id: { in: tasks.map((t) => t.id) } }, data: { isActive: false } })
-      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Desactivación masiva', entityId: `tasks:bulk`, detail: `${tasks.length} tareas desactivadas`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Desactivación masiva', entityId: `tasks:bulk`, detail: `${tasks.length} tareas desactivadas`, timestamp: new Date() } })
     } else {
       for (const task of tasks) {
         const [planRefs, execRefs] = await Promise.all([
@@ -97,7 +97,7 @@ router.post('/bulk', asyncHandler(async (req, res) => {
           await tx.task.delete({ where: { id: task.id } })
         }
       }
-      await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Eliminación masiva', entityId: `tasks:bulk`, detail: `${tasks.length} tareas procesadas (eliminadas/desactivadas)`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Eliminación masiva', entityId: `tasks:bulk`, detail: `${tasks.length} tareas procesadas (eliminadas/desactivadas)`, timestamp: new Date() } })
     }
   })
   res.status(200).json({ success: true, count: tasks.length })

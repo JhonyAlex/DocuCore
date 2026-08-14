@@ -136,6 +136,22 @@ export default function AssetsView() {
   }, [clearCreateRequest, createRequested])
 
   useEffect(() => {
+    const urlSearch = searchParams.get('search')
+    const urlStatusId = searchParams.get('statusId') ? Number(searchParams.get('statusId')) : null
+    const urlTypeId = searchParams.get('typeId') ? Number(searchParams.get('typeId')) : null
+    const urlLocationId = searchParams.get('locationId') ? Number(searchParams.get('locationId')) : null
+
+    if (urlSearch !== null || urlStatusId !== null || urlTypeId !== null || urlLocationId !== null) {
+      setFilters({
+        search: urlSearch ?? '',
+        statusId: urlStatusId,
+        typeId: urlTypeId,
+        locationId: urlLocationId,
+      })
+    }
+  }, [searchParams])
+
+  useEffect(() => {
     if (!Number.isInteger(deepLinkedAssetId) || deepLinkedAssetId <= 0 || openedDeepLinkRef.current === deepLinkedAssetId) return
     openedDeepLinkRef.current = deepLinkedAssetId
     void fetchAsset(deepLinkedAssetId).then(setSelectedAsset).catch(() => { openedDeepLinkRef.current = null })

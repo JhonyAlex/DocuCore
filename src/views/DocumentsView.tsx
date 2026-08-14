@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import DocumentModal from '@/components/DocumentModal'
 import DocumentsTable from '@/components/DocumentsTable'
 import DocumentsFilters, { type DocumentFilters } from '@/components/DocumentsFilters'
 import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
-import { deleteDocument, downloadDocument, fetchDocumentKpis, fetchDocuments, type ApiDocument } from '@/lib/api'
+import { deleteDocument, downloadDocument, fetchDocument, fetchDocumentKpis, fetchDocuments, type ApiDocument } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { useSession } from '@/contexts/SessionContext'
 
 const LIMIT = 5
 
 export default function DocumentsView() {
+  const [searchParams] = useSearchParams()
   const { session } = useSession()
   const selection = useSelection<number>()
   const [documents, setDocuments] = useState<ApiDocument[]>([])
@@ -26,6 +28,8 @@ export default function DocumentsView() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
+  const openedDocIdRef = useRef<number | null>(null)
+  const deepLinkedDocId = Number(searchParams.get('documentId'))
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDeferredFilters(filters), 250)
@@ -47,6 +51,19 @@ export default function DocumentsView() {
   }, [deferredFilters, page, session?.project.id])
 
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    const urlSearch = searchParams.get('search')
+    if (urlSearch !== null) {
+      setFilters((prev) => ({ ...prev, search: urlSearch }))
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!Number.isInteger(deepLinkedDocId) || deepLinkedDocId <= 0 || openedDocIdRef.current === deepLinkedDocId) return
+    openedDocIdRef.current = deepLinkedDocId
+    void fetchDocument(deepLinkedDocId).then((doc) => setEditing(doc)).catch(() => { openedDocIdRef.current = null })
+  }, [deepLinkedDocId])
 
   const toUserError = (writeError: unknown) => toUserWriteError(writeError, {
     notFound: 'El documento ya no está disponible. Actualiza la lista e inténtalo de nuevo.',

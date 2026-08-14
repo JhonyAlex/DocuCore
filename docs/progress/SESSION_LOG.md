@@ -1,5 +1,12 @@
 # SESSION_LOG — Fase 4
 
+## 2026-08-14 — Alertas, búsqueda, panel, Estados e historial reales
+
+- Se sustituyeron los controles mock solicitados: notificaciones persistentes con lectura individual/total; búsqueda global remota, diferida y cancelable; panel con KPIs, alertas, actividad, próximos eventos, serie y exportación desde PostgreSQL; Estados por proyecto con CRUD, color, orden y predeterminado; historial global paginado y filtrable desde `AuditLog`.
+- Las escrituras que antes no portaban contexto (planes, preventivos, fechas dinámicas, purgas y acciones de activos) guardan `projectId` en auditoría. Las rutas de detalle y dashboard usan límites de servidor, DTOs ligeros y navegación hacia el recurso informado.
+- Validación: `pnpm prisma validate`, migraciones, lint, typecheck y build ✅; `pnpm test` 231/231 ✅; `pnpm test:e2e` 77/77 ✅. La comparación visual focalizada de Dashboard e Historial falla las 6 capturas por los cambios funcionales autorizados (1,4531 %–5,7328 % frente al límite 0,5 %); HTML, baselines y umbral no se tocaron.
+- Runtime: `docker compose up --build -d --wait` saludable. `pnpm db:seed` regeneró el dataset canónico: 5 proyectos, 142 activos, 207 documentos lógicos, 11 ubicaciones y los catálogos asociados.
+
 ## 2026-08-12 — CAL-01: contrato visual funcional aprobado
 
 - **Autorización explícita**: el usuario autorizó evolucionar exclusivamente el contrato visual de Calendario. El HTML protegido permanece intacto y su SHA-256 sigue siendo `C4B90868465DC108F9140F00B3BA0120F6F5CDBAF8D1930B991B171B1E7F5112`; el umbral no cambió de 0,5 %.

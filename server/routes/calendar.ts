@@ -37,7 +37,7 @@ router.post('/events', asyncHandler(async (req, res) => {
   await assertAssetInProject(input.assetId, input.projectId)
   const event = await prisma.$transaction(async (tx) => {
     const created = await tx.event.create({ data: { title: input.title, date: new Date(`${input.date}T00:00:00.000Z`), type: input.category, projectId: input.projectId, assetId: input.assetId ?? null } })
-    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Creación', entityId: `event:${created.id}`, detail: `Evento "${created.title}" creado para ${input.date}`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: input.projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `event:${created.id}`, detail: `Evento "${created.title}" creado para ${input.date}`, timestamp: new Date() } })
     return created
   })
   const occurrence = (await listCalendarOccurrences(prisma, { projectId: event.projectId, from: input.date, to: input.date, source: 'event' })).events.find((entry) => entry.sourceId === event.id)
@@ -53,7 +53,7 @@ router.patch('/events/:id', asyncHandler(async (req, res) => {
   await assertAssetInProject(input.assetId, existing.projectId)
   const updated = await prisma.$transaction(async (tx) => {
     const event = await tx.event.update({ where: { id }, data: { ...(input.title !== undefined ? { title: input.title } : {}), ...(input.date !== undefined ? { date: new Date(`${input.date}T00:00:00.000Z`) } : {}), ...(input.category !== undefined ? { type: input.category } : {}), ...(input.assetId !== undefined ? { assetId: input.assetId } : {}) } })
-    await tx.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Actualización', entityId: `event:${id}`, detail: `Evento "${event.title}" actualizado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: event.projectId, userId: ACTOR_USER_ID, action: 'Actualización', entityId: `event:${id}`, detail: `Evento "${event.title}" actualizado`, timestamp: new Date() } })
     return event
   })
   const date = updated.date.toISOString().slice(0, 10)
@@ -64,11 +64,11 @@ router.patch('/events/:id', asyncHandler(async (req, res) => {
 router.delete('/events/:id', asyncHandler(async (req, res) => {
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
-  const event = await prisma.event.findUnique({ where: { id }, select: { id: true, title: true } })
+  const event = await prisma.event.findUnique({ where: { id }, select: { id: true, title: true, projectId: true } })
   if (!event) return res.status(404).json({ error: 'Event not found' })
   await prisma.$transaction([
     prisma.event.delete({ where: { id } }),
-    prisma.auditLog.create({ data: { userId: ACTOR_USER_ID, action: 'Eliminación', entityId: `event:${id}`, detail: `Evento "${event.title}" eliminado`, timestamp: new Date() } }),
+    prisma.auditLog.create({ data: { projectId: event.projectId, userId: ACTOR_USER_ID, action: 'Eliminación', entityId: `event:${id}`, detail: `Evento "${event.title}" eliminado`, timestamp: new Date() } }),
   ])
   res.status(204).end()
 }))

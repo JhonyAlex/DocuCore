@@ -9,8 +9,23 @@ const kpiIcons: Record<string, ReactNode> = {
 }
 
 export default function KpiCard({ kpi }: { kpi: DashboardKpi }) {
+  const interactiveClasses = kpi.onClick
+    ? 'cursor-pointer hover:border-brand-500/40 hover:shadow-sm transition'
+    : ''
+
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+    <div
+      role={kpi.onClick ? 'button' : undefined}
+      tabIndex={kpi.onClick ? 0 : undefined}
+      onClick={kpi.onClick}
+      onKeyDown={(e) => {
+        if (kpi.onClick && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          kpi.onClick()
+        }
+      }}
+      className={`bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 ${interactiveClasses}`}
+    >
       <div className="flex items-center justify-between">
         <div className="text-sm text-slate-500 dark:text-slate-400">{kpi.label}</div>
         <div className={`w-9 h-9 rounded-lg ${kpi.iconBgClass} flex items-center justify-center`}>

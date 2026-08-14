@@ -42,14 +42,18 @@ export default function PortalListbox({ anchorRef, onClose, children }: PortalLi
       if (anchorRef.current?.contains(target) || listboxRef.current?.contains(target)) return
       onClose()
     }
-    const close = () => onClose()
+    const handleScroll = (event: Event) => {
+      const target = event.target as Node | null
+      if (target && listboxRef.current?.contains(target)) return
+      onClose()
+    }
     document.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
+    window.addEventListener('scroll', handleScroll, true)
+    window.addEventListener('resize', onClose)
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('resize', onClose)
     }
   }, [position, anchorRef, onClose])
 

@@ -177,7 +177,7 @@ router.get('/search', asyncHandler(async (req, res) => {
 const locationAssetSelect = {
   id: true, code: true, name: true, installDate: true, initials: true,
   type: { select: { id: true, name: true, iconKey: true } },
-  status: { select: { id: true, name: true, pulseDot: true } },
+  status: { select: { id: true, name: true, color: true, pulseDot: true } },
 } satisfies Prisma.AssetSelect
 
 function serializeLocationAsset(asset: Prisma.AssetGetPayload<{ select: typeof locationAssetSelect }>) {
@@ -287,6 +287,7 @@ router.post(
       prisma.location.create({ data, include: locationInclude }),
       prisma.auditLog.create({
         data: {
+          projectId,
           userId: ACTOR_USER_ID,
           action: 'Creación',
           entityId: parsed.code,
@@ -350,6 +351,7 @@ router.put(
       prisma.location.update({ where: { id }, data, include: locationInclude }),
       prisma.auditLog.create({
         data: {
+          projectId: targetProject,
           userId: ACTOR_USER_ID,
           action: 'Actualización',
           entityId: String(id),
@@ -370,7 +372,7 @@ router.delete(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const location = await prisma.location.findUnique({ where: { id }, select: { code: true, name: true } })
+    const location = await prisma.location.findUnique({ where: { id }, select: { code: true, name: true, projectId: true } })
     if (!location) {
       res.status(404).json({ error: 'Not found' })
       return
@@ -394,6 +396,7 @@ router.delete(
       prisma.location.delete({ where: { id } }),
       prisma.auditLog.create({
         data: {
+          projectId: location.projectId,
           userId: ACTOR_USER_ID,
           action: 'Eliminación',
           entityId: location.code,

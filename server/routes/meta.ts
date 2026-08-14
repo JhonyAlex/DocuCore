@@ -44,10 +44,15 @@ router.get(
 
 router.get(
   '/statuses',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
+    const projectId = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
+      ? requestedProjectId!
+      : (await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })).id
     const statuses = await prisma.status.findMany({
-      orderBy: { id: 'asc' },
-      select: { id: true, name: true, pulseDot: true },
+      where: { projectId, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      select: { id: true, name: true, color: true, pulseDot: true },
     })
     res.json(statuses)
   }),

@@ -237,5 +237,5 @@ export async function completeCalendarOccurrence(tx: Prisma.TransactionClient, i
     await createPreventiveExecution(tx, execution.planId, next)
     entityId = execution.plan.asset.code
   }
-  await tx.auditLog.create({ data: { userId: input.actorId, action: 'Realización', entityId, detail: `Evento ${input.source}:${input.sourceId} completado el ${input.performedDate}`, timestamp: new Date() } })
+  await tx.auditLog.create({ data: { projectId: input.projectId, userId: input.actorId, action: 'Realización', entityId, detail: `Evento ${input.source}:${input.sourceId} completado el ${input.performedDate}`, timestamp: new Date() } })
 }

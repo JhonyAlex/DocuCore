@@ -1,4 +1,5 @@
 import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
+import type { DashboardKpi, UpcomingExpiration, AlertItem, ChartBar, ActivityItem } from '@/types'
 import type { AssetIconKey } from '../../shared/assetIconCatalog'
 
 const API_BASE = '/api'
@@ -13,7 +14,6 @@ export interface ApiAssetType {
   assetCount?: number
   fieldCount?: number
 }
-
 export interface AssetTypeInput {
   name: string
   iconKey?: AssetIconKey
@@ -23,9 +23,24 @@ export interface AssetTypeInput {
 
 export interface ApiStatus {
   id: number
+  projectId?: number
   name: string
+  color?: string
   pulseDot: string | null
+  sortOrder?: number
+  isActive?: boolean
+  assetCount?: number
 }
+
+export interface StatusInput {
+  name: string
+  color?: string
+  pulseDot?: string | null
+  sortOrder?: number
+  isActive?: boolean
+}
+
+export type StatusUpdateInput = Partial<StatusInput>
 
 export interface ApiUserRef {
   id: number
@@ -221,7 +236,7 @@ export interface ApiAsset {
   documents?: ApiAssetDocument[]
   eventCount: number
   type?: { id: number; name: string; iconKey?: AssetIconKey }
-  status?: { id: number; name: string; pulseDot: string | null }
+  status?: { id: number; name: string; color?: string; pulseDot: string | null }
   location?: ApiLocationRef
   responsible?: ApiUserRef
   dynamicFields?: ApiAssetDynamicField[]
@@ -292,7 +307,7 @@ export interface ApiLocationAsset {
   installDate: string
   initials: string
   type: { id: number; name: string; iconKey?: AssetIconKey }
-  status: { id: number; name: string; pulseDot: string | null }
+  status: { id: number; name: string; color?: string; pulseDot: string | null }
   typeName?: string
   statusName?: string
   responsibleInitials?: string
@@ -327,7 +342,7 @@ export interface ApiFloorPlanAsset {
   name: string
   locationId: number
   type: { id: number; name: string; iconKey?: AssetIconKey }
-  status: { id: number; name: string; pulseDot: string | null }
+  status: { id: number; name: string; color?: string; pulseDot: string | null }
   nextEvents?: ApiAssetEvent[]
   alert?: 'overdue' | 'soon' | 'normal'
 }
@@ -674,8 +689,27 @@ export function completeCalendarEvent(input: Pick<ApiCalendarEventOccurrence, 's
   return request<void>('/calendar/events/complete', { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function fetchStatuses(): Promise<ApiStatus[]> {
-  return request<ApiStatus[]>('/statuses')
+export function fetchStatuses(projectId?: number): Promise<ApiStatus[]> {
+  const query = new URLSearchParams()
+  if (projectId) query.set('projectId', String(projectId))
+  const q = query.toString()
+  return request<ApiStatus[]>(`/statuses${q ? `?${q}` : ''}`)
+}
+
+export function fetchConfiguredStatuses(projectId: number, includeInactive = false): Promise<ApiStatus[]> {
+  return request<ApiStatus[]>(`/projects/${projectId}/statuses${includeInactive ? '?includeInactive=true' : ''}`)
+}
+
+export function createStatus(projectId: number, input: StatusInput): Promise<ApiStatus> {
+  return request<ApiStatus>(`/projects/${projectId}/statuses`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateStatus(projectId: number, id: number, input: StatusUpdateInput): Promise<ApiStatus> {
+  return request<ApiStatus>(`/projects/${projectId}/statuses/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function archiveStatus(projectId: number, id: number): Promise<void> {
+  return request<void>(`/projects/${projectId}/statuses/${id}`, { method: 'DELETE' })
 }
 
 export async function fetchLocations(options?: { parentId?: number | null; limit?: number }): Promise<ApiLocationsResponse> {
@@ -862,4 +896,226 @@ function documentFormData(input: DocumentMetadataInput, file: File): FormData {
   if (input.periodicityMode) body.set('periodicityMode', input.periodicityMode)
   body.set('file', file)
   return body
+}
+
+export interface ApiDashboardResponse {
+  project: {
+    id: number
+    code: string
+    name: string
+  }
+  referenceDate: string
+  kpis: DashboardKpi[]
+  upcomingExpirations: UpcomingExpiration[]
+  criticalAlerts: AlertItem[]
+  chartBars: ChartBar[]
+  activityFeed: ActivityItem[]
+}
+
+export function fetchDashboard(params?: { projectId?: number; range?: '30d' | '7d' | 'year' }): Promise<ApiDashboardResponse> {
+  const q = new URLSearchParams()
+  if (params?.projectId) q.set('projectId', String(params.projectId))
+  if (params?.range) q.set('range', params.range)
+  const queryStr = q.toString()
+  return request<ApiDashboardResponse>(`/dashboard${queryStr ? `?${queryStr}` : ''}`)
+}
+
+export async function downloadDashboardExport(params?: { projectId?: number; range?: '30d' | '7d' | 'year' }): Promise<void> {
+  const q = new URLSearchParams()
+  if (params?.projectId) q.set('projectId', String(params.projectId))
+  if (params?.range) q.set('range', params.range)
+  const queryStr = q.toString()
+  const response = await fetch(`${API_BASE}/dashboard/export${queryStr ? `?${queryStr}` : ''}`)
+  if (!response.ok) throw new Error('Error al descargar reporte de dashboard')
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = window.document.createElement('a')
+  link.href = url
+  link.download = `dashboard-reporte.csv`
+  window.document.body.appendChild(link)
+  link.click()
+  window.document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+export interface ApiSearchAsset {
+  id: number
+  code: string
+  name: string
+  serialNumber: string
+  locationName: string | null
+  typeName: string
+  typeIconKey: string | null
+  statusName: string
+  statusColor: string | null
+  pulseDot: string | null
+}
+
+export interface ApiSearchDocument {
+  id: number
+  name: string
+  type: string
+  periodicity: string | null
+  assetCodes: string[]
+}
+
+export interface ApiSearchLocation {
+  id: number
+  code: string
+  name: string
+  label: string
+  parentName: string | null
+}
+
+export interface ApiSearchPlan {
+  id: number
+  name: string
+  locationName: string
+  locationCode: string
+}
+
+export interface ApiSearchEvent {
+  id: number
+  title: string
+  type: string
+  date: string
+  assetCode: string | null
+  assetName: string | null
+}
+
+export interface ApiSearchSetting {
+  id: string
+  kind: 'Tipo de activo' | 'Estado' | 'Campo dinámico' | 'Plan preventivo'
+  title: string
+  subtitle: string
+  path: string
+}
+
+export interface ApiSearchHistoryEntry {
+  id: number
+  action: string
+  entityId: string
+  detail: string
+  timestamp: string
+}
+
+export interface ApiGlobalSearchResult {
+  query: string
+  assets: ApiSearchAsset[]
+  documents: ApiSearchDocument[]
+  locations: ApiSearchLocation[]
+  plans: ApiSearchPlan[]
+  events: ApiSearchEvent[]
+  settings: ApiSearchSetting[]
+  history: ApiSearchHistoryEntry[]
+  totalMatches: number
+}
+
+export function searchGlobal(query: string, projectId?: number, signal?: AbortSignal): Promise<ApiGlobalSearchResult> {
+  const q = new URLSearchParams()
+  q.set('q', query)
+  if (projectId) q.set('projectId', String(projectId))
+  return request<ApiGlobalSearchResult>(`/search?${q.toString()}`, { signal })
+}
+
+export interface FetchNotificationsParams {
+  projectId?: number
+  filter?: 'all' | 'unread' | 'critical'
+  limit?: number
+  sync?: boolean
+}
+
+export function fetchNotifications(params: FetchNotificationsParams = {}): Promise<import('@/types').NotificationsResponse> {
+  const q = new URLSearchParams()
+  if (params.projectId) q.set('projectId', String(params.projectId))
+  if (params.filter) q.set('filter', params.filter)
+  if (params.limit) q.set('limit', String(params.limit))
+  if (params.sync !== undefined) q.set('sync', String(params.sync))
+  return request<import('@/types').NotificationsResponse>(`/notifications?${q.toString()}`)
+}
+
+export function markNotificationAsRead(id: number, read = true): Promise<import('@/types').ApiNotification> {
+  return request<import('@/types').ApiNotification>(`/notifications/${id}/read`, {
+    method: 'PATCH',
+    body: JSON.stringify({ read }),
+  })
+}
+
+export function markAllNotificationsAsRead(projectId?: number): Promise<{ success: boolean; count: number }> {
+  return request<{ success: boolean; count: number }>('/notifications/read-all', {
+    method: 'POST',
+    body: JSON.stringify(projectId ? { projectId } : {}),
+  })
+}
+
+export function deleteNotification(id: number): Promise<void> {
+  return request<void>(`/notifications/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export interface ApiHistoryEntry {
+  id: number
+  timestamp: string
+  action: string
+  entityId: string
+  detail: string
+  projectId: number | null
+  user: ApiUserRef
+}
+
+export interface ApiHistoryQuery {
+  projectId?: number
+  search?: string
+  userId?: number
+  action?: string
+  startDate?: string
+  endDate?: string
+  page?: number
+  limit?: number
+}
+
+export interface ApiHistoryPage {
+  data: ApiHistoryEntry[]
+  total: number
+  page: number
+  totalPages: number
+  limit: number
+  availableActions: string[]
+}
+
+export function fetchHistory(query: ApiHistoryQuery = {}, signal?: AbortSignal): Promise<ApiHistoryPage> {
+  const q = new URLSearchParams()
+  if (query.projectId) q.set('projectId', String(query.projectId))
+  if (query.search?.trim()) q.set('search', query.search.trim())
+  if (query.userId) q.set('userId', String(query.userId))
+  if (query.action?.trim()) q.set('action', query.action.trim())
+  if (query.startDate) q.set('startDate', query.startDate)
+  if (query.endDate) q.set('endDate', query.endDate)
+  if (query.page) q.set('page', String(query.page))
+  if (query.limit) q.set('limit', String(query.limit))
+  const qs = q.toString()
+  return request<ApiHistoryPage>(`/history${qs ? `?${qs}` : ''}`, { signal })
+}
+
+export async function downloadHistoryCsv(query: ApiHistoryQuery = {}): Promise<void> {
+  const q = new URLSearchParams()
+  if (query.projectId) q.set('projectId', String(query.projectId))
+  if (query.search?.trim()) q.set('search', query.search.trim())
+  if (query.userId) q.set('userId', String(query.userId))
+  if (query.action?.trim()) q.set('action', query.action.trim())
+  if (query.startDate) q.set('startDate', query.startDate)
+  if (query.endDate) q.set('endDate', query.endDate)
+  const qs = q.toString()
+  const res = await fetch(`${API_BASE}/history/export${qs ? `?${qs}` : ''}`)
+  if (!res.ok) throw new Error('Error al descargar el archivo CSV')
+  const blob = await res.blob()
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `historial-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
 }

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createLocation,
   deleteLocation,
   fetchAssetTypes,
   fetchLocation,
+  fetchLocationAssets,
   fetchLocationBootstrap,
   fetchLocations,
   fetchStatuses,
@@ -12,6 +13,7 @@ import {
   updateLocation,
   type ApiAssetType,
   type ApiLocation,
+  type ApiLocationAsset,
   type ApiLocationDetail,
   type ApiLocationsResponse,
   type ApiStatus,
@@ -31,8 +33,6 @@ interface TreeNode {
   children: TreeNode[]
   subtreeCount: number
 }
-
-const PREVIEW_ASSET_COUNT = 3
 
 // Construye únicamente las ramas ya pedidas al servidor. Nunca fuerza la
 // descarga del árbol completo para que el usuario abra una ubicación.
@@ -69,11 +69,13 @@ const pinIcon = (className: string) => <svg className={className} viewBox="0 0 2
 
 export default function LocationsView() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const deepLinkedLocationId = Number(searchParams.get('locationId'))
   const { reload: reloadSession } = useSession()
   const [catalog, setCatalog] = useState<ApiLocationsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(() => (Number.isInteger(deepLinkedLocationId) && deepLinkedLocationId > 0 ? deepLinkedLocationId : null))
   const [detail, setDetail] = useState<ApiLocationDetail | null>(null)
   const [openBranches, setOpenBranches] = useState<Set<number>>(new Set())
   const [search, setSearch] = useState('')
@@ -89,7 +91,13 @@ export default function LocationsView() {
   const [detailVersion, setDetailVersion] = useState(0)
   const latestDetailRequest = useRef(0)
   const latestCatalogRequest = useRef(0)
-  const selectedIdRef = useRef<number | null>(null)
+  const selectedIdRef = useRef<number | null>(selectedId)
+
+  useEffect(() => {
+    if (Number.isInteger(deepLinkedLocationId) && deepLinkedLocationId > 0) {
+      setSelectedId(deepLinkedLocationId)
+    }
+  }, [deepLinkedLocationId])
 
   useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
 
@@ -169,6 +177,12 @@ export default function LocationsView() {
     })
   }, [catalog, selectedId])
 
+  const [assetsPage, setAssetsPage] = useState(1)
+  const [locationAssets, setLocationAssets] = useState<ApiLocationAsset[]>([])
+  const [locationAssetsTotal, setLocationAssetsTotal] = useState(0)
+  const [locationAssetsTotalPages, setLocationAssetsTotalPages] = useState(1)
+  const [loadingAssets, setLoadingAssets] = useState(false)
+
   useEffect(() => {
     if (selectedId === null) {
       setDetail(null)
@@ -188,7 +202,32 @@ export default function LocationsView() {
   useEffect(() => {
     setConfirmDelete(false)
     setDeleteError(null)
+    setAssetsPage(1)
   }, [selectedId])
+
+  useEffect(() => {
+    if (selectedId === null) {
+      setLocationAssets([])
+      setLocationAssetsTotal(0)
+      setLocationAssetsTotalPages(1)
+      return
+    }
+    setLoadingAssets(true)
+    fetchLocationAssets(selectedId, { page: assetsPage, limit: 10 })
+      .then((res) => {
+        setLocationAssets(res.data)
+        setLocationAssetsTotal(res.total)
+        setLocationAssetsTotalPages(res.totalPages)
+      })
+      .catch(() => {
+        setLocationAssets([])
+        setLocationAssetsTotal(0)
+        setLocationAssetsTotalPages(1)
+      })
+      .finally(() => {
+        setLoadingAssets(false)
+      })
+  }, [selectedId, assetsPage, detailVersion])
 
   const matchesSearch = useCallback((node: TreeNode, query: string): boolean => {
     const normalized = query.trim().toLowerCase()
@@ -341,7 +380,7 @@ export default function LocationsView() {
     : detail && catalog
       ? catalog.project.name
       : ''
-  const previewAssets = (detail?.assets ?? []).slice(0, PREVIEW_ASSET_COUNT).map(mapApiLocationAssetToDisplay)
+  const displayedAssets = locationAssets.map(mapApiLocationAssetToDisplay)
   const hasLocations = (catalog?.locations.length ?? 0) > 0
 
   return (
@@ -442,11 +481,21 @@ export default function LocationsView() {
               </div>
 
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-sm">Activos en esta ubicación</h3>
+                <h3 className="font-medium text-sm flex items-center gap-1.5">
+                  Activos en esta ubicación
+                  {locationAssetsTotal > 0 && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">({locationAssetsTotal})</span>
+                  )}
+                </h3>
                 <button type="button" onClick={() => { setConfirmDelete(true); setDeleteError(null) }} className="text-xs text-red-600 hover:text-red-700">Eliminar ubicación</button>
               </div>
               <div className="space-y-2">
-                {previewAssets.map((asset) => (
+                {loadingAssets && (
+                  <div className="space-y-2 animate-pulse">
+                    {Array.from({ length: 3 }, (_, i) => <div key={i} className="h-12 rounded-lg bg-slate-100 dark:bg-slate-800" />)}
+                  </div>
+                )}
+                {!loadingAssets && displayedAssets.map((asset) => (
                   <button
                     key={asset.id}
                     type="button"
@@ -463,10 +512,33 @@ export default function LocationsView() {
                     <span className={`chip ${asset.statusChipClass}`}>{asset.statusLabel}</span>
                   </button>
                 ))}
-                {previewAssets.length === 0 && (
+                {!loadingAssets && displayedAssets.length === 0 && (
                   <div className="text-sm text-slate-500 dark:text-slate-400">Sin activos en esta ubicación.</div>
                 )}
               </div>
+              {locationAssetsTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-xs text-slate-500">
+                  <span>Página {assetsPage} de {locationAssetsTotalPages}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={assetsPage <= 1}
+                      onClick={() => setAssetsPage((p) => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={assetsPage >= locationAssetsTotalPages}
+                      onClick={() => setAssetsPage((p) => Math.min(locationAssetsTotalPages, p + 1))}
+                      className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

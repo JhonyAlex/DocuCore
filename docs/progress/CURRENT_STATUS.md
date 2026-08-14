@@ -1,5 +1,16 @@
 # CURRENT_STATUS — DocuCore
 
+## Fecha: 2026-08-14
+
+## SHELL-01, DASH-01, HIST-01 y Estados — FUNCIONAL
+
+- **Notificaciones y búsqueda global**: la campana consume notificaciones reales y permite marcar cada una o todas como leídas; el buscador global usa consulta remota con debounce y cancelación de respuestas obsoletas para encontrar activos, documentos, ubicaciones, planos, eventos, configuraciones e historial. Sus resultados enlazan a la vista o al detalle correspondiente. El selector de proyecto sigue fuera de alcance, por lo que `SHELL-01` permanece PARCIAL.
+- **Panel general**: KPIs, serie temporal, alertas, actividad, próximos eventos y exportación CSV se calculan en PostgreSQL y cada tarjeta o fila navega a su recurso. No conserva fallback de datos mock.
+- **Historial**: `AuditLog` queda segmentado por proyecto y se muestra con paginación y filtros remotos de texto, usuario, acción, entidad y fechas. Las escrituras de activos, documentos, ubicaciones, planos, preventivos y configuración registran su proyecto.
+- **Configuración → Estados**: catálogo de estados por proyecto, con alta, edición, orden, color y selección de estado por defecto; la API aplica las mismas validaciones de pertenencia, límites y auditoría que el catálogo de tipos de activo.
+- **Pruebas de esta entrega**: `pnpm prisma validate`, migraciones, lint, typecheck y build ✅; `pnpm test` **231/231** ✅; `pnpm test:e2e` **77/77** ✅. El stack Docker se reconstruyó con `docker compose up --build -d --wait` y, tras `pnpm db:seed`, expone health `ok` y los 142 activos canónicos.
+- **Contrato visual**: HTML protegido sin cambios. La regresión focalizada de Panel general e Historial supera el 0,5 % en sus 6 capturas por sustituir contenido mock y añadir filtros autorizados; permanece como bloqueo visual explícito. No se modificaron baselines ni umbral.
+
 ## Fecha: 2026-08-12
 
 ## CAL-01 — Calendario operativo: COMPLETADO
@@ -115,9 +126,9 @@
 - `LocationsView`: selección y edición de hojas y padres, borrado con confirmación y mensaje, «Ver plano» deshabilitado sin plano (PLAN-01), estados vacíos.
 - Matriz: lint ✅, typecheck ✅, 76 unit/API ✅, 36 E2E ✅, build ✅, `prisma migrate diff` sin drift ✅. Regresión visual `pnpm test:visual` → 20/30, exit code 1: `locations` 3/3 en verde (máx. 0,069236%); los desfases restantes son los pedidos por el usuario (ver abajo). Sin cambios en umbrales ni baselines.
 
-## Handoff vigente — 2026-08-10
+## Handoff histórico — 2026-08-10
 
-- Rama de entrega: `main`; el commit de relevo es `0823a8b` (LOC-01 publicado EN REVISIÓN). El trabajo posterior —ITEM-04, DOC-02, UX-01, ITEM-05, ITEM-06, UX-02, UX-03, UX-04, LOC-02, DOC-03, DOC-04 e IMG-01— está implementado, verificado y documentado en el working tree **sin commitear** (no commitear sin petición expresa).
+- Referencia de relevo: `main` en `0823a8b` (LOC-01 publicado EN REVISIÓN). El trabajo posterior de ese relevo se mantenía sin commit por instrucción de entonces; este bloque es contexto histórico y no describe el estado publicado actual.
 - Estado funcional: LOC-01 permanece **EN REVISIÓN** hasta la aceptación manual expresa del usuario. ITEM-05, ITEM-06, UX-02, UX-03, UX-04, LOC-02 e IMG-01 quedan **FUNCIONAL** (pendientes de validación manual del usuario).
 - Punto de entrada para otro agente: leer `AGENTS.md`, este archivo, `ROADMAP.md` y ejecutar `LOC-01_MANUAL_TEST.md`.
 - Próxima acción obligatoria: completar el checklist manual de Ubicaciones y validar manualmente ITEM-05 (eliminar → papelera → restaurar/eliminar definitivo), ITEM-06 (todo «Activos»), UX-02 (pestaña Resumen y desplegable de «Activos asociados» completo), UX-03 (crear activo eligiendo ubicación y creando una nueva desde el formulario; alta solo desde la cabecera), UX-04 (sugerencias de Código/Nombre/Iniciales con contexto y relleno al seleccionar), LOC-02 (tocar un activo del detalle de una ubicación abre su ficha y permite editarlo), DOC-03 (vista previa incrustada bajo Emisión y visor al tocarla), DOC-04 (periodicidad en dos modos con vencimiento calculado) e IMG-01 (subir foto desde la ficha y desde el alta de un activo nuevo; cambiarla, quitarla y comprobar persistencia y purga); no cambiar estados a VALIDADO sin confirmación expresa ni commitear sin petición.
@@ -148,17 +159,17 @@
 
 | Vista | Estado | Evidencia y alcance |
 |---|---|---|
-| Panel general | VISUAL MOCK | Ruta, tema y fidelidad validados; KPIs, periodo, exportación y accesos son demostrativos. |
+| Panel general | FUNCIONAL | KPIs, alertas, actividad, próximos eventos, serie temporal y exportación CSV provienen de PostgreSQL; las tarjetas y filas navegan a su recurso. La aceptación visual sigue bloqueada por 3 capturas fuera de umbral. |
 | Proyectos | VISUAL MOCK | Ruta y tarjetas validadas; alta/apertura no tienen persistencia. |
 | Activos | VALIDADO (base) + ITEM-04/05/06 FUNCIONAL + UX-04 FUNCIONAL + IMG-01 FUNCIONAL | PostgreSQL, filtros, paginación, alta, edición, estado, persistencia, auditoría, errores y reintento. Duplicación, serie única/derivada, reactivación, papelera (30 días con restaurar/purgar), renombrado «Activo», sugerencias de valores en el formulario e imagen del activo (subir/cambiar/quitar desde la ficha y elegirla en el alta, con persistencia en el storage gestionado y purga del fichero) automatizados; pendientes de aceptación manual. |
 | Documentos | FUNCIONAL | PostgreSQL, versiones inmutables, subida multipart, edición/relación multi-activo, descarga y almacenamiento local persistente; E2E Documento-Activo verde. La regresión visual sigue pendiente. |
 | Calendario | COMPLETADO | API PostgreSQL real que consolida eventos, documentos, fechas dinámicas y preventivos; Mes/Semana/Día y CRUD manual persisten; 189 unit/API + 62 E2E + visual 30/30. Tres baselines funcionales versionados con autorización explícita. |
 | Planos | PARCIAL | Marcadores arrastrables en memoria; guardar, deshacer/rehacer, capas y versiones no persisten. |
 | Ubicaciones | EN REVISIÓN | Jerarquía real (`parentId` + `label` de presentación, sin duplicados ocultos); CRUD con auditoría, selección de hojas y padres, borrado protegido (cualquier hija o activos en subrama), «Ver plano» condicionado a PLAN-01, estados vacíos y reset manual. Relaciones de activos validadas contra el proyecto, `label` sincronizado al renombrar y almacenamiento documental endurecido. LOC-02: los activos del detalle abren la misma ficha que en Activos (editar, estado, eliminar, documentos) sin salir de la vista. Regresión visual de la vista en verde; módulo pendiente de validación final (no marcado VALIDADO). |
-| Historial | VISUAL MOCK | Tabla estática; no consulta `AuditLog`. |
-| Configuración | VISUAL MOCK | Presentación validada; controles sin persistencia. |
+| Historial | FUNCIONAL | Consulta paginada real de `AuditLog`, filtrable por texto, usuario, acción, entidad y fechas; contiene auditoría segmentada por proyecto. La aceptación visual sigue bloqueada por 3 capturas fuera de umbral. |
+| Configuración | PARCIAL | Tipos, campos dinámicos, preventivos y Estados tienen persistencia; Estados cuenta con CRUD, orden, color y estado predeterminado por proyecto. |
 
-El shell es parcial: navegación, rutas directas, recarga, tema y “Nuevo activo” funcionan; buscador global, selector de proyecto y notificaciones siguen siendo demostrativos. El tema cambia correctamente pero vuelve al modo oscuro tras una recarga; no existe requisito confirmado de persistencia entre sesiones.
+El shell es parcial: navegación, rutas directas, recarga, tema, “Nuevo activo”, búsqueda global y notificaciones funcionan con datos reales; el selector de proyecto sigue demostrativo. El tema cambia correctamente pero vuelve al modo oscuro tras una recarga; no existe requisito confirmado de persistencia entre sesiones.
 
 ## Correcciones de la auditoría local
 

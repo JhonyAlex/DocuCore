@@ -28,7 +28,7 @@ export default defineConfig({
       command: 'pnpm start',
       url: `${apiUrl}/api/health`,
       timeout: 60_000,
-      reuseExistingServer: false,
+      reuseExistingServer: true,
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
@@ -43,14 +43,14 @@ export default defineConfig({
       command: 'pnpm dev',
       url: 'http://127.0.0.1:5173',
       timeout: 60_000,
-      reuseExistingServer: false,
+      reuseExistingServer: true,
       env: { ...process.env, VITE_API_PROXY_TARGET: apiUrl },
     },
     {
       command: 'tsx tests/helpers/referenceServer.ts',
       url: 'http://127.0.0.1:4173/docucore-prototype.html',
       timeout: 30_000,
-      reuseExistingServer: false,
+      reuseExistingServer: true,
     },
   ],
 })

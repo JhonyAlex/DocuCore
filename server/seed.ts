@@ -58,6 +58,7 @@ async function main(): Promise<void> {
 
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "Notification",
       "AuditLog",
       "FloorPlanMarker",
       "FloorPlan",
@@ -147,15 +148,24 @@ async function main(): Promise<void> {
     data: [1, 2, 3, 4, 5].flatMap((projectId) => defaultAssetTypes.map(({ name, iconKey }, sortOrder) => ({ projectId, name, iconKey, sortOrder }))),
   })
 
-  console.log('  • Statuses (5)')
+  console.log('  • Statuses (5 por proyecto)')
+  const defaultStatuses = [
+    { name: 'Activo', color: 'emerald', pulseDot: null },
+    { name: 'En revisión', color: 'amber', pulseDot: null },
+    { name: 'Fuera de servicio', color: 'red', pulseDot: 'red' },
+    { name: 'Vencido', color: 'red', pulseDot: 'red' },
+    { name: 'Alerta', color: 'amber', pulseDot: null },
+  ]
   await prisma.status.createMany({
-    data: [
-      { name: 'Activo', pulseDot: null },
-      { name: 'En revisión', pulseDot: null },
-      { name: 'Fuera de servicio', pulseDot: 'red' },
-      { name: 'Vencido', pulseDot: 'red' },
-      { name: 'Alerta', pulseDot: null },
-    ],
+    data: [1, 2, 3, 4, 5].flatMap((projectId) =>
+      defaultStatuses.map(({ name, color, pulseDot }, sortOrder) => ({
+        projectId,
+        name,
+        color,
+        pulseDot,
+        sortOrder,
+      }))
+    ),
   })
 
   console.log(`  • Locations (${locationsData.length})`)
@@ -203,7 +213,7 @@ async function main(): Promise<void> {
         installDate: isoFromEu(asset.installDate),
         initials: asset.initials,
         type: { connect: { projectId_name: { projectId: 1, name: asset.typeName } } },
-        status: { connect: { name: asset.statusName } },
+        status: { connect: { projectId_name: { projectId: 1, name: asset.statusName } } },
         location: { connect: { code: asset.locationCode } },
         project: { connect: { code: PROJECT_CODE } },
         responsible: { connect: { email: asset.responsibleEmail } },
@@ -213,7 +223,7 @@ async function main(): Promise<void> {
 
   const [machineType, activeStatus, responsible] = await Promise.all([
     prisma.assetType.findUniqueOrThrow({ where: { projectId_name: { projectId: 1, name: 'Máquina' } }, select: { id: true } }),
-    prisma.status.findUniqueOrThrow({ where: { name: 'Activo' }, select: { id: true } }),
+    prisma.status.findUniqueOrThrow({ where: { projectId_name: { projectId: 1, name: 'Activo' } }, select: { id: true } }),
     prisma.user.findUniqueOrThrow({ where: { email: 'jr@docucore.local' }, select: { id: true } }),
   ])
 
@@ -511,6 +521,7 @@ async function main(): Promise<void> {
   for (const a of auditData) {
     await prisma.auditLog.create({
       data: {
+        project: { connect: { code: 'PRJ-2026-001' } },
         user: { connect: { email: a.email } },
         action: a.action,
         entityId: a.entityId,

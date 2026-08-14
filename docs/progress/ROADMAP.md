@@ -4,8 +4,8 @@ Estados: `NO INICIADO`, `VISUAL MOCK`, `PARCIAL`, `FUNCIONAL`, `VALIDADO`, `BLOQ
 
 | ID | Módulo | Tarea | Estado | Criterio de aceptación | Prueba manual | Prueba automática | Dependencias |
 |---|---|---|---|---|---|---|---|
-| SHELL-01 | Shell | Conectar buscador, proyecto y notificaciones | PARCIAL | Los tres controles producen resultados reales y recuperables | Recorrer topbar y cambiar proyecto | E2E de búsqueda/proyecto/notificaciones | API de proyectos y búsqueda |
-| DASH-01 | Panel | Sustituir KPIs y acciones mock | VISUAL MOCK | Datos y filtros provienen de API; exportación genera archivo | Cambiar periodo y exportar | API + E2E | Agregaciones backend |
+| SHELL-01 | Shell | Conectar buscador, proyecto y notificaciones | PARCIAL | Buscador y notificaciones producen resultados reales y recuperables; queda el selector de proyecto | Recorrer topbar y cambiar proyecto | E2E de búsqueda/notificaciones | API de proyectos y búsqueda |
+| DASH-01 | Panel | Sustituir KPIs y acciones mock | FUNCIONAL | Datos y filtros provienen de API; exportación genera archivo | Cambiar periodo y exportar | API + E2E | Agregaciones backend |
 | PROJ-01 | Proyectos | Implementar listado y CRUD | VISUAL MOCK | Alta, apertura, edición y persistencia PostgreSQL | Crear y reabrir proyecto | API + E2E CRUD | Reglas de permisos |
 | ITEM-01 | Activos | Mantener CRUD, filtros, errores y auditoría | VALIDADO | Ciclo CRUD persiste, maneja errores y registra auditoría | Checklist local de activos | 8 unit/API + 9 E2E | PostgreSQL |
 | ITEM-02 | Activos | Responsable seleccionable y campos dinámicos | PARCIAL | Formulario carga usuarios/campos por tipo y persiste cambios | Editar responsable/campos y recargar | API + E2E | Endpoints usuarios/definiciones |
@@ -26,7 +26,7 @@ Estados: `NO INICIADO`, `VISUAL MOCK`, `PARCIAL`, `FUNCIONAL`, `VALIDADO`, `BLOQ
 | CAL-01 | Calendario | Implementar eventos y vistas | COMPLETADO | API real unifica eventos manuales, vencimientos documentales, fechas dinámicas y preventivos; Mes/Semana/Día y CRUD manual persisten | Crear, editar, completar y borrar un evento; abrir un preventivo incompleto | 189 unit/API + 62 E2E + visual 30/30; 3 baselines funcionales Calendar aprobados | API de eventos |
 | PLAN-01 | Planos | Persistir posiciones, capas y versiones | PARCIAL | Guardar/deshacer/rehacer sobreviven a recarga | Mover marcador, guardar y recargar | API + E2E drag | API de planos/marcadores |
 | LOC-01 | Ubicaciones | Implementar jerarquía y CRUD | EN REVISIÓN | Alta/edición/borrado, selección de hojas y padres, “Ver plano” condicionado; activos asignan ubicación por FK; relaciones validadas contra el proyecto; `label` sincronizado al renombrar. Pendiente de validación final (no marcado VALIDADO) | `docs/progress/LOC-01_MANUAL_TEST.md` | Visual (3) + E2E + unit | API de ubicaciones |
-| HIST-01 | Historial | Conectar la vista a `AuditLog` | VISUAL MOCK | Altas, cambios y bajas aparecen con actor/detalle | Ejecutar CRUD y abrir historial | API + E2E | Endpoint de auditoría |
-| CONF-01 | Configuración | Persistir preferencias y catálogos | VISUAL MOCK | Cambios sobreviven a recarga con permisos | Cambiar opción y recargar | API + E2E | Autenticación/permisos |
+| HIST-01 | Historial | Conectar la vista a `AuditLog` | FUNCIONAL | Altas, cambios y bajas aparecen con actor/detalle y filtros paginados | Ejecutar CRUD y abrir historial | API + E2E | Endpoint de auditoría |
+| CONF-01 | Configuración | Persistir preferencias y catálogos | PARCIAL | Estados, tipos, campos y preventivos sobreviven a recarga; faltan preferencias y permisos | Cambiar un estado y recargar | API + E2E | Autenticación/permisos |
 | PERF-01 | Escalabilidad | Escalabilidad, carga diferida y contratos acotados | COMPLETADO | Consultas acotadas en PostgreSQL, DTOs ligeros, autocompletes por proyecto, paginación, benchmarks 10k y 100k | pnpm test:perf | 194 unit/API + 62 E2E + 30/30 visual | PostgreSQL / Prisma |
 | QA-01 | Tooling | Validar con Node LTS en CI | NO INICIADO | Matriz CI sin `DEP0205` y con suite completa | Arranque local LTS | CI lint/test/E2E | Pipeline CI |
