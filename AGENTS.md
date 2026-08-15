@@ -4,15 +4,15 @@
 
 DocuCore es una plataforma de gestión documental y de activos industriales. Convierte un prototipo HTML aprobado en una aplicación real: React + TypeScript + PostgreSQL + Docker, con un contrato visual protegido y baselines versionados para evoluciones funcionales aprobadas.
 
-## Regla temporal de desarrollo pre-release
+## Regla de Preservación de Datos en Producción (SaaS)
 
-> Hasta que el usuario la revoque expresamente, DocuCore se considera un entorno de desarrollo sin información productiva que deba preservarse.
+> A partir de la fase SAAS-PROD-01 (Report Map Online), el sistema opera en modo de producción con usuarios y datos reales de clientes.
 
-- Están autorizadas las migraciones destructivas, reinicios de base de datos, reseeds, eliminación o traslado de campos, tablas, archivos y datos obsoletos que sean necesarios para avanzar en la arquitectura correcta.
-- No se debe bloquear, aplazar ni limitar un cambio únicamente por un riesgo de pérdida de información del entorno actual, ni exigir copias de seguridad preventivas para ejecutar trabajo solicitado dentro de DocuCore.
-- Se debe priorizar el modelo final correcto sobre la compatibilidad con datos temporales, mocks, seeds o estructuras anteriores.
-- Esta autorización no permite modificar el HTML protegido, desactivar pruebas, alterar migraciones ya aplicadas ni ampliar el alcance fuera de DocuCore; esos límites siguen vigentes.
-- Toda eliminación o migración debe quedar documentada y validada, aunque no requiera confirmación previa por conservación de datos.
+- **Prohibición absoluta de destrucciones**: Quedan estrictamente prohibidos los reinicios de base de datos, migraciones destructivas no controladas, truncados o reseeds en entornos que contengan datos de clientes.
+- **Evolución no destructiva de esquemas**: Toda modificación a la base de datos debe realizarse mediante migraciones hacia adelante (patrón *expand/contract*) que garanticen cero pérdida de información y compatibilidad hacia atrás.
+- **Garantía de conservación en bajas y finalización de prueba**: La expiración de períodos de prueba o la falta de suscripción activa nunca elimina proyectos, activos o documentos; el sistema transiciona a modo de solo lectura (HTTP 402 en mutaciones de escritura; lectura, consulta, exportación y descargas siempre habilitadas).
+- **Copias de seguridad**: Todo despliegue y mantenimiento debe disponer de backups automatizados y verificables (dump PostgreSQL + almacenamiento persistente).
+- Las reglas de fidelidad visual (umbral 0,5 %) y protección del HTML de referencia se mantienen intactas.
 
 ## Regla de fidelidad al HTML
 

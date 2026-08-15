@@ -36,6 +36,7 @@ const locationsData: LocationSeed[] = [
   { code: 'PIN-AO-04', name: 'Anexo Oficinas', label: 'Anexo Oficinas', parentCode: null, responsibleEmail: 'maria@docucore.local', surface: '480 m²' },
   { code: 'PIN-EX-05', name: 'Almacén exterior', label: 'Almacén exterior', parentCode: null, responsibleEmail: 'jr@docucore.local', surface: '1.200 m²' },
   { code: 'PIN-NA-01A', name: 'Planta 1 · Nave A', label: 'Planta 1 · Nave A', parentCode: 'PIN-NP-01', responsibleEmail: 'jr@docucore.local', surface: '840 m²' },
+
   { code: 'PIN-NB-01B', name: 'Planta 1 · Nave B', label: 'Planta 1 · Nave B', parentCode: 'PIN-NP-01', responsibleEmail: 'jr@docucore.local', surface: '760 m²' },
   { code: 'PIN-NB-P3', name: 'Pasillo 3', label: 'Planta 1 · Nave B · Pasillo 3', parentCode: 'PIN-NB-01B', responsibleEmail: 'jr@docucore.local', surface: '90 m²' },
   { code: 'PIN-SC-02', name: 'Sala compresores', label: 'Planta 1 · Sala compresores', parentCode: 'PIN-NP-01', responsibleEmail: 'agomez@docucore.local', surface: '120 m²' },
@@ -80,6 +81,11 @@ async function main(): Promise<void> {
       "AssetType",
       "Status",
       "Project",
+      "WorkspaceMember",
+      "Workspace",
+      "EmailVerificationToken",
+      "PasswordResetToken",
+      "ProcessedWebhookEvent",
       "User"
     RESTART IDENTITY CASCADE
   `)
@@ -102,27 +108,49 @@ async function main(): Promise<void> {
     if (!(error instanceof FloorPlanStorageError) || error.code !== 'MISSING_MARKER') throw error
   }
 
+  console.log('  • Workspace (1)')
+  await prisma.workspace.create({
+    data: {
+      name: 'Espacio Principal',
+      slug: 'espacio-principal',
+      billingStatus: 'ACTIVE',
+    },
+  })
+
   console.log('  • Users (6)')
   const developmentPasswordHash = await hashPassword('DocuCore!2026')
+  const now = new Date()
   await prisma.user.createMany({
     data: [
-      { name: 'María Fernández', email: 'maria@docucore.local', passwordHash: developmentPasswordHash, role: 'Administradora', initials: 'MF', color: 'brand' },
-      { name: 'J. Ramírez', email: 'jr@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'JR', color: 'emerald' },
-      { name: 'A. Gómez', email: 'agomez@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'AG', color: 'amber' },
-      { name: 'L. Torres', email: 'ltorres@docucore.local', passwordHash: developmentPasswordHash, role: 'Laboratorio', initials: 'LT', color: 'brand' },
-      { name: 'P. Martín', email: 'pmartin@docucore.local', passwordHash: developmentPasswordHash, role: 'Sistemas', initials: 'PM', color: 'indigo' },
-      { name: 'I. Pruebas', email: 'inactive@docucore.local', passwordHash: developmentPasswordHash, role: 'Pruebas', initials: 'IP', color: 'slate', isActive: false },
+      { name: 'María Fernández', email: 'maria@docucore.local', passwordHash: developmentPasswordHash, role: 'Administradora', initials: 'MF', color: 'brand', emailVerifiedAt: now, isPlatformAdmin: true },
+      { name: 'J. Ramírez', email: 'jr@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'JR', color: 'emerald', emailVerifiedAt: now },
+      { name: 'A. Gómez', email: 'agomez@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'AG', color: 'amber', emailVerifiedAt: now },
+      { name: 'L. Torres', email: 'ltorres@docucore.local', passwordHash: developmentPasswordHash, role: 'Laboratorio', initials: 'LT', color: 'brand', emailVerifiedAt: now },
+      { name: 'P. Martín', email: 'pmartin@docucore.local', passwordHash: developmentPasswordHash, role: 'Sistemas', initials: 'PM', color: 'indigo', emailVerifiedAt: now },
+      { name: 'I. Pruebas', email: 'inactive@docucore.local', passwordHash: developmentPasswordHash, role: 'Pruebas', initials: 'IP', color: 'slate', isActive: false, emailVerifiedAt: now },
+    ],
+  })
+
+  console.log('  • Workspace members')
+  await prisma.workspaceMember.createMany({
+    data: [
+      { workspaceId: 1, userId: 1, role: 'OWNER' },
+      { workspaceId: 1, userId: 2, role: 'ADMIN' },
+      { workspaceId: 1, userId: 3, role: 'MEMBER' },
+      { workspaceId: 1, userId: 4, role: 'MEMBER' },
+      { workspaceId: 1, userId: 5, role: 'ADMIN' },
+      { workspaceId: 1, userId: 6, role: 'MEMBER' },
     ],
   })
 
   console.log('  • Projects (5)')
   await prisma.project.createMany({
     data: [
-      { code: PROJECT_CODE, name: 'Planta Industrial Norte', description: 'Planta de producción con 3 naves, 142 activos inventariados y 6 usuarios asociados.', status: 'ACTIVE', themeKey: 'blue' },
-      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Oficinas centrales · 5 plantas · Gestión de contratos y servicios.', status: 'ACTIVE', themeKey: 'emerald' },
-      { code: 'PRJ-2026-003', name: 'Almacén Logístico Sur', description: 'Gestión de inventario, vehículos y extintores.', status: 'ACTIVE', themeKey: 'amber' },
-      { code: 'PRJ-2026-004', name: 'Cliente: Hospitales San Rafael', description: 'Gestión documental y calibraciones para equipo médico.', status: 'ACTIVE', themeKey: 'rose' },
-      { code: 'PRJ-2025-018', name: 'Auditoría ISO 9001 · 2025', description: 'Proyecto documental cerrado tras certificación.', status: 'ARCHIVED', themeKey: 'slate' },
+      { workspaceId: 1, code: PROJECT_CODE, name: 'Planta Industrial Norte', description: 'Planta de producción con 3 naves, 142 activos inventariados y 6 usuarios asociados.', status: 'ACTIVE', themeKey: 'blue' },
+      { workspaceId: 1, code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Oficinas centrales · 5 plantas · Gestión de contratos y servicios.', status: 'ACTIVE', themeKey: 'emerald' },
+      { workspaceId: 1, code: 'PRJ-2026-003', name: 'Almacén Logístico Sur', description: 'Gestión de inventario, vehículos y extintores.', status: 'ACTIVE', themeKey: 'amber' },
+      { workspaceId: 1, code: 'PRJ-2026-004', name: 'Cliente: Hospitales San Rafael', description: 'Gestión documental y calibraciones para equipo médico.', status: 'ACTIVE', themeKey: 'rose' },
+      { workspaceId: 1, code: 'PRJ-2025-018', name: 'Auditoría ISO 9001 · 2025', description: 'Proyecto documental cerrado tras certificación.', status: 'ARCHIVED', themeKey: 'slate' },
     ],
   })
 

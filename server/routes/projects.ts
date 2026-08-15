@@ -5,11 +5,11 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProjectConfiguration } from '../lib/projectConfiguration'
 import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
+import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from '../lib/workspaceScope'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
 
 const router = Router()
 const projectRoleSchema = z.enum(['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'])
-
 const memberInputSchema = z.object({ userId: z.number().int().positive(), role: projectRoleSchema }).strict()
 const projectInputSchema = z.object({
   code: z.string().trim().min(2).max(40).regex(/^[A-Z0-9][A-Z0-9_-]*$/i, 'El código solo admite letras, números, guiones y guiones bajos').transform((value) => value.toUpperCase()),
@@ -89,7 +89,9 @@ async function ensureOwnerRemains(projectId: number, affectedRole: ProjectRole):
 router.get('/', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const query = listSchema.parse(req.query)
+  const wsScope = await getUserPrimaryWorkspace(actorId)
   const where: Prisma.ProjectWhereInput = {
+    workspaceId: wsScope.workspace.id,
     members: { some: { userId: actorId } },
     status: query.status === 'all' ? undefined : query.status === 'active' ? 'ACTIVE' : 'ARCHIVED',
     ...(query.search ? {
@@ -117,12 +119,22 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const input = projectInputSchema.parse(req.body)
+  const wsScope = await getUserPrimaryWorkspace(actorId)
+  const entitlement = evaluateWorkspaceEntitlement(wsScope.workspace)
+  if (!entitlement.isEntitledToWrite) {
+    return res.status(402).json({
+      error: 'La suscripción o período de prueba de tu cuenta no permite crear proyectos.',
+      code: entitlement.reason,
+      billingStatus: wsScope.workspace.billingStatus,
+      trialEndsAt: wsScope.workspace.trialEndsAt?.toISOString(),
+    })
+  }
   await ensureUsersExist(input.memberIds)
   if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
   const created = await prisma.$transaction(async (tx) => {
     const project = await tx.project.create({
-      data: { code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
+      data: { workspaceId: wsScope.workspace.id, code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
       select: { id: true },
     })
     const memberByUserId = new Map(input.memberIds.map((member) => [member.userId, member.role]))
@@ -130,7 +142,7 @@ router.post('/', asyncHandler(async (req, res) => {
     await tx.projectMember.createMany({ data: [...memberByUserId].map(([userId, role]) => ({ projectId: project.id, userId, role })) })
     if (input.copyConfigurationFromProjectId) await copyProjectConfiguration(tx, input.copyConfigurationFromProjectId, project.id)
     else await createMinimalProjectConfiguration(tx, project.id)
-    await tx.auditLog.create({ data: { projectId: project.id, userId: actorId, action: 'Creación', entityId: `project:${project.id}`, detail: `Proyecto "${input.name}" creado${input.copyConfigurationFromProjectId ? ' copiando configuración' : ''}`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { workspaceId: wsScope.workspace.id, projectId: project.id, userId: actorId, action: 'Creación', entityId: `project:${project.id}`, detail: `Proyecto "${input.name}" creado${input.copyConfigurationFromProjectId ? ' copiando configuración' : ''}`, timestamp: new Date() } })
     return project.id
   })
   const project = await prisma.project.findUniqueOrThrow({ where: { id: created }, include: projectInclude })

@@ -8,7 +8,7 @@ test.describe.serial('AUTH-01 sesiones reales', () => {
     await context.clearCookies()
     try {
       await page.goto('/projects/1/assets')
-      await expect(page.getByRole('heading', { name: 'Bienvenido a DocuCore' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Report Map Online' })).toBeVisible()
 
       await page.getByLabel('Correo electrónico').fill('maria@docucore.local')
       await page.getByLabel('Contraseña').fill('DocuCore!2026')
@@ -19,7 +19,7 @@ test.describe.serial('AUTH-01 sesiones reales', () => {
       await page.reload()
       await expect(page.getByText('María Fernández')).toBeVisible()
       await page.getByTitle('Cerrar sesión').click()
-      await expect(page.getByRole('heading', { name: 'Bienvenido a DocuCore' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Report Map Online' })).toBeVisible()
     } finally {
       await context.setExtraHTTPHeaders(testActorHeader)
     }

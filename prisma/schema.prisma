@@ -7,6 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum BillingStatus {
+  PENDING_VERIFICATION
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  SUSPENDED
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
 enum ProjectStatus {
   ACTIVE
   ARCHIVED
@@ -31,26 +46,101 @@ enum FieldType {
   BOOLEAN
 }
 
-model User {
-  id           Int      @id @default(autoincrement())
-  name         String
-  email        String   @unique
-  passwordHash String
-  isActive     Boolean  @default(true)
-  role         String
-  initials     String
-  color        String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+model Workspace {
+  id                   Int           @id @default(autoincrement())
+  name                 String
+  slug                 String        @unique
+  billingStatus        BillingStatus @default(PENDING_VERIFICATION)
+  trialStartedAt       DateTime?
+  trialEndsAt          DateTime?
+  stripeCustomerId     String?       @unique
+  stripeSubscriptionId String?       @unique
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
-  assetsOwned          Asset[]         @relation("AssetResponsible")
-  memberships          ProjectMember[]
-  auditLogs            AuditLog[]
-  locationsResponsible Location[]      @relation("LocationResponsible")
-  notifications        Notification[]
-  sessions             AuthSession[]
+  members   WorkspaceMember[]
+  projects  Project[]
+  auditLogs AuditLog[]
+
+  @@index([billingStatus, trialEndsAt])
+  @@index([stripeCustomerId])
+}
+
+model WorkspaceMember {
+  id          Int           @id @default(autoincrement())
+  workspaceId Int
+  userId      Int
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String   @id
+  userId    Int
+  email     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id
+  userId    Int
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ProcessedWebhookEvent {
+  id          String   @id
+  provider    String
+  processedAt DateTime @default(now())
+}
+
+model User {
+  id              Int       @id @default(autoincrement())
+  name            String
+  email           String    @unique
+  passwordHash    String
+  isActive        Boolean   @default(true)
+  role            String
+  initials        String
+  color           String
+  emailVerifiedAt DateTime?
+  isPlatformAdmin Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  assetsOwned             Asset[]                  @relation("AssetResponsible")
+  memberships             ProjectMember[]
+  workspaceMemberships    WorkspaceMember[]
+  auditLogs               AuditLog[]
+  locationsResponsible    Location[]               @relation("LocationResponsible")
+  notifications           Notification[]
+  sessions                AuthSession[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
 
   @@index([isActive])
+  @@index([isPlatformAdmin])
 }
 
 // The browser receives an opaque random token. Its SHA-256 digest is the only
@@ -71,6 +161,7 @@ model AuthSession {
 
 model Project {
   id          Int           @id @default(autoincrement())
+  workspaceId Int
   code        String        @unique
   name        String
   description String
@@ -79,6 +170,7 @@ model Project {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
+  workspace        Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   assets           Asset[]
   members          ProjectMember[]
   documents        Document[]
@@ -93,6 +185,7 @@ model Project {
   auditLogs        AuditLog[]
   notifications    Notification[]
 
+  @@index([workspaceId, status])
   @@index([status, updatedAt, id])
   @@index([status, createdAt, id])
 }
@@ -573,19 +666,22 @@ model FloorPlanMarker {
 }
 
 model AuditLog {
-  id        Int      @id @default(autoincrement())
-  projectId Int?
-  userId    Int
-  action    String
-  entityId  String
-  detail    String
-  timestamp DateTime @default(now())
-  createdAt DateTime @default(now())
+  id          Int        @id @default(autoincrement())
+  workspaceId Int?
+  projectId   Int?
+  userId      Int
+  action      String
+  entityId    String
+  detail      String
+  timestamp   DateTime   @default(now())
+  createdAt   DateTime   @default(now())
 
-  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([workspaceId, timestamp(sort: Desc)])
   @@index([projectId, timestamp(sort: Desc)])
   @@index([projectId, userId])
 }

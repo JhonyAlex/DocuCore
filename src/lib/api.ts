@@ -58,10 +58,26 @@ export interface ApiSessionUser {
   role: string
   initials: string
   color: string
+  isPlatformAdmin?: boolean
+  emailVerifiedAt?: string | null
+}
+
+export interface ApiSessionWorkspace {
+  id: number
+  name: string
+  slug: string
+  billingStatus: 'PENDING_VERIFICATION' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'SUSPENDED'
+  trialStartedAt?: string | null
+  trialEndsAt?: string | null
+  trialDaysLeft?: number
+  isEntitledToWrite?: boolean
+  entitlementReason?: string | null
+  role?: 'OWNER' | 'ADMIN' | 'MEMBER'
 }
 
 export interface ApiSession {
   user: ApiSessionUser
+  workspace?: ApiSessionWorkspace | null
 }
 
 export type ApiProjectRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER'
@@ -845,12 +861,104 @@ export function login(email: string, password: string): Promise<ApiSession> {
   return request<ApiSession>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
 }
 
+export function register(input: {
+  name: string
+  workspaceName: string
+  email: string
+  password: string
+  confirmPassword: string
+  termsAccepted?: boolean
+}): Promise<{ message: string; email: string }> {
+  return request<{ message: string; email: string }>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function verifyEmail(token: string): Promise<ApiSession> {
+  return request<ApiSession>('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
+export function resendVerification(email: string): Promise<{ message: string }> {
+  return request<{ message: string }>('/auth/resend-verification', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function forgotPassword(email: string): Promise<{ message: string }> {
+  return request<{ message: string }>('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function resetPassword(input: {
+  token: string
+  newPassword: string
+  confirmPassword: string
+}): Promise<{ message: string }> {
+  return request<{ message: string }>('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 export function logout(): Promise<void> {
   return request<void>('/auth/logout', { method: 'POST' })
 }
 
 export function changePassword(input: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<void> {
   return request<void>('/auth/password', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function fetchBillingStatus(): Promise<import('@/types').ApiBillingStatus> {
+  return request<import('@/types').ApiBillingStatus>('/billing/status')
+}
+
+export function createBillingCheckoutSession(): Promise<{ checkoutUrl: string }> {
+  return request<{ checkoutUrl: string }>('/billing/checkout', { method: 'POST' })
+}
+
+export function createBillingPortalSession(): Promise<{ portalUrl: string }> {
+  return request<{ portalUrl: string }>('/billing/portal', { method: 'POST' })
+}
+
+export function reconcileBilling(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('/billing/reconcile', { method: 'POST' })
+}
+
+export function fetchAdminWorkspaces(options: {
+  search?: string
+  status?: string
+  page?: number
+  limit?: number
+} = {}): Promise<{ data: import('@/types').ApiAdminWorkspace[]; total: number; page: number; limit: number; totalPages: number }> {
+  const query = new URLSearchParams()
+  if (options.search?.trim()) query.set('search', options.search.trim())
+  if (options.status && options.status !== 'all') query.set('status', options.status)
+  if (options.page) query.set('page', String(options.page))
+  if (options.limit) query.set('limit', String(options.limit))
+  return request(`/admin/workspaces${query.size ? `?${query.toString()}` : ''}`)
+}
+
+export function fetchAdminWorkspace(workspaceId: number): Promise<import('@/types').ApiAdminWorkspace & { members: Array<import('@/types').User & { role: string }> }> {
+  return request(`/admin/workspaces/${workspaceId}`)
+}
+
+export function adminExtendTrial(workspaceId: number, input: { days?: number; untilDate?: string }): Promise<{ workspaceId: number; billingStatus: string; trialEndsAt?: string }> {
+  return request(`/admin/workspaces/${workspaceId}/extend-trial`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function adminSuspendWorkspace(workspaceId: number, reason?: string): Promise<{ workspaceId: number; billingStatus: string }> {
+  return request(`/admin/workspaces/${workspaceId}/suspend`, { method: 'POST', body: JSON.stringify({ reason }) })
+}
+
+export function adminReactivateWorkspace(workspaceId: number): Promise<{ workspaceId: number; billingStatus: string }> {
+  return request(`/admin/workspaces/${workspaceId}/reactivate`, { method: 'POST' })
 }
 
 export function fetchProjects(options: { search?: string; status?: ApiProjectStatus | 'ALL'; sort?: 'updatedAt' | 'name' | 'code' | 'createdAt'; page?: number; limit?: number } = {}): Promise<ApiProjectListResponse> {

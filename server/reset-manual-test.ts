@@ -35,24 +35,47 @@ async function main(): Promise<void> {
       "AssetType",
       "Status",
       "Project",
+      "WorkspaceMember",
+      "Workspace",
+      "EmailVerificationToken",
+      "PasswordResetToken",
+      "ProcessedWebhookEvent",
       "User"
     RESTART IDENTITY CASCADE
   `)
 
+  console.log('  • Workspace (1)')
+  await prisma.workspace.create({
+    data: {
+      name: 'Espacio Principal',
+      slug: 'espacio-principal',
+      billingStatus: 'ACTIVE',
+    },
+  })
+
   console.log('  • Usuarios (2)')
   const developmentPasswordHash = await hashPassword('DocuCore!2026')
+  const now = new Date()
   await prisma.user.createMany({
     data: [
-      { name: 'María Fernández', email: 'maria@docucore.local', passwordHash: developmentPasswordHash, role: 'Administradora', initials: 'MF', color: 'brand' },
-      { name: 'J. Ramírez', email: 'jr@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'JR', color: 'emerald' },
+      { name: 'María Fernández', email: 'maria@docucore.local', passwordHash: developmentPasswordHash, role: 'Administradora', initials: 'MF', color: 'brand', emailVerifiedAt: now, isPlatformAdmin: true },
+      { name: 'J. Ramírez', email: 'jr@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'JR', color: 'emerald', emailVerifiedAt: now },
+    ],
+  })
+
+  console.log('  • Workspace members')
+  await prisma.workspaceMember.createMany({
+    data: [
+      { workspaceId: 1, userId: 1, role: 'OWNER' },
+      { workspaceId: 1, userId: 2, role: 'ADMIN' },
     ],
   })
 
   console.log('  • Proyectos base (2)')
   await prisma.project.createMany({
     data: [
-      { code: 'PRJ-2026-001', name: 'Planta Industrial Norte', description: 'Proyecto base para validación manual.', status: 'ACTIVE', themeKey: 'blue' },
-      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Segundo proyecto para pruebas de separación.', status: 'ACTIVE', themeKey: 'emerald' },
+      { workspaceId: 1, code: 'PRJ-2026-001', name: 'Planta Industrial Norte', description: 'Proyecto base para validación manual.', status: 'ACTIVE', themeKey: 'blue' },
+      { workspaceId: 1, code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Segundo proyecto para pruebas de separación.', status: 'ACTIVE', themeKey: 'emerald' },
     ],
   })
 

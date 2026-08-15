@@ -24,6 +24,12 @@ const PreventivesConfigView = lazy(() => import('@/views/PreventivesConfigView')
 const LoginView = lazy(() => import('@/views/LoginView'))
 const AccountView = lazy(() => import('@/views/AccountView'))
 const UsersConfigView = lazy(() => import('@/views/UsersConfigView'))
+const LandingView = lazy(() => import('@/views/LandingView'))
+const RegisterView = lazy(() => import('@/views/RegisterView'))
+const VerifyEmailView = lazy(() => import('@/views/VerifyEmailView'))
+const ForgotPasswordView = lazy(() => import('@/views/ForgotPasswordView'))
+const ResetPasswordView = lazy(() => import('@/views/ResetPasswordView'))
+const PlatformAdminView = lazy(() => import('@/views/PlatformAdminView'))
 
 function DeferredRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -76,10 +82,14 @@ export default function App() {
   return (
     <SessionProvider>
       <Routes>
+        <Route path="/" element={<DeferredRoute><LandingView /></DeferredRoute>} />
         <Route path="/login" element={<LoginRoute />} />
+        <Route path="/register" element={<DeferredRoute><RegisterView /></DeferredRoute>} />
+        <Route path="/verify-email" element={<DeferredRoute><VerifyEmailView /></DeferredRoute>} />
+        <Route path="/forgot-password" element={<DeferredRoute><ForgotPasswordView /></DeferredRoute>} />
+        <Route path="/reset-password" element={<DeferredRoute><ResetPasswordView /></DeferredRoute>} />
         <Route element={<AuthenticatedOutlet />}>
         <Route element={<AppLayout />}>
-        <Route path="/" element={<Navigate to="/projects" replace />} />
         <Route path="/projects" element={<DeferredRoute><ProjectsView /></DeferredRoute>} />
         <Route path="/projects/:projectId" element={<ProjectScopedOutlet />}>
           <Route index element={<Navigate to="dashboard" replace />} />
@@ -114,6 +124,8 @@ export default function App() {
         <Route path="/config/preventives" element={<LegacyProjectRedirect section="/config/preventives" />} />
         <Route path="/config/tasks" element={<LegacyProjectRedirect section="/config/preventives" />} />
         <Route path="/account" element={<DeferredRoute><AccountView /></DeferredRoute>} />
+        <Route path="/billing" element={<DeferredRoute><AccountView /></DeferredRoute>} />
+        <Route path="/admin" element={<DeferredRoute><PlatformAdminView /></DeferredRoute>} />
         </Route>
         </Route>
       </Routes>

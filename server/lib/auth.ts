@@ -6,18 +6,28 @@ const COOKIE_NAME = process.env.SESSION_COOKIE_NAME || 'docucore_session'
 const SESSION_DAYS = Number(process.env.SESSION_TTL_DAYS || '14')
 const SESSION_MAX_AGE_MS = Math.max(1, SESSION_DAYS) * 24 * 60 * 60 * 1000
 
-export type AuthUser = { id: number; name: string; email: string; role: string; initials: string; color: string; isActive: boolean }
+export type AuthUser = {
+  id: number
+  name: string
+  email: string
+  role: string
+  initials: string
+  color: string
+  isActive: boolean
+  isPlatformAdmin: boolean
+  emailVerifiedAt: Date | null
+}
 export type AuthenticatedRequest = Request & { auth?: { user: AuthUser; sessionId: string } }
 
 function authError(message: string, status: number): Error & { status: number } {
   return Object.assign(new Error(message), { status })
 }
 
-function hashToken(token: string): string {
+export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('base64url')
 }
 
-function cookieValue(req: Request, name: string): string | null {
+export function cookieValue(req: Request, name: string): string | null {
   const encoded = req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1)
   if (!encoded) return null
   try { return decodeURIComponent(encoded) } catch { return null }
@@ -28,7 +38,16 @@ function cookieOptions() {
 }
 
 export function publicUser(user: AuthUser) {
-  return { id: user.id, name: user.name, email: user.email, role: user.role, initials: user.initials, color: user.color }
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    initials: user.initials,
+    color: user.color,
+    isPlatformAdmin: user.isPlatformAdmin,
+    emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
+  }
 }
 
 export async function createSession(userId: number, res: Response): Promise<void> {
@@ -57,7 +76,7 @@ export const optionalAuth: RequestHandler = async (req, _res, next) => {
     const token = cookieValue(req, COOKIE_NAME)
     const persistedSession = token ? await prisma.authSession.findUnique({ where: { id: hashToken(token) }, include: { user: true } }) : null
     const session = persistedSession ?? (Number.isInteger(testActorId) && testActorId > 0
-      ? { id: `test:${testActorId}`, user: await prisma.user.findUnique({ where: { id: testActorId } }), expiresAt: new Date(Date.now() + 1), lastSeenAt: new Date() }
+      ? { id: `test:${testActorId}`, user: await prisma.user.findUnique({ where: { id: testActorId } }), expiresAt: new Date(Date.now() + SESSION_MAX_AGE_MS), lastSeenAt: new Date() }
       : null)
     if (!session || !session.user || !session.user.isActive || session.expiresAt <= new Date()) {
       if (persistedSession?.id) await prisma.authSession.deleteMany({ where: { id: persistedSession.id } })

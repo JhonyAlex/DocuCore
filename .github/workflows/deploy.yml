@@ -1,0 +1,52 @@
+name: Deploy to Dokploy (Production)
+
+on:
+  workflow_run:
+    workflows: ["CI Suite"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy
+    runs-on: ubuntu-latest
+    environment: production
+    # Only trigger deploy if CI workflow succeeded (or on manual dispatch from main)
+    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+
+    steps:
+      - name: Check Required Dokploy Secrets
+        id: check_secrets
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
+        run: |
+          if [ -z "$DOKPLOY_URL" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_COMPOSE_ID" ]; then
+            echo "Missing required Dokploy secrets (DOKPLOY_URL, DOKPLOY_API_KEY, DOKPLOY_COMPOSE_ID). Skipping automated deployment."
+            echo "configured=false" >> $GITHUB_OUTPUT
+          else
+            echo "All required Dokploy deployment secrets are present."
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Dokploy Deployment API
+        if: steps.check_secrets.outputs.configured == 'true'
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
+        run: |
+          echo "Triggering Dokploy compose deployment..."
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${DOKPLOY_URL}/api/compose.deploy" \
+            -H "Authorization: Bearer ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"composeId\": \"${DOKPLOY_COMPOSE_ID}\"}")
+          
+          if [ "$RESPONSE_CODE" -ge 200 ] && [ "$RESPONSE_CODE" -lt 300 ]; then
+            echo "Dokploy deployment triggered successfully (HTTP $RESPONSE_CODE)."
+          else
+            echo "Dokploy deployment request returned HTTP $RESPONSE_CODE."
+            exit 1
+          fi

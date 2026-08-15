@@ -34,7 +34,8 @@ async function main() {
   const stamp = Date.now()
   const code = `PERF-${stamp}`
   const user = await prisma.user.findFirstOrThrow({ select: { id: true, email: true } })
-  const project = await prisma.project.create({ data: { code, name: `Perfil temporal ${stamp}`, description: 'Datos sintéticos eliminados al terminar PERF-01', themeKey: 'slate' } })
+  const workspace = await prisma.workspace.findFirst() ?? await prisma.workspace.create({ data: { name: 'Espacio Principal', slug: 'espacio-principal', billingStatus: 'ACTIVE' } })
+  const project = await prisma.project.create({ data: { workspaceId: workspace.id, code, name: `Perfil temporal ${stamp}`, description: 'Datos sintéticos eliminados al terminar PERF-01', themeKey: 'slate' } })
   await prisma.projectMember.create({ data: { projectId: project.id, userId: user.id, role: 'OWNER' } })
   const status = await prisma.status.create({ data: { projectId: project.id, name: `Activo PERF ${stamp}`, color: 'emerald', sortOrder: 0 } })
   const type = await prisma.assetType.create({ data: { projectId: project.id, name: `Tipo PERF ${stamp}`, iconKey: 'box', sortOrder: 0 } })

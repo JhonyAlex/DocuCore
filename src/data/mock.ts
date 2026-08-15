@@ -7,6 +7,7 @@ import type {
 export const currentUser: User = {
   id: 1,
   name: 'María Fernández',
+  email: 'mfernandez@docucore.local',
   role: 'Administradora',
   initials: 'MF',
   color: 'bg-brand-500',

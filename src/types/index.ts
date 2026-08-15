@@ -20,12 +20,74 @@ export interface Pagination {
   limit: number
 }
 
+export type BillingStatus = 'PENDING_VERIFICATION' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'SUSPENDED'
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER'
+
+export interface ApiWorkspaceSummary {
+  id: number
+  name: string
+  slug: string
+  billingStatus: BillingStatus
+  trialStartedAt?: string | null
+  trialEndsAt?: string | null
+  trialDaysLeft?: number
+  isEntitledToWrite?: boolean
+  entitlementReason?: string | null
+  role?: WorkspaceRole
+}
+
+export interface ApiBillingStatus {
+  workspaceId: number
+  name: string
+  slug: string
+  billingStatus: BillingStatus
+  trialStartedAt: string | null
+  trialEndsAt: string | null
+  trialDaysLeft: number
+  isEntitledToWrite: boolean
+  entitlementReason: string | null
+  hasSubscription: boolean
+  currentPeriodEnd: string | null
+  cancelAtPeriodEnd: boolean
+  stripeCustomerId?: string | null
+  stripeSubscriptionId?: string | null
+  role: WorkspaceRole
+  isOwner: boolean
+}
+
+export interface ApiAdminWorkspace {
+  id: number
+  name: string
+  slug: string
+  billingStatus: BillingStatus
+  trialStartedAt: string | null
+  trialEndsAt: string | null
+  stripeCustomerId?: string | null
+  stripeSubscriptionId?: string | null
+  currentPeriodEnd: string | null
+  cancelAtPeriodEnd: boolean
+  projectCount: number
+  memberCount: number
+  owner?: {
+    id: number
+    name: string
+    email: string
+    initials: string
+    color: string
+  } | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface User {
   id: number
   name: string
+  email: string
   role: string
   initials: string
   color: string
+  isPlatformAdmin?: boolean
+  emailVerifiedAt?: string | null
 }
 
 export interface Project {

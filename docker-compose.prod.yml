@@ -1,0 +1,64 @@
+services:
+  app:
+    image: ghcr.io/jhonyalex/docucore:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://${DB_USER:-docucore}:${DB_PASSWORD:-docucore}@db:5432/${DB_NAME:-docucore}?schema=public
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://report-map.online}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - BILLING_PROVIDER=${BILLING_PROVIDER:-stripe}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - EMAIL_MODE=${EMAIL_MODE:-smtp}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - EMAIL_FROM=${EMAIL_FROM:-Report Map Online <soporte@report-map.online>}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-Report Map Online}
+      - DOCUMENT_STORAGE_PATH=/app/storage/documents
+      - FLOOR_PLAN_STORAGE_PATH=/app/storage/floor-plans
+    volumes:
+      - documents_data:/app/storage/documents
+      - floor_plans_data:/app/storage/floor-plans
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-docucore}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-docucore}
+      POSTGRES_DB: ${DB_NAME:-docucore}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-docucore} -d ${DB_NAME:-docucore}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+    name: reportmap_pgdata
+  documents_data:
+    name: reportmap_documents
+  floor_plans_data:
+    name: reportmap_floor_plans

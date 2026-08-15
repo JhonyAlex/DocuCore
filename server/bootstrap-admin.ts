@@ -18,7 +18,35 @@ async function main(): Promise<void> {
   }
   const name = process.env.BOOTSTRAP_ADMIN_NAME?.trim() || 'Administrador inicial'
   const initials = process.env.BOOTSTRAP_ADMIN_INITIALS?.trim() || 'AI'
-  await prisma.user.create({ data: { name, email, passwordHash: await hashPassword(password), role: 'Administradora', initials, color: 'brand' } })
+  const now = new Date()
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        name,
+        email,
+        passwordHash: await hashPassword(password),
+        role: 'Administradora',
+        initials,
+        color: 'brand',
+        emailVerifiedAt: now,
+        isPlatformAdmin: true,
+      },
+    })
+    const workspace = await tx.workspace.create({
+      data: {
+        name: 'Espacio Principal',
+        slug: 'espacio-principal',
+        billingStatus: 'ACTIVE',
+      },
+    })
+    await tx.workspaceMember.create({
+      data: {
+        workspaceId: workspace.id,
+        userId: user.id,
+        role: 'OWNER',
+      },
+    })
+  })
   console.log(`AUTH bootstrap completed for ${email}. Create the first project from the portfolio after login.`)
 }
 

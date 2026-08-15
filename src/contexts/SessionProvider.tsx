@@ -26,7 +26,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <SessionContext.Provider value={{ session, user: session?.user ?? null, authenticated: session !== null, loading, login, logout, refreshSession: load, reload: () => { void load() } }}>
+    <SessionContext.Provider
+      value={{
+        session,
+        user: session?.user ?? null,
+        workspace: session?.workspace ?? null,
+        authenticated: session !== null,
+        loading,
+        login,
+        logout,
+        refreshSession: load,
+        reload: () => { void load() },
+        setSession,
+      }}
+    >
       {children}
     </SessionContext.Provider>
   )

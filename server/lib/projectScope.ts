@@ -1,7 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
-import type { ProjectRole, ProjectStatus } from '@prisma/client'
+import type { ProjectRole, ProjectStatus, Workspace, WorkspaceRole } from '@prisma/client'
 import prisma from './prisma'
 import { authenticatedUserId } from './auth'
+import { evaluateWorkspaceEntitlement } from './workspaceScope'
 
 export function actorIdFromRequest(req: Request): number {
   return authenticatedUserId(req)
@@ -18,8 +19,9 @@ export type ProjectCapability = keyof typeof projectCapabilities
 
 export interface ProjectScope {
   projectId: number
-  project: { id: number; code: string; name: string; status: ProjectStatus; themeKey: string }
+  project: { id: number; workspaceId: number; code: string; name: string; status: ProjectStatus; themeKey: string; workspace: Workspace }
   membership: { id: number; userId: number; role: ProjectRole }
+  workspaceMembership?: { id: number; userId: number; role: WorkspaceRole }
 }
 
 declare module 'express' {
@@ -28,8 +30,8 @@ declare module 'express' {
   }
 }
 
-function scopeError(message: string, status: number): Error & { status: number } {
-  return Object.assign(new Error(message), { status })
+function scopeError(message: string, status: number, code?: string, extra?: Record<string, unknown>): Error & { status: number; code?: string } {
+  return Object.assign(new Error(message), { status, code, ...extra })
 }
 
 export function parseProjectId(value: unknown): number {
@@ -52,24 +54,64 @@ export function projectIdFromRequest(req: Request): number {
 export async function resolveProjectScope(projectId: number, actorId: number): Promise<ProjectScope> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { id: true, code: true, name: true, status: true, themeKey: true },
+    select: { id: true, workspaceId: true, code: true, name: true, status: true, themeKey: true, workspace: true },
   })
   if (!project) throw scopeError('Project not found', 404)
 
-  const membership = await prisma.projectMember.findUnique({
-    where: { projectId_userId: { projectId, userId: actorId } },
-    select: { id: true, userId: true, role: true },
+  const user = await prisma.user.findUnique({
+    where: { id: actorId },
+    select: { id: true, isPlatformAdmin: true },
   })
-  if (!membership) throw scopeError('Project access denied', 403)
-  return { projectId, project, membership }
+
+  const [membership, workspaceMembership] = await Promise.all([
+    prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId: actorId } },
+      select: { id: true, userId: true, role: true },
+    }),
+    prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: project.workspaceId, userId: actorId } },
+      select: { id: true, userId: true, role: true },
+    }),
+  ])
+
+  if (!membership) {
+    if (user?.isPlatformAdmin) {
+      return {
+        projectId,
+        project,
+        membership: { id: 0, userId: actorId, role: 'OWNER' },
+        workspaceMembership: workspaceMembership ?? { id: 0, userId: actorId, role: 'OWNER' },
+      }
+    }
+    throw scopeError('Project access denied', 403)
+  }
+
+  if (!workspaceMembership && !user?.isPlatformAdmin) {
+    throw scopeError('Workspace access denied', 403)
+  }
+
+  return { projectId, project, membership, workspaceMembership: workspaceMembership ?? undefined }
 }
 
 export function requireProjectScope(options: { write?: boolean; capability?: ProjectCapability } = {}): RequestHandler {
-  return async (req: Request, _res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const scope = await resolveProjectScope(projectIdFromRequest(req), actorIdFromRequest(req))
       if (options.capability) requireProjectCapability(scope, options.capability)
-      if (options.write && scope.project.status === 'ARCHIVED') throw scopeError('Archived projects are read-only', 409)
+
+      if (options.write) {
+        const entitlement = evaluateWorkspaceEntitlement(scope.project.workspace)
+        if (!entitlement.isEntitledToWrite) {
+          return res.status(402).json({
+            error: 'La suscripción o período de prueba de tu cuenta no permite operaciones de escritura.',
+            code: entitlement.reason,
+            billingStatus: scope.project.workspace.billingStatus,
+            trialEndsAt: scope.project.workspace.trialEndsAt?.toISOString(),
+          })
+        }
+        if (scope.project.status === 'ARCHIVED') throw scopeError('Archived projects are read-only', 409)
+      }
+
       req.projectScope = scope
       next()
     } catch (error) {
