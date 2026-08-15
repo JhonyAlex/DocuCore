@@ -17,6 +17,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
       DOCUCORE_DB_PORT: "5432"
+      DOCUMENT_STORAGE_PATH: "/tmp/docucore-documents"
+      FLOOR_PLAN_STORAGE_PATH: "/tmp/docucore-floor-plans"
       NODE_ENV: test
       CI: "true"
 

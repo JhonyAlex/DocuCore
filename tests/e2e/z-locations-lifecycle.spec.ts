@@ -9,6 +9,7 @@ type LocationRow = { id: number; name: string; code: string; parentId: number | 
 const e2eEnv = {
   DATABASE_URL: process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${process.env.DOCUCORE_DB_PORT ?? '5436'}/docucore?schema=public`,
   DOCUMENT_STORAGE_PATH: `${process.cwd()}/test-results/e2e-documents`,
+  FLOOR_PLAN_STORAGE_PATH: `${process.cwd()}/test-results/e2e-floor-plans`,
 }
 
 async function createLocation(page: Page, data: { name: string; code: string; parentId?: number | null; projectId?: number; responsibleId?: number }): Promise<{ status: number; body: LocationRow & { message?: string } }> {
