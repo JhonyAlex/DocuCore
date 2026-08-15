@@ -34,7 +34,7 @@ docker compose -f docker-compose.prod.yml stop app
 ### Paso 3: Ejecutar el Script de Restauración
 
 ```bash
-./scripts/restore.sh /backups/20260816_120000
+./scripts/restore.sh /backups/20260816_120000 --confirm
 ```
 
 El script:

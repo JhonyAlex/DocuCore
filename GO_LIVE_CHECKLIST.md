@@ -15,13 +15,13 @@ El software ha sido completamente verificado y blindado bajo el estándar de cal
 - [x] Bloqueo de mutaciones destructivas en cascada con `onDelete: Restrict` en proyectos.
 - [x] Aceptación explícita obligatoria de términos legales con registro de evidencia y traza de auditoría.
 - [x] Probe de preparación `/api/ready` con verificación en vivo de DB, storage, y variables críticas.
-- [x] Copias de seguridad atómicas y restauración íntegra probada con verificación de checksums SHA-256.
+- [x] Stack Docker productivo (`docker-compose.prod.yml`) ejecutado y validado en runtime real: app y db containers healthy, DB aislada internamente sin puertos host, migraciones mediante `prisma migrate deploy`, `/api/health` = 200 y `/api/ready` = 200.
+- [x] Ejecución operacional real de `scripts/backup.sh` y `scripts/restore.sh <dir> --confirm` demostrada sobre stack Docker productivo real aislado con verificación de hash SHA-256 byte a byte de base de datos, documentos y planos tras simular destrucción total.
 - [x] Actualización no destructiva probada desde estado pre-SaaS (`02b1203`) con backfill automático.
 - [x] Despliegue limpio probado desde base de datos vacía con bootstrap idempotente.
-- [x] Rendimiento de alta densidad validado con perfil de 10.000 registros (p50 < 150 ms en todas las consultas).
+- [x] Rendimiento de alta densidad validado con perfil de 10.000 registros (p50 < 120 ms en todas las consultas).
 - [x] Pruebas de humo (`pnpm test:smoke`) 5/5 en verde.
-- [x] Suite completa de tests unitarios/API (254 tests) y visuales Playwright (30 capturas al 0,5%) 100% en verde.
-- [x] Base de datos PostgreSQL aislada internamente sin exponer puertos al host.
+- [x] Suite completa de tests unitarios, API e integración (263 tests en 48 suites), 82 pruebas E2E funcionales y 30 capturas de regresión visual Playwright al 0,5% 100% en verde.
 
 ---
 

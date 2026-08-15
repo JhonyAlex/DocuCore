@@ -14,6 +14,11 @@ jobs:
   validate:
     name: Lint, Typecheck & Tests
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
+      DOCUCORE_DB_PORT: "5432"
+      NODE_ENV: test
+      CI: "true"
 
     services:
       postgres:

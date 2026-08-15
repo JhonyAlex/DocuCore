@@ -9,6 +9,8 @@
 # ==============================================================================
 
 set -euo pipefail
+export MSYS2_ARG_CONV_EXCL="*"
+export MSYS_NO_PATHCONV=1
 
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 TIMESTAMP="$(date +'%Y%m%d_%H%M%S')"
@@ -22,13 +24,22 @@ DB_NAME="${DB_NAME:-docucore}"
 
 echo "[$(date -Iseconds)] Iniciando copia de seguridad en ${TARGET_DIR}..."
 
+# Verificar que los contenedores existen y están en ejecución
+if ! docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    echo "ERROR: El contenedor de base de datos '${DB_CONTAINER}' no está en ejecución." >&2
+    exit 1
+fi
+
+if ! docker ps --format '{{.Names}}' | grep -q "^${APP_CONTAINER}$"; then
+    echo "ERROR: El contenedor de aplicación '${APP_CONTAINER}' no está en ejecución." >&2
+    exit 1
+fi
+
 mkdir -p "${TARGET_DIR}"
 
-# 1. Dump de PostgreSQL
+# 1. Dump de PostgreSQL mediante stream directo
 echo "[$(date -Iseconds)] Exportando base de datos PostgreSQL desde ${DB_CONTAINER}..."
-docker exec "${DB_CONTAINER}" pg_dump -U "${DB_USER}" -F c -b -v -f "/tmp/db_${TIMESTAMP}.dump" "${DB_NAME}"
-docker cp "${DB_CONTAINER}:/tmp/db_${TIMESTAMP}.dump" "${TARGET_DIR}/database.dump"
-docker exec "${DB_CONTAINER}" rm -f "/tmp/db_${TIMESTAMP}.dump"
+docker exec "${DB_CONTAINER}" pg_dump -U "${DB_USER}" -F c -b "${DB_NAME}" > "${TARGET_DIR}/database.dump"
 
 # 2. Copia de volumen de documentos desde el contenedor app
 echo "[$(date -Iseconds)] Exportando archivos de documentos desde ${APP_CONTAINER}..."
