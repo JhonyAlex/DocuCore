@@ -13,9 +13,6 @@ DROP INDEX "Document_name_trgm_idx";
 -- DropIndex
 DROP INDEX "Document_projectId_updatedAt_id_idx";
 
--- AlterTable
-ALTER TABLE "Status" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
 -- CreateTable
 CREATE TABLE "Notification" (
     "id" SERIAL NOT NULL,
@@ -52,9 +49,6 @@ ALTER TABLE "Notification" ADD CONSTRAINT "Notification_projectId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- RenameIndex
-ALTER INDEX "AuditLog_projectId_timestamp_desc_idx" RENAME TO "AuditLog_projectId_timestamp_idx";
 
 -- RenameIndex
 ALTER INDEX "DocumentVersion_documentId_version_desc_idx" RENAME TO "DocumentVersion_documentId_version_idx";
