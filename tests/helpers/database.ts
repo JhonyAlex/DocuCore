@@ -1,7 +1,6 @@
-import { exec, execFile } from 'node:child_process'
+import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 
-const execFileAsync = promisify(execFile)
 const execAsync = promisify(exec)
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker'
