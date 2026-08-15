@@ -5,14 +5,14 @@ import AssetIcon from '@/components/AssetIcon'
 import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RowActionsMenu from '@/components/RowActionsMenu'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 import { useSelection } from '@/hooks/useSelection'
 import { archiveAssetType, createAssetType, fetchConfiguredAssetTypes, updateAssetType, type ApiAssetType, type AssetTypeInput } from '@/lib/api'
 
 export default function AssetTypesConfigView() {
   const navigate = useNavigate()
-  const { session } = useSession()
-  const projectId = session?.project.id ?? 0
+  const { project, projectId } = useProject()
+  if (projectId === null) throw new Error('AssetTypesConfigView requires a project scope')
   const selection = useSelection<number>()
   const [types, setTypes] = useState<ApiAssetType[]>([])
   const [showInactive, setShowInactive] = useState(false)
@@ -26,7 +26,6 @@ export default function AssetTypesConfigView() {
   const [archiveError, setArchiveError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!projectId) return
     setLoading(true)
     setError(null)
     try {
@@ -41,7 +40,6 @@ export default function AssetTypesConfigView() {
   useEffect(() => { void load() }, [load])
 
   const submit = async (input: AssetTypeInput) => {
-    if (!projectId) return
     setSaving(true)
     setFormError(null)
     try {
@@ -57,7 +55,6 @@ export default function AssetTypesConfigView() {
   }
 
   const archive = async () => {
-    if (!projectId) return
     setArchiving(true)
     setArchiveError(null)
     try {
@@ -73,7 +70,6 @@ export default function AssetTypesConfigView() {
   }
 
   const reactivate = async (type: ApiAssetType) => {
-    if (!projectId) return
     setError(null)
     try {
       await updateAssetType(projectId, type.id, { isActive: true })
@@ -86,7 +82,7 @@ export default function AssetTypesConfigView() {
   const activeIds = types.filter((type) => type.isActive !== false).map((type) => type.id)
   return (
     <section className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4"><div><button type="button" onClick={() => navigate('/config')} className="mb-2 text-xs font-medium text-brand-600">← Configuración</button><h1 className="text-2xl font-semibold tracking-tight">Tipos de activo</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Catálogo de activos del proyecto {session?.project.name ?? ''}</p></div><button type="button" onClick={() => { setFormError(null); setFormType(null) }} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Nuevo tipo</button></div>
+      <div className="mb-6 flex items-end justify-between gap-4"><div><button type="button" onClick={() => navigate(`/projects/${projectId}/config`)} className="mb-2 text-xs font-medium text-brand-600">← Configuración</button><h1 className="text-2xl font-semibold tracking-tight">Tipos de activo</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Catálogo de activos del proyecto {project?.name ?? ''}</p></div><button type="button" onClick={() => { setFormError(null); setFormType(null) }} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Nuevo tipo</button></div>
       <div className="mb-4"><label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><input type="checkbox" checked={showInactive} onChange={(event) => { setShowInactive(event.target.checked); selection.clear() }} />Mostrar archivados</label></div>
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}><button type="button" onClick={() => setArchiveIds(selection.selectedIds)} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white">Archivar</button></BulkActionBar>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">

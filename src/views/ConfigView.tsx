@@ -1,9 +1,18 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { configCards } from '@/data/mock'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 import { fetchConfiguredAssetTypes, fetchConfiguredStatuses, fetchDynamicFieldDefinitions, fetchPreventivePlans } from '@/lib/api'
+import type { ConfigCard } from '@/types'
+
+const configCards: ConfigCard[] = [
+  { title: 'Tipos de activo', description: 'Máquinas, extintores, vehículos, documentos…', footer: 'Gestionar tipos →', iconBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600', iconKey: 'box' },
+  { title: 'Campos dinámicos', description: 'Define campos personalizados por tipo de activo.', footer: 'Gestionar campos →', iconBgClass: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600', iconKey: 'lines' },
+  { title: 'Estados', description: 'Activo, fuera de servicio, en revisión, vencido…', footer: 'Gestionar estados →', iconBgClass: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600', iconKey: 'smile' },
+  { title: 'Usuarios y permisos', description: 'Gestiona roles, accesos y responsabilidades.', footer: 'Próxima fase', iconBgClass: 'bg-amber-50 dark:bg-amber-900/30 text-amber-600', iconKey: 'users' },
+  { title: 'Alertas y notificaciones', description: 'Reglas de aviso, correo y canales externos.', footer: 'Por proyecto', iconBgClass: 'bg-red-50 dark:bg-red-900/30 text-red-600', iconKey: 'bell' },
+  { title: 'Integraciones', description: 'API, webhooks, Teams, Slack, n8n…', footer: 'Próximamente', iconBgClass: 'bg-purple-50 dark:bg-purple-900/30 text-purple-600', iconKey: 'grid2', footerClass: 'text-slate-500' },
+]
 
 const configIcons: Record<string, ReactNode> = {
   box: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>,
@@ -16,19 +25,19 @@ const configIcons: Record<string, ReactNode> = {
 
 export default function ConfigView() {
   const navigate = useNavigate()
-  const { session } = useSession()
+  const { projectId } = useProject()
+  if (projectId === null) throw new Error('ConfigView requires a project scope')
   const [dynamicCount, setDynamicCount] = useState<number | null>(null)
   const [assetTypeCount, setAssetTypeCount] = useState<number | null>(null)
   const [statusCount, setStatusCount] = useState<number | null>(null)
   const [preventivePlanCount, setPreventivePlanCount] = useState<number | null>(null)
 
   useEffect(() => {
-    if (!session) return
     Promise.all([
-      fetchDynamicFieldDefinitions(session.project.id, { includeInactive: true }),
-      fetchConfiguredAssetTypes(session.project.id, true),
-      fetchConfiguredStatuses(session.project.id, true),
-      fetchPreventivePlans(session.project.id, { includeInactive: true }),
+      fetchDynamicFieldDefinitions(projectId, { includeInactive: true }),
+      fetchConfiguredAssetTypes(projectId, true),
+      fetchConfiguredStatuses(projectId, true),
+      fetchPreventivePlans(projectId, { includeInactive: true }),
     ]).then(([fields, types, statuses, plans]) => {
       setDynamicCount(fields.filter((field) => field.isActive).length)
       setAssetTypeCount(types.filter((type) => type.isActive !== false).length)
@@ -40,7 +49,7 @@ export default function ConfigView() {
       setStatusCount(null)
       setPreventivePlanCount(null)
     })
-  }, [session])
+  }, [projectId])
 
   return (
     <section className="fade-in">
@@ -53,8 +62,8 @@ export default function ConfigView() {
         <div
           role="button"
           tabIndex={0}
-          onClick={() => navigate('/config/preventives')}
-          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') navigate('/config/preventives') }}
+          onClick={() => navigate(`/projects/${projectId}/config/preventives`)}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') navigate(`/projects/${projectId}/config/preventives`) }}
           className="cursor-pointer rounded-xl border border-slate-200 bg-white p-5 transition hover:border-brand-500/40 dark:border-slate-800 dark:bg-slate-900"
         >
           <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30">✓</div>
@@ -68,9 +77,9 @@ export default function ConfigView() {
         {configCards.map((card) => {
           const isInteractive = card.title === 'Campos dinámicos' || card.title === 'Tipos de activo' || card.title === 'Estados'
           const handleNavigate = () => {
-            if (card.title === 'Campos dinámicos') navigate('/config/dynamic-fields')
-            if (card.title === 'Tipos de activo') navigate('/config/asset-types')
-            if (card.title === 'Estados') navigate('/config/statuses')
+            if (card.title === 'Campos dinámicos') navigate(`/projects/${projectId}/config/dynamic-fields`)
+            if (card.title === 'Tipos de activo') navigate(`/projects/${projectId}/config/asset-types`)
+            if (card.title === 'Estados') navigate(`/projects/${projectId}/config/statuses`)
           }
 
           return (

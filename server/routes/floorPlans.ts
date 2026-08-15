@@ -9,8 +9,9 @@ import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE, MAX_MARKER_PAGE_SIZE, pageLimit } from '../lib/performance'
 import { nextAssetEventsById } from '../lib/nextAssetEvents'
 import type { DerivedAssetEvent } from '../lib/assetEvents'
+import { requireAssetInProject, requireLocationInProject, scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
+const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -86,22 +87,18 @@ function serializePlanList(plan: PlanListItem) {
 
 function uploadFile(req: Request, res: Response): Promise<void> { return new Promise((resolve, reject) => upload.single('file')(req, res, (error) => error ? reject(error) : resolve())) }
 
-async function getPlan(planId: number): Promise<PlanWithCurrent> {
-  const plan = await prisma.floorPlan.findUnique({ where: { id: planId }, include: planInclude })
+async function getPlan(planId: number, projectId: number): Promise<PlanWithCurrent> {
+  const plan = await prisma.floorPlan.findFirst({ where: { id: planId, projectId }, include: planInclude })
   if (!plan) throw httpError(404, 'Floor plan not found')
   return plan
 }
 
 async function assertLocation(projectId: number, locationId: number): Promise<void> {
-  const location = await prisma.location.findUnique({ where: { id: locationId }, select: { projectId: true } })
-  if (!location) throw httpError(404, 'Location not found')
-  if (location.projectId !== projectId) throw httpError(400, 'Floor plan location must belong to the project')
+  await requireLocationInProject(locationId, projectId)
 }
 
 async function assertAssetPlacement(projectId: number, planLocationId: number, assetId: number): Promise<void> {
-  const asset = await prisma.asset.findFirst({ where: { id: assetId, deletedAt: null }, select: { projectId: true, locationId: true } })
-  if (!asset) throw httpError(404, 'Asset not found')
-  if (asset.projectId !== projectId) throw httpError(400, 'Asset must belong to the floor plan project')
+  const asset = await requireAssetInProject(assetId, projectId)
   if (await isLocationDescendantOf(prisma, asset.locationId, planLocationId)) return
   throw httpError(400, 'Asset location must be the floor plan location or a descendant')
 }
@@ -128,7 +125,9 @@ async function assertMoveAllowed(plan: PlanWithCurrent, projectId: number, locat
 
 router.get('/', asyncHandler(async (req, res) => {
   const query = floorPlanListQuerySchema.parse(req.query)
-  const where = { projectId: query.projectId, locationId: query.locationId }
+  const projectId = scopedProjectId(req)
+  if (query.projectId !== undefined && query.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+  const where = { projectId, locationId: query.locationId }
   const [plans, total] = await prisma.$transaction([
     prisma.floorPlan.findMany({ where, include: planListInclude, orderBy: [{ locationId: 'asc' }, { name: 'asc' }], take: query.limit }),
     prisma.floorPlan.count({ where }),
@@ -138,7 +137,7 @@ router.get('/', asyncHandler(async (req, res) => {
 
 router.get('/:id/assets', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
-  const plan = await getPlan(planId)
+  const plan = await getPlan(planId, scopedProjectId(req))
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
   const limit = pageLimit(req.query.limit, MAX_AUTOCOMPLETE_SIZE, MAX_AUTOCOMPLETE_SIZE)
   const ids = await prisma.$queryRaw<Array<{ id: number }>>(Prisma.sql`
@@ -157,7 +156,7 @@ router.get('/:id/assets', asyncHandler(async (req, res) => {
     LIMIT ${limit}
   `)
   const orderedIds = ids.map((row) => row.id)
-  const rows = orderedIds.length === 0 ? [] : await prisma.asset.findMany({ where: { id: { in: orderedIds } }, select: floorPlanAssetSelect })
+  const rows = orderedIds.length === 0 ? [] : await prisma.asset.findMany({ where: { id: { in: orderedIds }, projectId: plan.projectId }, select: floorPlanAssetSelect })
   const byId = new Map(rows.map((asset) => [asset.id, asset]))
   const assets = orderedIds.flatMap((assetId) => {
     const asset = byId.get(assetId)
@@ -171,7 +170,7 @@ router.get('/:id/assets', asyncHandler(async (req, res) => {
 // location subtree.
 router.get('/:id/facets', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
-  const plan = await prisma.floorPlan.findUnique({ where: { id: planId }, select: { projectId: true, locationId: true } })
+  const plan = await prisma.floorPlan.findFirst({ where: { id: planId, projectId: scopedProjectId(req) }, select: { projectId: true, locationId: true } })
   if (!plan) return res.status(404).json({ error: 'Floor plan not found' })
   const types = await prisma.$queryRaw<Array<{ typeId: number; name: string; iconKey: string; count: bigint }>>(Prisma.sql`
     WITH RECURSIVE subtree AS (
@@ -198,7 +197,7 @@ router.get('/:id/markers', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
   const page = pageLimit(req.query.page, 1, 1_000_000)
   const limit = pageLimit(req.query.limit, MAX_MARKER_PAGE_SIZE, MAX_MARKER_PAGE_SIZE)
-  const plan = await prisma.floorPlan.findUnique({ where: { id: planId }, select: { id: true } })
+  const plan = await prisma.floorPlan.findFirst({ where: { id: planId, projectId: scopedProjectId(req) }, select: { id: true } })
   if (!plan) return res.status(404).json({ error: 'Floor plan not found' })
   const [markers, total] = await prisma.$transaction([
     prisma.floorPlanMarker.findMany({ where: { floorPlanId: planId }, orderBy: { id: 'asc' }, skip: (page - 1) * limit, take: limit, include: { asset: { select: floorPlanAssetSelect } } }),
@@ -212,13 +211,15 @@ router.post('/', asyncHandler(async (req, res) => {
   await uploadFile(req, res)
   if (!req.file) return res.status(400).json({ error: 'A floor plan image file is required' })
   const input = createFloorPlanSchema.parse(req.body)
-  await assertLocation(input.projectId, input.locationId)
+  const projectId = scopedProjectId(req)
+  if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+  await assertLocation(projectId, input.locationId)
   const stored = await storeFloorPlan(req.file)
   try {
     const plan = await prisma.$transaction(async (tx) => {
-      const created = await tx.floorPlan.create({ data: { name: input.name, projectId: input.projectId, locationId: input.locationId } })
+      const created = await tx.floorPlan.create({ data: { name: input.name, projectId, locationId: input.locationId } })
       await tx.floorPlanVersion.create({ data: { floorPlanId: created.id, version: 1, originalName: req.file!.originalname, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, ...stored } })
-      await tx.auditLog.create({ data: { projectId: input.projectId, userId: ACTOR_USER_ID, action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
+      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: created.id }, include: planInclude })
     })
     res.status(201).json(await serializePlan(plan))
@@ -227,11 +228,12 @@ router.post('/', asyncHandler(async (req, res) => {
 
 router.patch('/:id', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
-  const input = updateFloorPlanSchema.parse(req.body); const plan = await getPlan(planId)
-  const projectId = input.projectId ?? plan.projectId; const locationId = input.locationId ?? plan.locationId
+  const input = updateFloorPlanSchema.parse(req.body); const projectId = scopedProjectId(req); const plan = await getPlan(planId, projectId)
+  if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+  const locationId = input.locationId ?? plan.locationId
   await assertMoveAllowed(plan, projectId, locationId)
   const updated = await prisma.$transaction(async (tx) => {
-    const next = await tx.floorPlan.update({ where: { id: planId }, data: { name: input.name, projectId, locationId }, include: planInclude })
+    const next = await tx.floorPlan.update({ where: { id: planId }, data: { name: input.name, locationId }, include: planInclude })
     await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Plano actualizado', entityId: String(planId), detail: `Plano ${plan.name} actualizado` } })
     return next
   })
@@ -241,7 +243,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 router.post('/:id/versions', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
   await uploadFile(req, res); if (!req.file) return res.status(400).json({ error: 'A floor plan image file is required' })
-  const plan = await getPlan(planId); const stored = await storeFloorPlan(req.file)
+  const plan = await getPlan(planId, scopedProjectId(req)); const stored = await storeFloorPlan(req.file)
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const nextVersion = (versionOf(plan) ?? 0) + 1
@@ -255,7 +257,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
 
 router.post('/:id/markers', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
-  const input = createFloorPlanMarkerSchema.parse(req.body); const plan = await getPlan(planId)
+  const input = createFloorPlanMarkerSchema.parse(req.body); const plan = await getPlan(planId, scopedProjectId(req))
   await assertAssetPlacement(plan.projectId, plan.locationId, input.assetId)
   const marker = await prisma.$transaction(async (tx) => {
     const created = await tx.floorPlanMarker.create({ data: { floorPlanId: planId, ...input }, include: { asset: { select: floorPlanAssetSelect } } })
@@ -268,7 +270,7 @@ router.post('/:id/markers', asyncHandler(async (req, res) => {
 router.patch('/:id/markers/:markerId', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); const markerId = id(req.params.markerId); if (!planId || !markerId) return res.status(400).json({ error: 'Invalid id' })
   const input = updateFloorPlanMarkerSchema.parse(req.body)
-  const marker = await prisma.floorPlanMarker.findFirst({ where: { id: markerId, floorPlanId: planId }, include: { asset: { select: floorPlanAssetSelect }, floorPlan: { select: { projectId: true } } } })
+  const marker = await prisma.floorPlanMarker.findFirst({ where: { id: markerId, floorPlanId: planId, floorPlan: { projectId: scopedProjectId(req) } }, include: { asset: { select: floorPlanAssetSelect }, floorPlan: { select: { projectId: true } } } })
   if (!marker) return res.status(404).json({ error: 'Floor plan marker not found' })
   const updated = await prisma.$transaction(async (tx) => {
     const next = await tx.floorPlanMarker.update({ where: { id: markerId }, data: input, include: { asset: { select: floorPlanAssetSelect } } })
@@ -280,47 +282,51 @@ router.patch('/:id/markers/:markerId', asyncHandler(async (req, res) => {
 
 router.delete('/:id/markers/:markerId', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); const markerId = id(req.params.markerId); if (!planId || !markerId) return res.status(400).json({ error: 'Invalid id' })
-  const plan = await getPlan(planId)
-  const marker = await prisma.floorPlanMarker.findFirst({ where: { id: markerId, floorPlanId: planId }, include: { asset: { select: { code: true } } } })
+  const plan = await getPlan(planId, scopedProjectId(req))
+  const marker = await prisma.floorPlanMarker.findFirst({ where: { id: markerId, floorPlanId: planId, floorPlan: { projectId: plan.projectId } }, include: { asset: { select: { code: true } } } })
   if (!marker) return res.status(404).json({ error: 'Floor plan marker not found' })
   await prisma.$transaction([prisma.floorPlanMarker.delete({ where: { id: markerId } }), prisma.auditLog.create({ data: { projectId: plan.projectId, userId: ACTOR_USER_ID, action: 'Activo retirado del plano', entityId: marker.asset.code, detail: `Plano #${planId}` } })])
   res.status(204).end()
 }))
 
 router.get('/:id/current', asyncHandler(async (req, res) => {
-  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId)
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId, scopedProjectId(req))
   if (!plan.versions[0]) return res.status(404).json({ error: 'Floor plan version not found' })
   res.json(serializeVersion(plan.versions[0]))
 }))
 
 router.get('/:id/current/image', asyncHandler(async (req, res) => {
-  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId); const version = plan.versions[0]
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId, scopedProjectId(req)); const version = plan.versions[0]
   if (!version) return res.status(404).json({ error: 'Floor plan version not found' })
   const bytes = await readFloorPlanOriginal(version.storageKey); res.set({ 'Content-Type': version.mimeType, 'Content-Length': String(bytes.length), 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(version.originalName)}`, 'Cache-Control': 'private, max-age=3600' }).send(bytes)
 }))
 
 router.get('/:id/versions/:version/dzi', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); const versionNumber = id(req.params.version); if (!planId || !versionNumber) return res.status(400).json({ error: 'Invalid id' })
+  const projectId = scopedProjectId(req)
+  await getPlan(planId, projectId)
   const version = await prisma.floorPlanVersion.findUnique({ where: { floorPlanId_version: { floorPlanId: planId, version: versionNumber } } }); if (!version) return res.status(404).json({ error: 'Floor plan version not found' })
-  const dzi = await readFloorPlanDzi(version.dziKey); const url = `/api/floor-plans/${planId}/versions/${versionNumber}/tiles/`
+  const dzi = await readFloorPlanDzi(version.dziKey); const url = `/api/projects/${projectId}/floor-plans/${planId}/versions/${versionNumber}/tiles/`
   const withTileUrl = /Url="[^"]*"/.test(dzi) ? dzi.replace(/Url="[^"]*"/, `Url="${url}"`) : dzi.replace('<Image ', `<Image Url="${url}" `)
   res.set('Cache-Control', 'private, max-age=3600').type('application/xml').send(withTileUrl)
 }))
 
 router.get('/:id/versions/:version/tiles/:level/:tile', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); const versionNumber = id(req.params.version); if (!planId || !versionNumber) return res.status(400).json({ error: 'Invalid id' })
+  await getPlan(planId, scopedProjectId(req))
   const version = await prisma.floorPlanVersion.findUnique({ where: { floorPlanId_version: { floorPlanId: planId, version: versionNumber } } }); if (!version) return res.status(404).json({ error: 'Floor plan version not found' })
   const bytes = await readFloorPlanTile(version.dziKey, req.params.level, req.params.tile); const extension = req.params.tile.split('.').pop()?.toLowerCase(); res.set('Cache-Control', 'private, max-age=3600').type(extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg').send(bytes)
 }))
 
 router.get('/:id', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' })
-  const [plan, markerTotal] = await Promise.all([getPlan(planId), prisma.floorPlanMarker.count({ where: { floorPlanId: planId } })])
+  const projectId = scopedProjectId(req)
+  const [plan, markerTotal] = await Promise.all([getPlan(planId, projectId), prisma.floorPlanMarker.count({ where: { floorPlanId: planId, floorPlan: { projectId } } })])
   res.json(await serializePlan(plan, markerTotal))
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId)
+  const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId, scopedProjectId(req))
   const versions = await prisma.floorPlanVersion.findMany({ where: { floorPlanId: planId }, select: { storageKey: true, dziKey: true } })
   await prisma.$transaction([prisma.floorPlan.delete({ where: { id: planId } }), prisma.auditLog.create({ data: { projectId: plan.projectId, userId: ACTOR_USER_ID, action: 'Plano eliminado', entityId: String(planId), detail: plan.name } })])
   await Promise.all(versions.map(removeFloorPlanFiles)); res.status(204).end()

@@ -1,13 +1,13 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
 let createdEventId: number | undefined
 
-function api(path: string, init: RequestInit = {}) { return fetch(`${baseUrl}${path}`, init) }
+function api(path: string, init: RequestInit = {}) { return fetch(`${baseUrl}${projectApiPath(path, init)}`, init) }
 
 describe('calendar API', () => {
   beforeAll(async () => {
@@ -83,6 +83,6 @@ describe('calendar API', () => {
 
   it('rejects a manual event whose asset is outside the active project', async () => {
     const response = await api('/api/calendar/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Activo inexistente', date: '2026-07-15', category: 'review', assetId: 999_999, projectId: 1 }) })
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(404)
   })
 })

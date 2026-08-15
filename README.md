@@ -21,6 +21,12 @@ DocuCore es una plataforma de gestión documental y activos industriales. La int
 
 El cliente de desarrollo usa Vite en `http://localhost:5173` y envía `/api` a Express en el puerto `3001`.
 
+## Ámbito multi-proyecto
+
+Las superficies operativas usan rutas canónicas como `/projects/:projectId/assets` y la API equivalente `/api/projects/:projectId/assets`. El proyecto de la URL es autoritativo: no existe proyecto actual implícito, ni endpoint operativo global con un fallback silencioso. El selector del Sidebar conserva la sección al cambiar de proyecto.
+
+Los proyectos archivados siguen siendo consultables, pero no aceptan escrituras ordinarias hasta reactivarse. La cartera usa contadores agregados en PostgreSQL, y los códigos/números de serie de activos y los códigos de ubicación son únicos dentro de cada proyecto. Consulta [PROJECT_SCOPE.md](./docs/architecture/PROJECT_SCOPE.md) para el contrato, la clonación de configuración y los límites de carga.
+
 ## Base de datos
 
 El servicio Docker de desarrollo publica PostgreSQL en el puerto `5435`, no en `5432`, para no interferir con otros proyectos locales.
@@ -37,7 +43,7 @@ pnpm db:seed
 
 `Document` es el registro lógico y `DocumentVersion` conserva cada fichero de forma inmutable. La versión con el número más alto es la actual: de ella se calculan el estado (`Vigente`, `Por vencer` o `Vencido`) y el vencimiento que alimenta los próximos eventos del activo. Los documentos sin vencimiento no generan eventos. Un documento puede estar asociado a **varios activos** (relación N-N `DocumentItem`); la ficha de cada activo refleja los documentos compartidos y sus eventos derivados.
 
-La API expone listado paginado y filtrable, KPIs, detalle con historial, subida, nueva versión, edición de metadatos/relación, descarga actual o histórica y eliminación bajo `/api/documents`. Las subidas son `multipart/form-data`, aceptan PDF, XLSX, XLS y TXT, y se limitan a 10 MB. Los nombres internos se generan con UUID; nunca se usa el nombre proporcionado para construir una ruta.
+La API expone listado paginado y filtrable, KPIs, detalle con historial, subida, nueva versión, edición de metadatos/relación, descarga actual o histórica y eliminación bajo `/api/projects/:projectId/documents`. Las subidas son `multipart/form-data`, aceptan PDF, XLSX, XLS y TXT, y se limitan a 10 MB. Los nombres internos se generan con UUID; nunca se usa el nombre proporcionado para construir una ruta.
 
 ## Comandos
 

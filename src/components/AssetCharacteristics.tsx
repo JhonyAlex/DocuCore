@@ -34,7 +34,7 @@ export default function AssetCharacteristics({ asset, onChanged }: AssetCharacte
     setCompleteBusy(true)
     setCompleteError(null)
     try {
-      const updated = await completeAssetDynamicDate(asset.id, completing.definitionId, performedDate)
+      const updated = await completeAssetDynamicDate(asset.projectId, asset.id, completing.definitionId, performedDate)
       onChanged(updated)
       setCompleting(null)
     } catch {

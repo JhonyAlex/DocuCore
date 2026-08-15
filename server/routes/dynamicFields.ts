@@ -2,15 +2,10 @@ import { Router } from 'express'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { definitionInclude, dynamicFieldDefinitionSchema, dynamicFieldDefinitionUpdateSchema, fieldKey, serializeDefinition } from '../lib/dynamicFields'
+import { scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
-
-function projectIdOf(value: string | undefined): number {
-  const id = Number(value)
-  if (!Number.isInteger(id) || id <= 0) throw Object.assign(new Error('Invalid project id'), { status: 400 })
-  return id
-}
 
 async function uniqueKey(projectId: number, name: string, excludeId?: number): Promise<string> {
   const base = fieldKey(name)
@@ -21,7 +16,7 @@ async function uniqueKey(projectId: number, name: string, excludeId?: number): P
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const assetTypeId = req.query.assetTypeId ? Number(req.query.assetTypeId) : null
   const includeInactive = req.query.includeInactive === 'true'
   const definitions = await prisma.dynamicFieldDefinition.findMany({
@@ -33,7 +28,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const input = dynamicFieldDefinitionSchema.parse(req.body)
   const types = await prisma.assetType.count({ where: { id: { in: input.assetTypeIds }, projectId, isActive: true } })
   if (types !== new Set(input.assetTypeIds).size) return res.status(400).json({ error: 'Unknown asset type' })
@@ -57,7 +52,7 @@ router.post('/', asyncHandler(async (req, res) => {
 }))
 
 router.patch('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
   const input = dynamicFieldDefinitionUpdateSchema.parse(req.body)
@@ -99,7 +94,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   const definition = await prisma.dynamicFieldDefinition.findFirst({ where: { id, projectId } })
   if (!definition) return res.status(404).json({ error: 'Not found' })

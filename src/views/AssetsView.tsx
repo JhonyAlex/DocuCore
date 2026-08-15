@@ -15,6 +15,7 @@ import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
 import { useAssetCreateRequest } from '@/contexts/AssetCreateContext'
+import { useProject } from '@/contexts/ProjectContext'
 
 const LIMIT = 6
 
@@ -28,6 +29,8 @@ export default function AssetsView() {
   const [searchParams] = useSearchParams()
   const { createRequested, clearCreateRequest } = useAssetCreateRequest()
   const { session, reload: reloadSession } = useSession()
+  const { project, projectId, refresh: refreshProject } = useProject()
+  if (projectId === null) throw new Error('AssetsView requires a project scope')
   const selection = useSelection<number>()
   const [selectedAsset, setSelectedAsset] = useState<ApiAsset | null>(null)
   const assetDetailRequestRef = useRef(0)
@@ -77,7 +80,7 @@ export default function AssetsView() {
         statusId: trashMode ? undefined : (filters.statusId ?? undefined),
         locationId: trashMode ? undefined : (filters.locationId ?? undefined),
       }
-      const res = await fetchAssets(params)
+      const res = await fetchAssets(projectId, params)
       if (requestId !== latestLoadRequest.current) return
       setAssets(res.data)
       // List rows are deliberately light DTOs. Keep an already loaded detail
@@ -91,16 +94,16 @@ export default function AssetsView() {
     } finally {
       if (requestId === latestLoadRequest.current) setLoading(false)
     }
-  }, [page, trashMode, trashSearch, filters])
+  }, [page, projectId, trashMode, trashSearch, filters])
 
   const refreshTrashCount = useCallback(async () => {
     try {
-      const res = await fetchAssets({ limit: 1, trashed: true })
+      const res = await fetchAssets(projectId, { limit: 1, trashed: true })
       setTrashCount(res.total)
     } catch {
       setTrashCount(0)
     }
-  }, [])
+  }, [projectId])
 
   useEffect(() => {
     void loadAssets()
@@ -112,7 +115,7 @@ export default function AssetsView() {
 
   useEffect(() => {
     let active = true
-    Promise.all([fetchAssetTypes(), fetchStatuses(), fetchLocations(), fetchUsers()])
+    Promise.all([fetchAssetTypes(projectId), fetchStatuses(projectId), fetchLocations(projectId), fetchUsers(projectId)])
       .then(([nextTypes, nextStatuses, nextLocations, nextUsers]) => {
         if (!active) return
         setTypes(nextTypes)
@@ -126,7 +129,7 @@ export default function AssetsView() {
     return () => {
       active = false
     }
-  }, [])
+  }, [projectId])
 
   useEffect(() => {
     if (!createRequested) return
@@ -154,8 +157,8 @@ export default function AssetsView() {
   useEffect(() => {
     if (!Number.isInteger(deepLinkedAssetId) || deepLinkedAssetId <= 0 || openedDeepLinkRef.current === deepLinkedAssetId) return
     openedDeepLinkRef.current = deepLinkedAssetId
-    void fetchAsset(deepLinkedAssetId).then(setSelectedAsset).catch(() => { openedDeepLinkRef.current = null })
-  }, [deepLinkedAssetId])
+    void fetchAsset(projectId, deepLinkedAssetId).then(setSelectedAsset).catch(() => { openedDeepLinkRef.current = null })
+  }, [deepLinkedAssetId, projectId])
 
   // Limpiar selección al cambiar filtros, entrar/salir papelera o cambiar de página.
   const handleFilterChange = (next: AssetFilters) => {
@@ -188,9 +191,9 @@ export default function AssetsView() {
     try {
       if (formMode === 'edit') {
         if (!selectedAsset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
-        saved = await updateAsset(selectedAsset.id, values)
+        saved = await updateAsset(projectId, selectedAsset.id, values)
       } else {
-        saved = await createAsset(values)
+        saved = await createAsset(projectId, values)
         if (formMode === 'duplicate') setSelectedAsset(saved)
       }
     } catch (writeError) {
@@ -198,7 +201,7 @@ export default function AssetsView() {
     }
     if (imageFile) {
       try {
-        saved = await uploadAssetImage(saved.id, imageFile)
+        saved = await uploadAssetImage(projectId, saved.id, imageFile)
       } catch {
         throw new Error(formMode === 'edit'
           ? 'El activo se actualizó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.'
@@ -210,6 +213,7 @@ export default function AssetsView() {
     if (formMode === 'edit' || formMode === 'duplicate') setSelectedAsset(saved)
     await loadAssets()
     reloadSession()
+    refreshProject()
     setFormMode(null)
   }
 
@@ -224,8 +228,8 @@ export default function AssetsView() {
   // en el proyecto del formulario y refresca el catálogo para que quede seleccionada.
   const createLocationFromAssetForm = async (locationValues: LocationFormValues): Promise<ApiLocation> => {
     try {
-      const created = await createLocation({ ...locationValues, projectId: formAsset?.projectId ?? projectId })
-      const nextLocations = await fetchLocations()
+      const created = await createLocation(projectId, locationValues)
+      const nextLocations = await fetchLocations(projectId)
       setLocations(nextLocations.locations)
       return created
     } catch (writeError) {
@@ -236,7 +240,7 @@ export default function AssetsView() {
   const handleStatusChange = async (statusId: number) => {
     if (!selectedAsset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
     try {
-      const updated = await changeAssetStatus(selectedAsset.id, statusId)
+      const updated = await changeAssetStatus(projectId, selectedAsset.id, statusId)
       setSelectedAsset(updated)
       await loadAssets()
     } catch (writeError) {
@@ -254,10 +258,11 @@ export default function AssetsView() {
   // ITEM-05: eliminar mueve a la papelera; se refresca lista, contador y sesión.
   const handleDelete = async (asset: { id: number }) => {
     try {
-      await deleteAsset(asset.id)
+      await deleteAsset(projectId, asset.id)
       if (selectedAsset?.id === asset.id) setSelectedAsset(null)
       await Promise.all([loadAssets(), refreshTrashCount()])
       reloadSession()
+      refreshProject()
     } catch (writeError) {
       throw new Error(toUserDeleteError(writeError))
     }
@@ -265,9 +270,10 @@ export default function AssetsView() {
 
   const handleRestore = async (asset: { id: number }) => {
     try {
-      await restoreAsset(asset.id)
+      await restoreAsset(projectId, asset.id)
       await Promise.all([loadAssets(), refreshTrashCount()])
       reloadSession()
+      refreshProject()
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
@@ -275,10 +281,11 @@ export default function AssetsView() {
 
   const handleBulkRestore = async () => {
     try {
-      await Promise.all(selection.selectedIds.map((id) => restoreAsset(id)))
+      await Promise.all(selection.selectedIds.map((id) => restoreAsset(projectId, id)))
       selection.clear()
       await Promise.all([loadAssets(), refreshTrashCount()])
       reloadSession()
+      refreshProject()
     } catch (writeError) {
       setError(toUserError(writeError))
     }
@@ -294,13 +301,13 @@ export default function AssetsView() {
   const refreshSelectedAsset = async () => {
     await loadAssets()
     if (!selectedAsset) return
-    const refreshed = await fetchAsset(selectedAsset.id)
+    const refreshed = await fetchAsset(projectId, selectedAsset.id)
     setSelectedAsset(refreshed)
   }
 
   const openAssetDetail = (assetId: number, afterLoad?: () => void) => {
     const request = ++assetDetailRequestRef.current
-    void fetchAsset(assetId).then((asset) => {
+    void fetchAsset(projectId, assetId).then((asset) => {
       if (request !== assetDetailRequestRef.current) return
       setSelectedAsset(asset)
       afterLoad?.()
@@ -323,11 +330,14 @@ export default function AssetsView() {
     setRemovalError(null)
     setRemoving(true)
     try {
-      await Promise.all(target.ids.map((id) => target.kind === 'purge' ? purgeAsset(id) : deleteAsset(id)))
+      await Promise.all(target.ids.map((id) => target.kind === 'purge' ? purgeAsset(projectId, id) : deleteAsset(projectId, id)))
       selection.clear()
       setRemovalTarget(null)
       await Promise.all([loadAssets(), refreshTrashCount()])
-      if (target.kind === 'trash') reloadSession()
+      if (target.kind === 'trash') {
+        reloadSession()
+        refreshProject()
+      }
     } catch (writeError) {
       setRemovalError(target.kind === 'purge'
         ? 'No se pudo eliminar definitivamente. Inténtalo de nuevo.'
@@ -352,7 +362,6 @@ export default function AssetsView() {
 
   const pagination: Pagination = { page, totalPages, total, limit: LIMIT }
   const displayedAssets: Asset[] = assets.map(mapApiAssetToDisplay)
-  const projectId = session?.project.id ?? 0
   const formAsset = formMode === 'edit' || formMode === 'duplicate' ? selectedAsset : null
   const responsibleId = formAsset?.responsibleId ?? session?.user.id ?? 0
   const responsibleName = formAsset?.responsible?.name ?? session?.user.name ?? ''
@@ -425,7 +434,7 @@ export default function AssetsView() {
         onRetry={() => void loadAssets()}
       />
       <AssetModal asset={selectedAsset} statuses={statuses} initialPreventiveExecutionId={selectedAsset?.id === deepLinkedAssetId && Number.isInteger(deepLinkedPreventiveExecutionId) && deepLinkedPreventiveExecutionId > 0 ? deepLinkedPreventiveExecutionId : null} onClose={() => setSelectedAsset(null)} onEdit={() => setFormMode('edit')} onChangeStatus={handleStatusChange} onDelete={handleDelete} onDocumentsChanged={refreshSelectedAsset} onImageChanged={handleImageChanged} />
-      {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={session?.project.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
+      {formMode && <AssetFormModal mode={formMode} asset={formAsset} types={types} statuses={statuses} locations={locations} projectName={project?.name ?? ''} responsibleName={responsibleName} projectId={formAsset?.projectId ?? projectId} responsibleId={responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={optionsError} onClose={() => setFormMode(null)} onSubmit={saveAsset} />}
       <ConfirmDialog
         open={removalTarget !== null}
         title={removalTarget?.kind === 'purge' ? 'Eliminar definitivamente' : 'Eliminar activo'}

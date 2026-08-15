@@ -5,11 +5,11 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { createLocationSchema, updateLocationSchema } from '../lib/validate'
 import { descendantLocationIds } from '../lib/locationTree'
 import { LOCATION_PREVIEW_SIZE, pageLimit } from '../lib/performance'
+import { scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
+const router: Router = Router({ mergeParams: true })
 
 const ACTOR_USER_ID = 1
-const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
 const BOOTSTRAP_BRANCH_SIZE = 100
 const BOOTSTRAP_DEPTH = 12
 
@@ -75,16 +75,14 @@ function toNumberId(value: string | undefined): number | null {
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const project = await prisma.project.findUniqueOrThrow({
-      where: { code: CURRENT_PROJECT_CODE },
-      select: { id: true, code: true, name: true, assetCount: true },
-    })
+    const projectId = scopedProjectId(req)
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { id: true, code: true, name: true } })
     const hasParentQuery = typeof req.query.parentId === 'string'
     const parentId = req.query.parentId === 'root' ? null : hasParentQuery ? toNumberId(req.query.parentId as string) : undefined
     if (hasParentQuery && parentId === null && req.query.parentId !== 'root') return res.status(400).json({ error: 'Invalid parentId' })
     const limit = pageLimit(req.query.limit, 100, 100)
     const locations = await prisma.location.findMany({
-      where: { projectId: project.id, parentId: hasParentQuery ? parentId : undefined },
+      where: { projectId, parentId: hasParentQuery ? parentId : undefined },
       include: locationInclude,
       orderBy: { id: 'asc' },
       // Compatibility callers without `parentId` receive a bounded catalogue;
@@ -99,15 +97,13 @@ router.get(
 // siblings along the first actionable leaf. It avoids both an eager tree and
 // a client-side walk over every location merely to open the initial branch.
 router.get('/bootstrap', asyncHandler(async (req, res) => {
-  const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
-  const project = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
-    ? await prisma.project.findUniqueOrThrow({ where: { id: requestedProjectId! }, select: { id: true, code: true, name: true, assetCount: true } })
-    : await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true, code: true, name: true, assetCount: true } })
+  const projectId = scopedProjectId(req)
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { id: true, code: true, name: true } })
   const rows = await prisma.$queryRaw<Array<{ id: number; selectedId: number | null; openId: number | null }>>(Prisma.sql`
     WITH RECURSIVE target AS (
       SELECT location.id, location."parentId"
       FROM "Location" location
-      WHERE location."projectId" = ${project.id}
+      WHERE location."projectId" = ${projectId}
       ORDER BY
         CASE WHEN EXISTS (SELECT 1 FROM "Asset" asset WHERE asset."locationId" = location.id AND asset."deletedAt" IS NULL) THEN 0 ELSE 1 END,
         CASE WHEN EXISTS (SELECT 1 FROM "Location" child WHERE child."parentId" = location.id) THEN 1 ELSE 0 END,
@@ -126,7 +122,7 @@ router.get('/bootstrap', asyncHandler(async (req, res) => {
       SELECT location.id, location."parentId",
         ROW_NUMBER() OVER (PARTITION BY location."parentId" ORDER BY location.id ASC) AS position
       FROM "Location" location
-      WHERE location."projectId" = ${project.id}
+      WHERE location."projectId" = ${projectId}
         AND (location."parentId" IS NULL OR location."parentId" IN (SELECT id FROM path))
     )
     SELECT requested.id,
@@ -137,7 +133,7 @@ router.get('/bootstrap', asyncHandler(async (req, res) => {
     ORDER BY requested."parentId" NULLS FIRST, requested.id ASC
   `)
   const orderedIds = rows.map((row) => row.id)
-  const locations = orderedIds.length === 0 ? [] : await prisma.location.findMany({ where: { id: { in: orderedIds } }, include: locationInclude })
+  const locations = orderedIds.length === 0 ? [] : await prisma.location.findMany({ where: { id: { in: orderedIds }, projectId }, include: locationInclude })
   const byId = new Map(locations.map((location) => [location.id, serializeLocation(location)]))
   res.json({
     project,
@@ -153,14 +149,11 @@ router.get('/bootstrap', asyncHandler(async (req, res) => {
 // Remote catalogue for selectors. It is intentionally separate from the
 // progressive tree endpoint so forms never need a complete location list.
 router.get('/search', asyncHandler(async (req, res) => {
-  const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
-  const project = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
-    ? await prisma.project.findUniqueOrThrow({ where: { id: requestedProjectId! }, select: { id: true } })
-    : await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })
+  const projectId = scopedProjectId(req)
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
   const locations = await prisma.location.findMany({
     where: {
-      projectId: project.id,
+      projectId,
       ...(search ? { OR: [
         { label: { contains: search, mode: 'insensitive' } },
         { name: { contains: search, mode: 'insensitive' } },
@@ -192,9 +185,10 @@ router.get('/:id/assets', asyncHandler(async (req, res) => {
   const page = pageLimit(req.query.page, 1, 1_000_000)
   const limit = pageLimit(req.query.limit, 20, 100)
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
-  const location = await prisma.location.findUnique({ where: { id }, select: { id: true } })
+  const projectId = scopedProjectId(req)
+  const location = await prisma.location.findFirst({ where: { id, projectId }, select: { id: true } })
   if (!location) return res.status(404).json({ error: 'Not found' })
-  const where: Prisma.AssetWhereInput = { locationId: id, deletedAt: null, ...(search ? { OR: [{ code: { contains: search, mode: 'insensitive' } }, { name: { contains: search, mode: 'insensitive' } }] } : {}) }
+  const where: Prisma.AssetWhereInput = { projectId, locationId: id, deletedAt: null, ...(search ? { OR: [{ code: { contains: search, mode: 'insensitive' } }, { name: { contains: search, mode: 'insensitive' } }] } : {}) }
   const [rows, total] = await prisma.$transaction([
     prisma.asset.findMany({ where, select: locationAssetSelect, orderBy: { id: 'asc' }, skip: (page - 1) * limit, take: limit }),
     prisma.asset.count({ where }),
@@ -210,7 +204,8 @@ router.get(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const location = await prisma.location.findUnique({ where: { id }, include: locationInclude })
+    const projectId = scopedProjectId(req)
+    const location = await prisma.location.findFirst({ where: { id, projectId }, include: locationInclude })
     if (!location) {
       res.status(404).json({ error: 'Not found' })
       return
@@ -222,7 +217,7 @@ router.get(
     while (nextId !== null && !visited.has(nextId)) {
       visited.add(nextId)
       const ancestor = await prisma.location.findUnique({
-        where: { id: nextId },
+        where: { id: nextId, projectId },
         select: { id: true, name: true, parentId: true },
       })
       if (!ancestor) break
@@ -231,7 +226,7 @@ router.get(
     }
 
     const assets = await prisma.asset.findMany({
-      where: { locationId: id, deletedAt: null },
+      where: { projectId, locationId: id, deletedAt: null },
       orderBy: { id: 'asc' },
       select: locationAssetSelect,
       take: LOCATION_PREVIEW_SIZE,
@@ -241,13 +236,14 @@ router.get(
     // a potentially huge location-id array in Node just to show this number.
     const subtreeRows = await prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
       WITH RECURSIVE subtree AS (
-        SELECT id FROM "Location" WHERE id = ${id}
+        SELECT id FROM "Location" WHERE id = ${id} AND "projectId" = ${projectId}
         UNION ALL
-        SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id
+        SELECT child.id FROM "Location" child JOIN subtree ON child."parentId" = subtree.id WHERE child."projectId" = ${projectId}
       )
       SELECT COUNT(*)::bigint AS count
       FROM "Asset" asset
       WHERE asset."deletedAt" IS NULL
+        AND asset."projectId" = ${projectId}
         AND EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId")
     `)
     const subtreeAssets = Number(subtreeRows[0]?.count ?? 0)
@@ -265,12 +261,14 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const parsed = createLocationSchema.parse(req.body)
-    const { parentId, responsibleId, projectId, label, ...rest } = parsed
-    await assertSameProject(null, projectId, responsibleId)
+    const { parentId, responsibleId, projectId: bodyProjectId, label, ...rest } = parsed
+    const scopeProjectId = scopedProjectId(req)
+    if (bodyProjectId !== undefined && bodyProjectId !== scopeProjectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+    await assertSameProject(null, scopeProjectId, responsibleId)
     await assertNoCycle(0, parentId)
     if (parentId !== null) {
       const parent = await prisma.location.findUnique({ where: { id: parentId }, select: { projectId: true } })
-      if (!parent || parent.projectId !== projectId) {
+      if (!parent || parent.projectId !== scopeProjectId) {
         const err = new Error('Location, parent and responsible must belong to the same project')
         ;(err as Error & { status?: number }).status = 400
         throw err
@@ -281,13 +279,13 @@ router.post(
       label: label ?? parsed.name,
       parent: parentId ? { connect: { id: parentId } } : undefined,
       responsible: { connect: { id: responsibleId } },
-      project: { connect: { id: projectId } },
+      project: { connect: { id: scopeProjectId } },
     }
     const [created] = await prisma.$transaction([
       prisma.location.create({ data, include: locationInclude }),
       prisma.auditLog.create({
         data: {
-          projectId,
+          projectId: scopeProjectId,
           userId: ACTOR_USER_ID,
           action: 'Creación',
           entityId: parsed.code,
@@ -310,6 +308,8 @@ router.put(
     }
     const parsed = updateLocationSchema.parse(req.body)
     const { parentId, responsibleId, projectId, ...rest } = parsed
+    const scopeProjectId = scopedProjectId(req)
+    if (projectId !== undefined && projectId !== scopeProjectId) return res.status(400).json({ error: 'Project id does not match route scope' })
     const existing = await prisma.location.findUnique({
       where: { id },
       select: { projectId: true, responsibleId: true, parentId: true, name: true, label: true },
@@ -318,7 +318,8 @@ router.put(
       res.status(404).json({ error: 'Not found' })
       return
     }
-    const targetProject = projectId ?? existing.projectId
+    if (existing.projectId !== scopeProjectId) return res.status(404).json({ error: 'Not found' })
+    const targetProject = scopeProjectId
     const targetResponsible = responsibleId ?? existing.responsibleId
     const targetParent = parentId === undefined ? existing.parentId : parentId
     await assertSameProject(id, targetProject, targetResponsible)
@@ -345,7 +346,7 @@ router.put(
       label: parsed.label ?? (renameTo !== undefined && existing.label === existing.name ? renameTo : undefined),
       parent: parentId === undefined ? undefined : parentId === null ? { disconnect: true } : { connect: { id: parentId } },
       responsible: responsibleId ? { connect: { id: responsibleId } } : undefined,
-      project: projectId ? { connect: { id: projectId } } : undefined,
+      project: undefined,
     }
     const [updated] = await prisma.$transaction([
       prisma.location.update({ where: { id }, data, include: locationInclude }),
@@ -372,7 +373,7 @@ router.delete(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const location = await prisma.location.findUnique({ where: { id }, select: { code: true, name: true, projectId: true } })
+    const location = await prisma.location.findFirst({ where: { id, projectId: scopedProjectId(req) }, select: { code: true, name: true, projectId: true } })
     if (!location) {
       res.status(404).json({ error: 'Not found' })
       return

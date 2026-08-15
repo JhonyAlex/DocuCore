@@ -1,14 +1,14 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
 let createdId = 0
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${path}`, init)
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
 }
 
 function json(method: string, body: unknown): RequestInit {

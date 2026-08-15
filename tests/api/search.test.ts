@@ -1,13 +1,13 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
 
 function api(path: string, init: RequestInit = {}) {
-  return fetch(`${baseUrl}${path}`, init)
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
 }
 
 describe('global search API', () => {
@@ -98,7 +98,7 @@ describe('global search API', () => {
       settings: Array<{ kind: string; title: string; path: string }>
     }
     expect(config.settings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'Estado', title: 'Fuera de servicio', path: '/config/statuses' }),
+      expect.objectContaining({ kind: 'Estado', title: 'Fuera de servicio', path: '/projects/1/config/statuses' }),
     ]))
 
     const historyResponse = await api('/api/search?q=Creaci%C3%B3n&projectId=1')

@@ -13,8 +13,9 @@ import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/cale
 import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE } from '../lib/performance'
 import { nextAssetEventsById } from '../lib/nextAssetEvents'
+import { scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
+const router: Router = Router({ mergeParams: true })
 
 const ACTOR_USER_ID = 1
 const preventiveAssignmentSchema = z.object({ planId: z.number().int().positive(), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
@@ -24,7 +25,6 @@ const completeEventSchema = z.object({ source: z.enum(['event', 'document', 'dyn
 // ITEM-05: un activo en la papelera se puede recuperar hasta 30 días después
 // de su eliminación; pasada esa ventana, la purga lo borra físicamente.
 const TRASH_RETENTION_DAYS = 30
-const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
 
 // IMG-01: la imagen del activo viaja como multipart (campo `image`), se guarda
 // en el storage gestionado de DocuCore y en BD solo queda la clave + MIME + tamaño.
@@ -157,7 +157,7 @@ function withDerivedEvents(asset: AssetWithRelations) {
   const { events: _events, documentAssets: _documentAssets, dynamicFieldValues: _dynamicFieldValues, dateSchedules: _dateSchedules, preventivePlans, eventAcknowledgements: _eventAcknowledgements, type, imageStorageKey: _imageStorageKey, ...base } = asset
   return {
     ...base,
-    imageUrl: _imageStorageKey ? `/api/assets/${base.id}/image` : null,
+    imageUrl: _imageStorageKey ? `/api/projects/${base.projectId}/assets/${base.id}/image` : null,
     type: { id: type.id, name: type.name, iconKey: type.iconKey },
     dynamicFields,
     documentCount: documents.length,
@@ -254,20 +254,13 @@ async function replaceDynamicValues(
   }
 }
 
-async function activeProjectId(requested: string | undefined): Promise<number> {
-  const value = toNumberId(requested)
-  if (value !== null) return value
-  const project = await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })
-  return project.id
-}
-
 function serializeAssetList(asset: AssetListRow, nextEvent: DerivedAssetEvent | undefined) {
   const { imageStorageKey, ...base } = asset
   return {
     ...base,
     installDate: asset.installDate.toISOString(),
     deletedAt: asset.deletedAt?.toISOString() ?? null,
-    imageUrl: imageStorageKey ? `/api/assets/${asset.id}/image` : null,
+    imageUrl: imageStorageKey ? `/api/projects/${asset.projectId}/assets/${asset.id}/image` : null,
     // The list exposes the single event used by its row. Counts and complete
     // histories remain the responsibility of the asset detail/endpoints.
     eventCount: nextEvent ? 1 : 0,
@@ -278,10 +271,10 @@ function serializeAssetList(asset: AssetListRow, nextEvent: DerivedAssetEvent | 
 
 // ITEM-05: purga perezosa de la papelera — borra físicamente los activos cuyo
 // `deletedAt` supera la ventana de retención, con auditoría por activo.
-async function purgeExpiredTrashedAssets(now = assetEventClock()): Promise<void> {
+async function purgeExpiredTrashedAssets(projectId: number, now = assetEventClock()): Promise<void> {
   const cutoff = new Date(now.getTime() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
   const expired = await prisma.asset.findMany({
-    where: { deletedAt: { not: null, lt: cutoff } },
+    where: { projectId, deletedAt: { not: null, lt: cutoff } },
     select: { id: true, projectId: true, code: true, name: true, imageStorageKey: true },
     // El purgado perezoso avanza por lotes para no bloquear la lista de
     // Papelera si hay un histórico muy grande que ya ha vencido.
@@ -329,14 +322,14 @@ router.get(
     const typeId = toNumberId(typeof q.typeId === 'string' ? q.typeId : undefined)
     const statusId = toNumberId(typeof q.statusId === 'string' ? q.statusId : undefined)
     const locationId = toNumberId(typeof q.locationId === 'string' ? q.locationId : undefined)
-    const projectId = await activeProjectId(typeof q.projectId === 'string' ? q.projectId : undefined)
+    const projectId = scopedProjectId(req)
     const trashed = q.trashed === 'true'
 
     const page = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1
     const limit = Number.isFinite(limitParam) && limitParam >= 1 ? Math.min(100, Math.floor(limitParam)) : 10
 
     // Al consultar la papelera se purgan primero los activos vencidos.
-    if (trashed) await purgeExpiredTrashedAssets()
+    if (trashed) await purgeExpiredTrashedAssets(projectId)
 
     const conditions: Prisma.Sql[] = [
       Prisma.sql`asset."projectId" = ${projectId}`,
@@ -364,7 +357,7 @@ router.get(
     `)
     const total = Number(ids[0]?.total ?? 0)
     const orderedIds = ids.map((row) => row.id)
-    const rows = orderedIds.length === 0 ? [] : await prisma.asset.findMany({ where: { id: { in: orderedIds } }, select: assetListSelect })
+    const rows = orderedIds.length === 0 ? [] : await prisma.asset.findMany({ where: { id: { in: orderedIds }, projectId }, select: assetListSelect })
     const byId = new Map(rows.map((row) => [row.id, row]))
     const nextEvents = await nextAssetEventsById(prisma, orderedIds)
     const totalPages = total === 0 ? 1 : Math.ceil(total / limit)
@@ -392,7 +385,7 @@ router.get(
     }
     const search = typeof q.q === 'string' ? q.q : ''
     const excludeId = toNumberId(typeof q.excludeId === 'string' ? q.excludeId : undefined)
-    const projectId = await activeProjectId(typeof q.projectId === 'string' ? q.projectId : undefined)
+    const projectId = scopedProjectId(req)
     const values = await prisma.asset.findMany({
       where: {
         projectId,
@@ -414,7 +407,7 @@ router.get(
 router.get('/:id/events', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
-  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { projectId: true } })
+  const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { projectId: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
   const { events } = await listCalendarOccurrences(prisma, { projectId: asset.projectId, assetId: id })
   res.json(events
@@ -429,11 +422,11 @@ router.get('/:id/events', asyncHandler(async (req, res) => {
 router.get('/:id/history', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
-  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true } })
+  const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { id: true, code: true, projectId: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
   const page = Number.isInteger(Number(req.query.page)) && Number(req.query.page) > 0 ? Number(req.query.page) : 1
   const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100)
-  const where = { entityId: { in: [asset.code, `asset:${asset.id}`] } }
+  const where = { projectId: asset.projectId, entityId: { in: [asset.code, `asset:${asset.id}`] } }
   const [rows, total] = await prisma.$transaction([
     prisma.auditLog.findMany({
       where,
@@ -451,7 +444,7 @@ router.post('/:id/events/complete', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
   const input = completeEventSchema.parse(req.body)
-  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true } })
+  const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { id: true, code: true, projectId: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
   await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { source: input.source, sourceId: input.id, assetId: id, projectId: asset.projectId, performedDate: input.performedDate, actorId: ACTOR_USER_ID }))
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
@@ -462,7 +455,7 @@ router.post('/:id/preventives', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
   const input = preventiveAssignmentSchema.parse(req.body)
-  const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { projectId: true, typeId: true, code: true } })
+  const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { projectId: true, typeId: true, code: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
   const template = await prisma.preventivePlan.findFirst({
     where: { id: input.planId, projectId: asset.projectId, isActive: true },
@@ -499,7 +492,7 @@ router.delete('/:id/preventives/:planId', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   const planId = toNumberId(req.params.planId)
   if (id === null || planId === null) return res.status(400).json({ error: 'Invalid id' })
-  const plan = await prisma.assetPreventivePlan.findFirst({ where: { id: planId, assetId: id }, include: { asset: { select: { projectId: true } } } })
+  const plan = await prisma.assetPreventivePlan.findFirst({ where: { id: planId, assetId: id, asset: { projectId: scopedProjectId(req) } }, include: { asset: { select: { projectId: true } } } })
   if (!plan) return res.status(404).json({ error: 'Preventive plan assignment not found' })
   await prisma.$transaction(async (tx) => {
     await tx.assetPreventivePlan.update({ where: { id: planId }, data: { isActive: false } })
@@ -515,7 +508,7 @@ router.patch('/:id/preventives/:planId', asyncHandler(async (req, res) => {
   if (id === null || planId === null) return res.status(400).json({ error: 'Invalid id' })
   const input = updatePreventiveAssignmentSchema.parse(req.body)
   const plan = await prisma.assetPreventivePlan.findFirst({
-    where: { id: planId, assetId: id, isActive: true },
+    where: { id: planId, assetId: id, isActive: true, asset: { projectId: scopedProjectId(req) } },
     include: { asset: { select: { projectId: true } }, executions: { where: { completedAt: null }, orderBy: { id: 'asc' }, take: 1 } },
   })
   if (!plan || !plan.executions[0]) return res.status(404).json({ error: 'Pending preventive execution not found' })
@@ -547,7 +540,7 @@ router.post('/:id/preventives/executions/:executionId/tasks/complete', asyncHand
   const executionId = toNumberId(req.params.executionId)
   if (id === null || executionId === null) return res.status(400).json({ error: 'Invalid id' })
   const updated = await prisma.$transaction(async (tx) => {
-    const asset = await tx.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true } })
+    const asset = await tx.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { id: true, code: true, projectId: true } })
     if (!asset) throw Object.assign(new Error('Asset not found'), { status: 404 })
     const execution = await tx.preventiveExecution.findFirst({
       where: { id: executionId, plan: { assetId: id } },
@@ -569,7 +562,7 @@ router.post('/:id/preventives/executions/:executionId/tasks/:taskId/complete', a
   const taskId = toNumberId(req.params.taskId)
   if (id === null || executionId === null || taskId === null) return res.status(400).json({ error: 'Invalid id' })
   const task = await prisma.preventiveExecutionTask.findFirst({
-    where: { id: taskId, executionId, execution: { plan: { assetId: id }, completedAt: null } },
+    where: { id: taskId, executionId, execution: { plan: { assetId: id, asset: { projectId: scopedProjectId(req) } }, completedAt: null } },
     include: {
       execution: {
         include: {
@@ -603,7 +596,7 @@ router.post(
     const definitionId = toNumberId(req.params.definitionId)
     if (id === null || definitionId === null) return res.status(400).json({ error: 'Invalid id' })
     const { performedDate } = completeDynamicDateSchema.parse(req.body)
-    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true, code: true, projectId: true, typeId: true } })
+    const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { id: true, code: true, projectId: true, typeId: true } })
     if (!asset) return res.status(404).json({ error: 'Not found' })
     const schedule = await prisma.assetDateSchedule.findFirst({ where: { assetId: id, definitionId, isActive: true, definition: { projectId: asset.projectId, fieldType: 'DATE', assetTypes: { some: { assetTypeId: asset.typeId } } }, occurrences: { some: { completedAt: null } }, }, include: { definition: { select: { fieldName: true } }, occurrences: { where: { completedAt: null }, orderBy: { id: 'asc' }, take: 1 } } })
     if (!schedule?.occurrences[0]) return res.status(404).json({ error: 'Dynamic date occurrence not found' })
@@ -624,10 +617,11 @@ router.get(
   asyncHandler(async (req, res) => {
     const id = toNumberId(req.params.id)
     if (id === null) return res.status(400).json({ error: 'Invalid id' })
-    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, select: { id: true } })
+    const projectId = scopedProjectId(req)
+    const asset = await prisma.asset.findFirst({ where: { id, projectId, deletedAt: null }, select: { id: true } })
     if (!asset) return res.status(404).json({ error: 'Not found' })
     const markers = await prisma.floorPlanMarker.findMany({
-      where: { assetId: id },
+      where: { assetId: id, floorPlan: { projectId } },
       orderBy: [{ floorPlanId: 'asc' }, { id: 'asc' }],
       take: 100,
       select: {
@@ -654,7 +648,7 @@ router.get(
           planName: marker.floorPlan.name,
           location: marker.floorPlan.location,
           currentVersion: { ...currentVersion, uploadedAt: currentVersion.uploadedAt.toISOString() },
-          dziUrl: `/api/floor-plans/${marker.floorPlanId}/versions/${currentVersion.version}/dzi`,
+          dziUrl: `/api/projects/${projectId}/floor-plans/${marker.floorPlanId}/versions/${currentVersion.version}/dzi`,
           markerId: marker.id,
           x: marker.x,
           y: marker.y,
@@ -672,7 +666,7 @@ router.get(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const asset = await prisma.asset.findFirst({ where: { id, deletedAt: null }, include: assetInclude })
+    const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, include: assetInclude })
     if (!asset) {
       res.status(404).json({ error: 'Not found' })
       return
@@ -686,19 +680,23 @@ router.post(
   asyncHandler(async (req, res) => {
     const parsed = createAssetSchema.parse(req.body)
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
-    await assertAssetRelationsValid(projectId, typeId, locationId, responsibleId)
+    const scopeProjectId = scopedProjectId(req)
+    if (projectId !== undefined && projectId !== scopeProjectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+    await assertAssetRelationsValid(scopeProjectId, typeId, locationId, responsibleId)
+    const status = await prisma.status.findFirst({ where: { id: statusId, projectId: scopeProjectId, isActive: true }, select: { id: true } })
+    if (!status) return res.status(400).json({ error: 'Status must belong to the asset project' })
     const data: Prisma.AssetCreateInput = {
       ...rest,
       installDate: new Date(installDate),
       type: { connect: { id: typeId } },
       status: { connect: { id: statusId } },
       location: { connect: { id: locationId } },
-      project: { connect: { id: projectId } },
+      project: { connect: { id: scopeProjectId } },
       responsible: { connect: { id: responsibleId } },
     }
     const created = await prisma.$transaction(async (tx) => {
       const base = await tx.asset.create({ data })
-      await replaceDynamicValues(tx, base.id, projectId, typeId, dynamicFields ?? [])
+      await replaceDynamicValues(tx, base.id, scopeProjectId, typeId, dynamicFields ?? [])
       await tx.auditLog.create({
         data: {
           projectId: base.projectId,
@@ -725,8 +723,10 @@ router.put(
     }
     const parsed = updateAssetSchema.parse(req.body)
     const { typeId, statusId, locationId, projectId, responsibleId, installDate, dynamicFields, ...rest } = parsed
+    const scopeProjectId = scopedProjectId(req)
+    if (projectId !== undefined && projectId !== scopeProjectId) return res.status(400).json({ error: 'Project id does not match route scope' })
     const existing = await prisma.asset.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, projectId: scopeProjectId, deletedAt: null },
       select: { projectId: true, typeId: true, locationId: true, responsibleId: true },
     })
     if (!existing) {
@@ -747,23 +747,35 @@ router.put(
     // El PUT es parcial: se valida el estado final combinando lo recibido con
     // lo existente, para que las relaciones no tocadas sigan siendo válidas.
     await assertAssetRelationsValid(
-      projectId ?? existing.projectId,
+      scopeProjectId,
       typeId ?? existing.typeId,
       locationId ?? existing.locationId,
       responsibleId ?? existing.responsibleId,
     )
+    if (statusId !== undefined) {
+      const status = await prisma.status.findFirst({
+        where: { id: statusId, projectId: scopeProjectId, isActive: true },
+        select: { id: true },
+      })
+      if (!status) {
+        res.status(400).json({ error: 'Status must belong to the asset project' })
+        return
+      }
+    }
     const data: Prisma.AssetUpdateInput = {
       ...rest,
       installDate: installDate ? new Date(installDate) : undefined,
       type: typeId ? { connect: { id: typeId } } : undefined,
       status: statusId ? { connect: { id: statusId } } : undefined,
       location: locationId ? { connect: { id: locationId } } : undefined,
-      project: projectId ? { connect: { id: projectId } } : undefined,
+      // Assets never change tenant through an edit. Moving between projects
+      // would make every relation a cross-project integrity operation.
+      project: undefined,
       responsible: responsibleId ? { connect: { id: responsibleId } } : undefined,
     }
     const updated = await prisma.$transaction(async (tx) => {
       await tx.asset.update({ where: { id }, data })
-      const finalProjectId = projectId ?? existing.projectId
+      const finalProjectId = scopeProjectId
       const finalTypeId = typeId ?? existing.typeId
       const finalLocationId = locationId ?? existing.locationId
       if (dynamicFields !== undefined) {
@@ -801,7 +813,7 @@ router.delete(
       return
     }
     const asset = await prisma.asset.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, projectId: scopedProjectId(req), deletedAt: null },
       select: { id: true, code: true, name: true, projectId: true },
     })
     if (!asset) {
@@ -834,7 +846,7 @@ router.post(
       return
     }
     const asset = await prisma.asset.findFirst({
-      where: { id, deletedAt: { not: null } },
+      where: { id, projectId: scopedProjectId(req), deletedAt: { not: null } },
       select: { id: true, code: true, name: true, projectId: true },
     })
     if (!asset) {
@@ -868,11 +880,11 @@ router.post(
       return
     }
     const asset = await prisma.asset.findFirst({
-      where: { id, deletedAt: { not: null } },
+      where: { id, projectId: scopedProjectId(req), deletedAt: { not: null } },
       select: { id: true, code: true, name: true, imageStorageKey: true, projectId: true },
     })
     if (!asset) {
-      const notTrashed = await prisma.asset.findUnique({ where: { id }, select: { id: true } })
+      const notTrashed = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req) }, select: { id: true } })
       if (notTrashed) {
         res.status(409).json({ error: 'Asset is not in the trash' })
         return
@@ -910,10 +922,10 @@ router.patch(
     const parsed = changeStatusSchema.parse(req.body)
     const [existing, targetStatus] = await Promise.all([
       prisma.asset.findFirst({
-        where: { id, deletedAt: null },
+        where: { id, projectId: scopedProjectId(req), deletedAt: null },
         select: { code: true, projectId: true, status: { select: { name: true } } },
       }),
-      prisma.status.findUnique({ where: { id: parsed.statusId }, select: { name: true } }),
+      prisma.status.findFirst({ where: { id: parsed.statusId, projectId: scopedProjectId(req), isActive: true }, select: { name: true } }),
     ])
     if (!existing) {
       res.status(404).json({ error: 'Not found' })
@@ -956,7 +968,7 @@ router.post(
       return
     }
     const existing = await prisma.asset.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, projectId: scopedProjectId(req), deletedAt: null },
       select: { id: true, code: true, name: true, imageStorageKey: true, projectId: true },
     })
     if (!existing) {
@@ -1020,7 +1032,7 @@ router.delete(
       return
     }
     const existing = await prisma.asset.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, projectId: scopedProjectId(req), deletedAt: null },
       select: { id: true, code: true, name: true, imageStorageKey: true, projectId: true },
     })
     if (!existing) {
@@ -1059,7 +1071,7 @@ router.get(
       return
     }
     const asset = await prisma.asset.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, projectId: scopedProjectId(req), deletedAt: null },
       select: { imageStorageKey: true, imageMimeType: true },
     })
     if (!asset?.imageStorageKey || !asset.imageMimeType) {

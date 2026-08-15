@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { assetTypeCreateSchema, assetTypeUpdateSchema, projectIdOf } from '../lib/assetTypes'
+import { assetTypeCreateSchema, assetTypeUpdateSchema } from '../lib/assetTypes'
+import { scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
@@ -33,7 +34,7 @@ async function assertCanArchive(projectId: number, id: number) {
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const includeInactive = req.query.includeInactive === 'true'
   const rows = await prisma.assetType.findMany({
     where: { projectId, isActive: includeInactive ? undefined : true },
@@ -44,9 +45,8 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const input = assetTypeCreateSchema.parse(req.body)
-  if (!await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })) return res.status(404).json({ error: 'Project not found' })
   await assertUniqueName(projectId, input.name)
   const sortOrder = input.sortOrder ?? ((await prisma.assetType.aggregate({ where: { projectId }, _max: { sortOrder: true } }))._max.sortOrder ?? -1) + 1
   const created = await prisma.$transaction(async (tx) => {
@@ -58,7 +58,7 @@ router.post('/', asyncHandler(async (req, res) => {
 }))
 
 router.patch('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
   const input = assetTypeUpdateSchema.parse(req.body)
@@ -80,7 +80,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
   const type = await assertCanArchive(projectId, id)

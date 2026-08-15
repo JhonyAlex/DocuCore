@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useSession } from '@/contexts/SessionContext'
 import { useAssetCreateRequest } from '@/contexts/AssetCreateContext'
 import { useTheme } from '@/hooks/useTheme'
 import { searchGlobal, type ApiGlobalSearchResult, type ApiSearchAsset, type ApiSearchDocument, type ApiSearchEvent, type ApiSearchHistoryEntry, type ApiSearchLocation, type ApiSearchPlan, type ApiSearchSetting } from '@/lib/api'
 import { getStatusChipClass } from '@/lib/assetMappers'
+import { useProject } from '@/contexts/ProjectContext'
 
 interface GlobalSearchModalProps {
   open: boolean
@@ -107,7 +107,7 @@ const icons = {
 
 export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalProps) {
   const navigate = useNavigate()
-  const { session } = useSession()
+  const { projectId } = useProject()
   const { requestCreate } = useAssetCreateRequest()
   const { toggle: toggleTheme } = useTheme()
 
@@ -167,7 +167,8 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
       const seq = ++searchSeqRef.current
 
       try {
-        const res = await searchGlobal(trimmed, session?.project.id, controller.signal)
+        if (projectId === null) return
+        const res = await searchGlobal(projectId, trimmed, controller.signal)
         if (seq === searchSeqRef.current) {
           setResults(res)
           setLoading(false)
@@ -184,20 +185,20 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
 
   // Lista estática de vistas para acceso directo
   const staticViews = useMemo(() => [
-    { id: 'view-dashboard', title: 'Panel general', subtitle: 'Resumen e indicadores del proyecto', path: '/dashboard', icon: icons.dashboard },
-    { id: 'view-assets', title: 'Activos', subtitle: 'Catálogo e inventario de maquinaria y equipos', path: '/assets', icon: icons.asset },
-    { id: 'view-documents', title: 'Documentos', subtitle: 'Certificados, manuales y contratos', path: '/docs', icon: icons.document },
-    { id: 'view-calendar', title: 'Calendario', subtitle: 'Mantenimientos, vencimientos y eventos', path: '/calendar', icon: icons.calendar },
-    { id: 'view-plans', title: 'Planos', subtitle: 'Visor y marcadores interactivos', path: '/plans', icon: icons.plan },
-    { id: 'view-locations', title: 'Ubicaciones', subtitle: 'Estructura de plantas, naves y áreas', path: '/locations', icon: icons.location },
+    { id: 'view-dashboard', title: 'Panel general', subtitle: 'Resumen e indicadores del proyecto', path: projectId ? `/projects/${projectId}/dashboard` : '/projects', icon: icons.dashboard },
+    { id: 'view-assets', title: 'Activos', subtitle: 'Catálogo e inventario de maquinaria y equipos', path: projectId ? `/projects/${projectId}/assets` : '/projects', icon: icons.asset },
+    { id: 'view-documents', title: 'Documentos', subtitle: 'Certificados, manuales y contratos', path: projectId ? `/projects/${projectId}/docs` : '/projects', icon: icons.document },
+    { id: 'view-calendar', title: 'Calendario', subtitle: 'Mantenimientos, vencimientos y eventos', path: projectId ? `/projects/${projectId}/calendar` : '/projects', icon: icons.calendar },
+    { id: 'view-plans', title: 'Planos', subtitle: 'Visor y marcadores interactivos', path: projectId ? `/projects/${projectId}/plans` : '/projects', icon: icons.plan },
+    { id: 'view-locations', title: 'Ubicaciones', subtitle: 'Estructura de plantas, naves y áreas', path: projectId ? `/projects/${projectId}/locations` : '/projects', icon: icons.location },
     { id: 'view-projects', title: 'Proyectos', subtitle: 'Gestión y estado de proyectos', path: '/projects', icon: icons.projects },
-    { id: 'view-history', title: 'Historial y auditoría', subtitle: 'Trazabilidad de cambios y acciones', path: '/history', icon: icons.history },
-    { id: 'view-config', title: 'Configuración', subtitle: 'Ajustes generales del sistema', path: '/config', icon: icons.config },
-    { id: 'view-config-statuses', title: 'Estados', subtitle: 'Estados operativos de los activos', path: '/config/statuses', icon: icons.config },
-    { id: 'view-config-dynamic-fields', title: 'Campos dinámicos', subtitle: 'Definición de atributos personalizados', path: '/config/dynamic-fields', icon: icons.config },
-    { id: 'view-config-asset-types', title: 'Tipos de activo', subtitle: 'Categorías e iconos de equipos', path: '/config/asset-types', icon: icons.config },
-    { id: 'view-config-preventives', title: 'Mantenimiento preventivo', subtitle: 'Planes y plantillas preventivas', path: '/config/preventives', icon: icons.config },
-  ], [])
+    { id: 'view-history', title: 'Historial y auditoría', subtitle: 'Trazabilidad de cambios y acciones', path: projectId ? `/projects/${projectId}/history` : '/projects', icon: icons.history },
+    { id: 'view-config', title: 'Configuración', subtitle: 'Ajustes generales del sistema', path: projectId ? `/projects/${projectId}/config` : '/projects', icon: icons.config },
+    { id: 'view-config-statuses', title: 'Estados', subtitle: 'Estados operativos de los activos', path: projectId ? `/projects/${projectId}/config/statuses` : '/projects', icon: icons.config },
+    { id: 'view-config-dynamic-fields', title: 'Campos dinámicos', subtitle: 'Definición de atributos personalizados', path: projectId ? `/projects/${projectId}/config/dynamic-fields` : '/projects', icon: icons.config },
+    { id: 'view-config-asset-types', title: 'Tipos de activo', subtitle: 'Categorías e iconos de equipos', path: projectId ? `/projects/${projectId}/config/asset-types` : '/projects', icon: icons.config },
+    { id: 'view-config-preventives', title: 'Mantenimiento preventivo', subtitle: 'Planes y plantillas preventivas', path: projectId ? `/projects/${projectId}/config/preventives` : '/projects', icon: icons.config },
+  ], [projectId])
 
   // Lista estática de acciones rápidas
   const staticActions = useMemo(() => [
@@ -208,7 +209,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
       icon: icons.plus,
       run: () => {
         requestCreate()
-        navigate('/assets')
+        navigate(projectId ? `/projects/${projectId}/assets` : '/projects')
       },
     },
     {
@@ -216,14 +217,14 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
       title: 'Subir nuevo documento',
       subtitle: 'Adjuntar certificado o manual técnico',
       icon: icons.plus,
-      run: () => navigate('/docs'),
+      run: () => navigate(projectId ? `/projects/${projectId}/docs` : '/projects'),
     },
     {
       id: 'action-new-location',
       title: 'Crear nueva ubicación',
       subtitle: 'Añadir nave, planta o área',
       icon: icons.plus,
-      run: () => navigate('/locations'),
+      run: () => navigate(projectId ? `/projects/${projectId}/locations` : '/projects'),
     },
     {
       id: 'action-toggle-theme',
@@ -232,7 +233,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
       icon: icons.theme,
       run: () => toggleTheme(),
     },
-  ], [navigate, requestCreate, toggleTheme])
+  ], [navigate, projectId, requestCreate, toggleTheme])
 
   // Agrupación y aplanamiento de items
   const items: SearchItem[] = useMemo(() => {
@@ -254,7 +255,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
           icon: icons.asset,
           onSelect: () => {
             onClose()
-            navigate(`/assets?assetId=${asset.id}`)
+            navigate(`/projects/${projectId}/assets?assetId=${asset.id}`)
           },
         })
       })
@@ -274,7 +275,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
           icon: icons.document,
           onSelect: () => {
             onClose()
-            navigate(`/docs?documentId=${doc.id}`)
+            navigate(`/projects/${projectId}/docs?documentId=${doc.id}`)
           },
         })
       })
@@ -293,7 +294,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
           icon: icons.location,
           onSelect: () => {
             onClose()
-            navigate(`/locations?locationId=${loc.id}`)
+            navigate(`/projects/${projectId}/locations?locationId=${loc.id}`)
           },
         })
       })
@@ -312,7 +313,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
           icon: icons.plan,
           onSelect: () => {
             onClose()
-            navigate(`/plans?planId=${plan.id}`)
+            navigate(`/projects/${projectId}/plans?planId=${plan.id}`)
           },
         })
       })
@@ -333,7 +334,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
           icon: icons.calendar,
           onSelect: () => {
             onClose()
-            navigate(`/calendar?view=month&date=${event.date.slice(0, 10)}`)
+            navigate(`/projects/${projectId}/calendar?view=month&date=${event.date.slice(0, 10)}`)
           },
         })
       })
@@ -371,7 +372,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
           icon: icons.history,
           onSelect: () => {
             onClose()
-            navigate(`/history?search=${encodeURIComponent(entry.entityId)}`)
+            navigate(`/projects/${projectId}/history?search=${encodeURIComponent(entry.entityId)}`)
           },
         })
       })
@@ -420,7 +421,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
     })
 
     return list
-  }, [query, results, staticViews, staticActions, onClose, navigate])
+  }, [projectId, query, results, staticViews, staticActions, onClose, navigate])
 
   // Mantener scroll del item activo a la vista
   useEffect(() => {

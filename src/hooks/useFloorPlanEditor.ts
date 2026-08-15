@@ -80,12 +80,12 @@ export function useFloorPlanEditor(plan: ApiFloorPlan | null) {
     if (!plan) return
     const original = new Map(source.map((marker) => [marker.id, marker]))
     const draft = new Map(markers.map((marker) => [marker.id, marker]))
-    for (const marker of source) if (!draft.has(marker.id)) await deleteFloorPlanMarker(plan.id, marker.id)
+    for (const marker of source) if (!draft.has(marker.id)) await deleteFloorPlanMarker(plan.projectId, plan.id, marker.id)
     for (const marker of markers) {
-      if (marker.id < 0) await createFloorPlanMarker(plan.id, { assetId: marker.assetId, x: marker.x, y: marker.y })
+      if (marker.id < 0) await createFloorPlanMarker(plan.projectId, plan.id, { assetId: marker.assetId, x: marker.x, y: marker.y })
       else {
         const previous = original.get(marker.id)
-        if (previous && (previous.x !== marker.x || previous.y !== marker.y)) await updateFloorPlanMarker(plan.id, marker.id, { x: marker.x, y: marker.y })
+        if (previous && (previous.x !== marker.x || previous.y !== marker.y)) await updateFloorPlanMarker(plan.projectId, plan.id, marker.id, { x: marker.x, y: marker.y })
       }
     }
   }, [markers, plan, source])

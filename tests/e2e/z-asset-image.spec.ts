@@ -70,7 +70,7 @@ test.describe.serial('asset image', () => {
     await expect(assetDialog).toBeVisible()
     const assetImage = assetDialog.getByRole('img', { name: `Foto de ${name}` })
     await expect(assetImage).toBeVisible()
-    await expect(assetImage).toHaveAttribute('src', /\/api\/assets\/\d+\/image$/)
+    await expect(assetImage).toHaveAttribute('src', /\/api\/projects\/\d+\/assets\/\d+\/image$/)
 
     await assetDialog.getByRole('button', { name: 'Cerrar' }).last().click()
     expect(consoleIssues).toEqual([])
@@ -89,7 +89,7 @@ test.describe.serial('asset image', () => {
     const assetDialog = page.getByRole('dialog', { name: asset.name })
     const assetImage = assetDialog.getByRole('img', { name: `Foto de ${asset.name}` })
     await expect(assetImage).toBeVisible()
-    await expect(assetImage).toHaveAttribute('src', /\/api\/assets\/\d+\/image$/)
+    await expect(assetImage).toHaveAttribute('src', /\/api\/projects\/\d+\/assets\/\d+\/image$/)
 
     // Reemplazar: el input de subida vive siempre en el cuadro (sr-only), sin
     // necesidad de hover.

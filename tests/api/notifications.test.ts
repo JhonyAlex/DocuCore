@@ -1,13 +1,13 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
 
 function api(path: string, init: RequestInit = {}) {
-  return fetch(`${baseUrl}${path}`, init)
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
 }
 
 describe('notifications API', () => {
@@ -94,7 +94,7 @@ describe('notifications API', () => {
     const res = await api('/api/notifications/read-all', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId: 1 }),
+      body: JSON.stringify({}),
     })
     expect(res.status).toBe(200)
     const data = await res.json() as { success: boolean; count: number }

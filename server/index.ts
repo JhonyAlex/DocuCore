@@ -18,7 +18,9 @@ import dashboardRouter from './routes/dashboard'
 import searchRouter from './routes/search'
 import historyRouter from './routes/history'
 import notificationsRouter from './routes/notifications'
+import projectsRouter from './routes/projects'
 import { errorHandler } from './middleware/error'
+import { requireProjectScope } from './lib/projectScope'
 
 const app = express()
 
@@ -28,21 +30,29 @@ app.use(express.json())
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
-app.use('/api/assets', assetsRouter)
-app.use('/api/documents', documentsRouter)
-app.use('/api/locations', locationsRouter)
-app.use('/api/projects/:projectId/dynamic-fields', dynamicFieldsRouter)
-app.use('/api/projects/:projectId/asset-types', assetTypesRouter)
-app.use('/api/projects/:projectId/statuses', statusesRouter)
-app.use('/api/projects/:projectId/tasks', tasksRouter)
-app.use('/api/projects/:projectId/preventive-plans', preventivePlansRouter)
-app.use('/api/floor-plans', floorPlansRouter)
-app.use('/api/calendar', calendarRouter)
-app.use('/api/dashboard', dashboardRouter)
-app.use('/api/search', searchRouter)
-app.use('/api/history', historyRouter)
-app.use('/api/projects/:projectId/history', historyRouter)
-app.use('/api/notifications', notificationsRouter)
+app.use('/api/projects', projectsRouter)
+
+// Every operational API is below the explicit project URL boundary. The
+// middleware resolves existence and membership once, and turns archived
+// projects read-only before a resource router can perform a write.
+const projectRouter = express.Router({ mergeParams: true })
+projectRouter.use((req, res, next) => requireProjectScope({ write: !['GET', 'HEAD', 'OPTIONS'].includes(req.method) })(req, res, next))
+projectRouter.use('/assets', assetsRouter)
+projectRouter.use('/documents', documentsRouter)
+projectRouter.use('/locations', locationsRouter)
+projectRouter.use('/dynamic-fields', dynamicFieldsRouter)
+projectRouter.use('/asset-types', assetTypesRouter)
+projectRouter.use('/statuses', statusesRouter)
+projectRouter.use('/tasks', tasksRouter)
+projectRouter.use('/preventive-plans', preventivePlansRouter)
+projectRouter.use('/floor-plans', floorPlansRouter)
+projectRouter.use('/calendar', calendarRouter)
+projectRouter.use('/dashboard', dashboardRouter)
+projectRouter.use('/search', searchRouter)
+projectRouter.use('/history', historyRouter)
+projectRouter.use('/notifications', notificationsRouter)
+projectRouter.use('/', metaRouter)
+app.use('/api/projects/:projectId', projectRouter)
 app.use('/api', metaRouter)
 
 app.use('/api', (_req, res) => {

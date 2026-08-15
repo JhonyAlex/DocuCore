@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
 import { fetchAssets, type ApiCalendarEventCategory, type CalendarManualEventInput } from '@/lib/api'
 import { calendarCategoryPresentation } from '@/lib/calendarPresentation'
+import { useProject } from '@/contexts/ProjectContext'
 
 export interface CalendarEventFormValues extends Omit<CalendarManualEventInput, 'projectId'> { assetLabel?: string }
 
 const categories = Object.keys(calendarCategoryPresentation) as ApiCalendarEventCategory[]
 
 export default function CalendarEventFormModal({ open, initialDate, initial, busy, error, onClose, onSubmit }: { open: boolean; initialDate: string; initial?: CalendarEventFormValues | null; busy: boolean; error: string | null; onClose: () => void; onSubmit: (values: CalendarEventFormValues) => void }) {
+  const { projectId } = useProject()
+  if (projectId === null) throw new Error('CalendarEventFormModal requires a project scope')
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(initialDate)
   const [category, setCategory] = useState<ApiCalendarEventCategory>('maintenance')
@@ -30,7 +33,7 @@ export default function CalendarEventFormModal({ open, initialDate, initial, bus
 
   if (!open) return null
   const searchAssets = async (query: string): Promise<SearchableOption[]> => {
-    const response = await fetchAssets({ search: query || undefined, limit: 20 })
+    const response = await fetchAssets(projectId, { search: query || undefined, limit: 20 })
     return response.data.map((row) => ({ value: String(row.id), label: `${row.code} · ${row.name}`, hint: row.location?.label ?? row.location?.name }))
   }
   const submit = (event: React.FormEvent) => {

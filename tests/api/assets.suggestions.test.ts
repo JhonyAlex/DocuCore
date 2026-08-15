@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 // UX-04: GET /api/assets/suggestions devuelve los valores actuales de un campo
 // (code | name | initials) con los tres campos por fila para dar contexto,
@@ -12,7 +12,7 @@ let baseUrl: string
 const createdAssetIds: number[] = []
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${path}`, init)
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
 }
 
 function uniqueSuffix(): string {

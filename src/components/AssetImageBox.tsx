@@ -68,7 +68,7 @@ export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBo
       setError(null)
       setBusy(true)
       try {
-        const updated = await uploadAssetImage(asset.id, file)
+        const updated = await uploadAssetImage(asset.projectId, asset.id, file)
         onChanged(updated)
       } catch (uploadError) {
         setError(uploadError instanceof Error ? uploadError.message : 'No se pudo subir la imagen.')
@@ -83,7 +83,7 @@ export default function AssetImageBox({ asset, onChanged, onView }: AssetImageBo
     setError(null)
     setBusy(true)
     try {
-      await removeAssetImage(asset.id)
+      await removeAssetImage(asset.projectId, asset.id)
       onChanged({ ...asset, imageUrl: null, imageMimeType: null, imageSizeBytes: null })
       setRemoveRequested(false)
     } catch (removeError) {

@@ -70,7 +70,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   const linkDialogOpenRef = useRef(linkDialogOpen)
   const statusMenuRef = useRef<HTMLDivElement>(null)
   const assetId = asset?.id
-  const documentDialog = useAssetDocumentDialog(assetId)
+  const documentDialog = useAssetDocumentDialog(asset?.projectId, assetId)
   const documentDialogOpenRef = documentDialog.openRef
 
   // UX-02: el modal nunca se desmonta (vive en la vista); al cambiar de activo
@@ -187,7 +187,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   }
 
   const searchDocuments = async (query: string): Promise<SearchableOption[]> => {
-    const res = await fetchDocuments({ search: query || undefined, limit: 20, projectId: asset.projectId })
+    const res = await fetchDocuments(asset.projectId, { search: query || undefined, limit: 20 })
     return res.data.map((document) => ({
       value: String(document.id),
       label: document.name,
@@ -200,9 +200,9 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setLinkError(null)
     setLinking(true)
     try {
-      const document = await fetchDocument(Number(option.value))
+      const document = await fetchDocument(asset.projectId, Number(option.value))
       const currentAssetIds = document.assets ? document.assets.map((linked) => linked.id) : []
-      await updateDocument(document.id, { assetIds: [...new Set([...currentAssetIds, asset.id])] })
+      await updateDocument(asset.projectId, document.id, { assetIds: [...new Set([...currentAssetIds, asset.id])] })
       setLinkDialogOpen(false)
       await onDocumentsChanged()
     } catch {

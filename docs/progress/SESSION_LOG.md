@@ -1,5 +1,11 @@
 # SESSION_LOG — Fase 4
 
+## 2026-08-15 — PROJ-01: ámbito multi-proyecto autoritativo
+
+- Se introdujo `ProjectScope` en backend y `ProjectProvider` en frontend. La URL canónica determina el proyecto de cada recurso (`/projects/:projectId/...` y `/api/projects/:projectId/...`); los redirects antiguos solo aprovechan una selección ya persistida para UX y no son frontera de seguridad.
+- `Project` tiene CRUD, archivo/reactivación, membresías con roles normalizados y clonación transaccional de configuración sin datos operativos. Las restricciones compuestas de activo/ubicación se migraron a ámbito de proyecto. El seed conserva cinco proyectos, dos de ellos con datos realmente diferenciados.
+- Pruebas finales: Prisma validate, lint, typecheck, build, `pnpm test` 236/236, `pnpm test:e2e` 79/79, `pnpm test:perf` de 10.000 registros, `pnpm db:seed` y Docker con health 200. La regresión visual mantiene Proyectos 3/3 bajo el 0,5 %; el barrido completo marca 9 diferencias preexistentes de Panel, Ubicaciones e Historial contra el HTML protegido, sin cambiar el contrato.
+
 ## 2026-08-14 — Alertas, búsqueda, panel, Estados e historial reales
 
 - Se sustituyeron los controles mock solicitados: notificaciones persistentes con lectura individual/total; búsqueda global remota, diferida y cancelable; panel con KPIs, alertas, actividad, próximos eventos, serie y exportación desde PostgreSQL; Estados por proyecto con CRUD, color, orden y predeterminado; historial global paginado y filtrable desde `AuditLog`.

@@ -2,14 +2,12 @@ import { Router } from 'express'
 import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
+import { scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
-
-const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
+const router: Router = Router({ mergeParams: true })
 
 const searchQuerySchema = z.object({
   q: z.string().trim().min(1).max(100),
-  projectId: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(20).default(5),
 })
 
@@ -25,11 +23,8 @@ router.get(
       return
     }
 
-    const { q, projectId: requestedProjectId, limit } = parseResult.data
-
-    const projectId = Number.isInteger(requestedProjectId) && requestedProjectId! > 0
-      ? requestedProjectId!
-      : (await prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true } })).id
+    const { q, limit } = parseResult.data
+    const projectId = scopedProjectId(req)
 
     const [assets, documents, locations, plans, events, assetTypes, statuses, fields, preventivePlans, history] = await Promise.all([
       prisma.asset.findMany({
@@ -253,28 +248,28 @@ router.get(
         kind: 'Tipo de activo',
         title: type.name,
         subtitle: `Icono: ${type.iconKey}`,
-        path: '/config/asset-types',
+        path: `/projects/${projectId}/config/asset-types`,
       })),
       ...statuses.map((status) => ({
         id: `status:${status.id}`,
         kind: 'Estado',
         title: status.name,
         subtitle: `Color: ${status.color}${status.pulseDot ? ' · Alerta pulsante' : ''}`,
-        path: '/config/statuses',
+        path: `/projects/${projectId}/config/statuses`,
       })),
       ...fields.map((field) => ({
         id: `dynamic-field:${field.id}`,
         kind: 'Campo dinámico',
         title: field.fieldName,
         subtitle: `${field.fieldType}${field.groupName ? ` · ${field.groupName}` : ''}`,
-        path: '/config/dynamic-fields',
+        path: `/projects/${projectId}/config/dynamic-fields`,
       })),
       ...preventivePlans.map((plan) => ({
         id: `preventive-plan:${plan.id}`,
         kind: 'Plan preventivo',
         title: plan.name,
         subtitle: `${plan.periodicity}${plan.description ? ` · ${plan.description}` : ''}`,
-        path: '/config/preventives',
+        path: `/projects/${projectId}/config/preventives`,
       })),
     ]
 

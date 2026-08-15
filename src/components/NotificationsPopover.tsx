@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications, type NotificationFilter } from '@/contexts/NotificationContext'
+import { useProject } from '@/contexts/ProjectContext'
 import type { ApiNotification } from '@/types'
 
 function getCategoryIcon(notification: ApiNotification) {
@@ -86,6 +87,7 @@ export default function NotificationsPopover() {
   } = useNotifications()
 
   const navigate = useNavigate()
+  const { projectId } = useProject()
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Cierre por click exterior y tecla Escape
@@ -120,12 +122,13 @@ export default function NotificationsPopover() {
     void markAsRead(item.id, true)
     setIsOpen(false)
 
+    if (projectId === null) return
     if (item.targetType === 'asset' && item.targetId) {
-      void navigate(`/assets?assetId=${item.targetId}`)
+      void navigate(`/projects/${projectId}/assets?assetId=${item.targetId}`)
     } else if (item.targetType === 'document') {
-      void navigate('/docs')
+      void navigate(`/projects/${projectId}/docs`)
     } else if (item.targetType === 'calendar') {
-      void navigate(`/calendar?view=month&date=${item.targetId || ''}`)
+      void navigate(`/projects/${projectId}/calendar?view=month&date=${item.targetId || ''}`)
     }
   }
 
@@ -309,7 +312,7 @@ export default function NotificationsPopover() {
           type="button"
           onClick={() => {
             setIsOpen(false)
-            void navigate('/calendar')
+            if (projectId !== null) void navigate(`/projects/${projectId}/calendar`)
           }}
           className="text-brand-600 dark:text-brand-400 hover:underline font-medium flex items-center gap-1"
         >
@@ -320,7 +323,7 @@ export default function NotificationsPopover() {
           type="button"
           onClick={() => {
             setIsOpen(false)
-            void navigate('/history')
+            if (projectId !== null) void navigate(`/projects/${projectId}/history`)
           }}
           className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         >

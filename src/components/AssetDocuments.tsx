@@ -28,7 +28,7 @@ export default function AssetDocuments({ asset, limit, openingId, onOpen }: Asse
           </span>
         </button>
         <button type="button" onClick={() => onOpen(document.id)} disabled={openingId === document.id} className="shrink-0 text-xs text-brand-600 disabled:opacity-40">{openingId === document.id ? 'Abriendo…' : 'Ver'}</button>
-        {version && <button type="button" onClick={(event) => { event.stopPropagation(); void downloadDocument(document.id) }} className="shrink-0 text-xs text-brand-600">Descargar</button>}
+        {version && <button type="button" onClick={(event) => { event.stopPropagation(); void downloadDocument(asset.projectId, document.id) }} className="shrink-0 text-xs text-brand-600">Descargar</button>}
       </div>
     )
   })}</div>

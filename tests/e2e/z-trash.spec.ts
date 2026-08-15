@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { minimalPdf } from './pdf'
 
 // ITEM-05: papelera por UI — eliminar desde la ficha y desde el menú de fila,

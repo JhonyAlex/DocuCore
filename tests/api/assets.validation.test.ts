@@ -31,7 +31,7 @@ describe('assets API validation', () => {
   })
 
   it('rejects malformed asset payloads through the real router and Zod error middleware', async () => {
-    const response = await fetch(`${baseUrl}/api/assets`, {
+    const response = await fetch(`${baseUrl}/api/projects/1/assets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code: '', statusId: 0 }),
@@ -45,14 +45,14 @@ describe('assets API validation', () => {
   })
 
   it('rejects an invalid asset id before accessing Prisma', async () => {
-    const response = await fetch(`${baseUrl}/api/assets/not-a-number`)
+    const response = await fetch(`${baseUrl}/api/projects/1/assets/not-a-number`)
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({ error: 'Invalid id' })
   })
 
   it('rejects an invalid calendar date instead of returning an internal error', async () => {
-    const response = await fetch(`${baseUrl}/api/assets`, {
+    const response = await fetch(`${baseUrl}/api/projects/1/assets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -77,7 +77,7 @@ describe('assets API validation', () => {
   })
 
   it('rejects manually supplied upcoming-event fields', async () => {
-    const response = await fetch(`${baseUrl}/api/assets`, {
+    const response = await fetch(`${baseUrl}/api/projects/1/assets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ nextEventLabel: 'Dato manual no permitido' }),

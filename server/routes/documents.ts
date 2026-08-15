@@ -7,8 +7,9 @@ import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile,
 import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
+import { requireDocumentInProject, scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
+const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
 
 const upload = multer({
@@ -158,8 +159,8 @@ function uploadSingle(req: Request, res: Response): Promise<void> {
   return new Promise((resolve, reject) => upload.single('file')(req, res, (error) => error ? reject(error) : resolve()))
 }
 
-async function assertDocumentExists(id: number): Promise<DocumentWithCurrentVersion> {
-  const document = await prisma.document.findUnique({ where: { id }, include: documentInclude })
+async function assertDocumentExists(id: number, projectId: number): Promise<DocumentWithCurrentVersion> {
+  const document = await prisma.document.findFirst({ where: { id, projectId }, include: documentInclude })
   if (!document) {
     const error = new Error('Document not found') as Error & { status?: number }
     error.status = 404
@@ -196,11 +197,12 @@ function assetCodes(document: DocumentWithCurrentVersion): string {
 
 router.get('/', asyncHandler(async (req, res) => {
   const parsed = documentListQuerySchema.parse(req.query)
+  const projectId = scopedProjectId(req)
+  if (parsed.projectId !== undefined && parsed.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const now = nowClock()
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + 30)
-  const conditions: Prisma.Sql[] = [Prisma.sql`TRUE`]
-  if (parsed.projectId !== undefined) conditions.push(Prisma.sql`d."projectId" = ${parsed.projectId}`)
+  const conditions: Prisma.Sql[] = [Prisma.sql`d."projectId" = ${projectId}`]
   if (parsed.assetId === null) conditions.push(Prisma.sql`NOT EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id")`)
   if (parsed.assetId !== undefined && parsed.assetId !== null) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id" AND di."assetId" = ${parsed.assetId})`)
   if (parsed.type) conditions.push(Prisma.sql`d."type" ILIKE ${parsed.type}`)
@@ -237,14 +239,13 @@ router.get('/', asyncHandler(async (req, res) => {
   `)
   const total = ids.length === 0 ? 0 : Number(ids[0].total)
   const order = new Map(ids.map((row, index) => [Number(row.id), index]))
-  const rows = ids.length === 0 ? [] : await prisma.document.findMany({ where: { id: { in: ids.map((row) => Number(row.id)) } }, select: documentListSelect })
+  const rows = ids.length === 0 ? [] : await prisma.document.findMany({ where: { id: { in: ids.map((row) => Number(row.id)) }, projectId }, select: documentListSelect })
   rows.sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0))
   res.json({ data: rows.map(serializeDocumentList), total, page: parsed.page, totalPages: Math.max(1, Math.ceil(total / parsed.limit)) })
 }))
 
 router.get('/kpis', asyncHandler(async (req, res) => {
-  const requestedProjectId = typeof req.query.projectId === 'string' ? Number(req.query.projectId) : null
-  const projectId = Number.isInteger(requestedProjectId) && requestedProjectId! > 0 ? requestedProjectId : null
+  const projectId = scopedProjectId(req)
   const now = nowClock()
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + 30)
@@ -259,7 +260,7 @@ router.get('/kpis', asyncHandler(async (req, res) => {
       SELECT dv."expiryDate" FROM "DocumentVersion" dv
       WHERE dv."documentId" = d."id" ORDER BY dv."version" DESC LIMIT 1
     ) current ON TRUE
-    WHERE ${projectId === null ? Prisma.sql`TRUE` : Prisma.sql`d."projectId" = ${projectId}`}
+    WHERE d."projectId" = ${projectId}
   `)
   const row = rows[0] ?? { vigente: 0, porVencer: 0, vencido: 0, total: 0 }
   res.json({ vigente: Number(row.vigente), porVencer: Number(row.porVencer), vencido: Number(row.vencido), total: Number(row.total) })
@@ -268,7 +269,7 @@ router.get('/kpis', asyncHandler(async (req, res) => {
 router.get('/:id', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
-  const document = await assertDocumentExists(id)
+  const document = await assertDocumentExists(id, scopedProjectId(req))
   const versions = await prisma.documentVersion.findMany({ where: { documentId: id }, orderBy: { version: 'desc' } })
   res.json({ ...serializeDocument(document), versions: versions.map((version) => ({
     id: version.id, version: version.version, originalName: version.originalName, mimeType: version.mimeType,
@@ -281,8 +282,10 @@ router.post('/', asyncHandler(async (req, res) => {
   await uploadSingle(req, res)
   if (!req.file) return res.status(400).json({ error: 'A document file is required' })
   const input = createDocumentMetadataSchema.parse(req.body)
+  const projectId = scopedProjectId(req)
+  if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const assetIds = input.assetIds ?? []
-  await assertDocumentAssets(input.projectId, assetIds)
+  await assertDocumentAssets(projectId, assetIds)
   // DOC-03: con periodicidad y sin vencimiento explícito, la primera versión
   // nace con el vencimiento calculado desde la emisión (no hay vencimiento previo).
   const periodicity = input.periodicity ?? null
@@ -299,7 +302,7 @@ router.post('/', asyncHandler(async (req, res) => {
         data: {
           name: input.name,
           type: input.type,
-          projectId: input.projectId,
+          projectId,
           periodicity,
           periodicityMode: periodicity ? periodicityMode : null,
           assets: { create: assetIds.map((assetId) => ({ asset: { connect: { id: assetId } } })) },
@@ -324,7 +327,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
   await uploadSingle(req, res)
   if (!req.file) return res.status(400).json({ error: 'A document file is required' })
   const input = documentVersionMetadataSchema.parse(req.body)
-  const before = await assertDocumentExists(id)
+  const before = await assertDocumentExists(id, scopedProjectId(req))
   // DOC-03: con periodicidad y sin vencimiento explícito, el nuevo vencimiento
   // se calcula según el modo ('Calendario' salta desde el vigente, 'Subida'
   // desde la emisión de la nueva versión).
@@ -356,8 +359,10 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   const input = updateDocumentMetadataSchema.parse(req.body)
-  const before = await assertDocumentExists(id)
-  if (input.assetIds !== undefined) await assertDocumentAssets(input.projectId ?? before.projectId, input.assetIds ?? [])
+  const projectId = scopedProjectId(req)
+  if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+  const before = await assertDocumentExists(id, projectId)
+  if (input.assetIds !== undefined) await assertDocumentAssets(projectId, input.assetIds ?? [])
   // DOC-03: el modo requiere periodicidad (actual o entrante); null quita la regla.
   const periodicity = input.periodicity
   if (input.periodicityMode !== undefined && input.periodicityMode !== null && (periodicity ?? before.periodicity) === null) {
@@ -376,7 +381,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       data: {
         name: input.name,
         type: input.type,
-        projectId: input.projectId,
+        projectId: undefined,
         periodicity,
         periodicityMode: periodicity === null ? null : input.periodicityMode,
         assets: input.assetIds === undefined ? undefined : {
@@ -425,6 +430,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 router.get('/:id/preview', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
+  await requireDocumentInProject(id, scopedProjectId(req))
   const version = await prisma.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
   await sendDocumentVersion(res, version, 'inline')
@@ -433,6 +439,7 @@ router.get('/:id/preview', asyncHandler(async (req, res) => {
 router.get('/:id/download', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
+  await requireDocumentInProject(id, scopedProjectId(req))
   const version = await prisma.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
   await sendDocumentVersion(res, version, 'attachment')
@@ -444,6 +451,7 @@ router.get('/:id/versions/:version/preview', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   const versionNumber = parseId(req.params.version)
   if (!id || !versionNumber) return res.status(400).json({ error: 'Invalid id' })
+  await requireDocumentInProject(id, scopedProjectId(req))
   const version = await prisma.documentVersion.findUnique({ where: { documentId_version: { documentId: id, version: versionNumber } } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
   await sendDocumentVersion(res, version, 'inline')
@@ -453,6 +461,7 @@ router.get('/:id/versions/:version/download', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   const versionNumber = parseId(req.params.version)
   if (!id || !versionNumber) return res.status(400).json({ error: 'Invalid id' })
+  await requireDocumentInProject(id, scopedProjectId(req))
   const version = await prisma.documentVersion.findUnique({ where: { documentId_version: { documentId: id, version: versionNumber } } })
   if (!version) return res.status(404).json({ error: 'Document version not found' })
   await sendDocumentVersion(res, version, 'attachment')
@@ -461,7 +470,7 @@ router.get('/:id/versions/:version/download', asyncHandler(async (req, res) => {
 router.delete('/:id', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
-  const document = await prisma.document.findUnique({ where: { id }, include: { versions: true } })
+  const document = await prisma.document.findFirst({ where: { id, projectId: scopedProjectId(req) }, include: { versions: true } })
   if (!document) return res.status(404).json({ error: 'Not found' })
   await prisma.$transaction([
     prisma.document.delete({ where: { id } }),

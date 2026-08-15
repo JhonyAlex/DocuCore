@@ -5,39 +5,36 @@ import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/cale
 import { asCalendarDate } from '../lib/calendarDomain'
 import { assetEventClock } from '../lib/assetEvents'
 import { calendarCreateEventSchema, calendarListQuerySchema, calendarUpdateEventSchema, completeCalendarOccurrenceSchema } from '../lib/validate'
+import { requireAssetInProject, scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
+const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
-
-async function assertActiveProject(projectId: number): Promise<void> {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } })
-  if (!project) throw Object.assign(new Error('Project not found'), { status: 404 })
-}
 
 async function assertAssetInProject(assetId: number | null | undefined, projectId: number): Promise<void> {
   if (!assetId) return
-  const asset = await prisma.asset.findFirst({ where: { id: assetId, projectId, deletedAt: null }, select: { id: true } })
-  if (!asset) throw Object.assign(new Error('Asset must belong to the project'), { status: 400 })
+  await requireAssetInProject(assetId, projectId)
 }
 
 router.get('/', asyncHandler(async (req, res) => {
   const input = calendarListQuerySchema.parse(req.query)
-  await assertActiveProject(input.projectId)
+  const projectId = scopedProjectId(req)
+  if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   // La primera carga tampoco descarga todo el historial: si la URL no trae
   // rango todavía, el servidor usa su propio reloj y el mes que lo contiene.
   const clock = assetEventClock()
   const defaultFrom = asCalendarDate(new Date(Date.UTC(clock.getUTCFullYear(), clock.getUTCMonth(), 1)))
   const defaultTo = asCalendarDate(new Date(Date.UTC(clock.getUTCFullYear(), clock.getUTCMonth() + 1, 0)))
-  res.json(await listCalendarOccurrences(prisma, { ...input, from: input.from ?? defaultFrom, to: input.to ?? defaultTo }))
+  res.json(await listCalendarOccurrences(prisma, { ...input, projectId, from: input.from ?? defaultFrom, to: input.to ?? defaultTo }))
 }))
 
 router.post('/events', asyncHandler(async (req, res) => {
   const input = calendarCreateEventSchema.parse(req.body)
-  await assertActiveProject(input.projectId)
-  await assertAssetInProject(input.assetId, input.projectId)
+  const projectId = scopedProjectId(req)
+  if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+  await assertAssetInProject(input.assetId, projectId)
   const event = await prisma.$transaction(async (tx) => {
-    const created = await tx.event.create({ data: { title: input.title, date: new Date(`${input.date}T00:00:00.000Z`), type: input.category, projectId: input.projectId, assetId: input.assetId ?? null } })
-    await tx.auditLog.create({ data: { projectId: input.projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `event:${created.id}`, detail: `Evento "${created.title}" creado para ${input.date}`, timestamp: new Date() } })
+    const created = await tx.event.create({ data: { title: input.title, date: new Date(`${input.date}T00:00:00.000Z`), type: input.category, projectId, assetId: input.assetId ?? null } })
+    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `event:${created.id}`, detail: `Evento "${created.title}" creado para ${input.date}`, timestamp: new Date() } })
     return created
   })
   const occurrence = (await listCalendarOccurrences(prisma, { projectId: event.projectId, from: input.date, to: input.date, source: 'event' })).events.find((entry) => entry.sourceId === event.id)
@@ -48,7 +45,8 @@ router.patch('/events/:id', asyncHandler(async (req, res) => {
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
   const input = calendarUpdateEventSchema.parse(req.body)
-  const existing = await prisma.event.findUnique({ where: { id }, select: { id: true, projectId: true } })
+  const projectId = scopedProjectId(req)
+  const existing = await prisma.event.findFirst({ where: { id, projectId }, select: { id: true, projectId: true } })
   if (!existing) return res.status(404).json({ error: 'Event not found' })
   await assertAssetInProject(input.assetId, existing.projectId)
   const updated = await prisma.$transaction(async (tx) => {
@@ -64,7 +62,7 @@ router.patch('/events/:id', asyncHandler(async (req, res) => {
 router.delete('/events/:id', asyncHandler(async (req, res) => {
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
-  const event = await prisma.event.findUnique({ where: { id }, select: { id: true, title: true, projectId: true } })
+  const event = await prisma.event.findFirst({ where: { id, projectId: scopedProjectId(req) }, select: { id: true, title: true, projectId: true } })
   if (!event) return res.status(404).json({ error: 'Event not found' })
   await prisma.$transaction([
     prisma.event.delete({ where: { id } }),
@@ -75,8 +73,9 @@ router.delete('/events/:id', asyncHandler(async (req, res) => {
 
 router.post('/events/complete', asyncHandler(async (req, res) => {
   const input = completeCalendarOccurrenceSchema.parse(req.body)
-  await assertActiveProject(input.projectId)
-  await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { ...input, actorId: ACTOR_USER_ID }))
+  const projectId = scopedProjectId(req)
+  if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
+  await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { ...input, projectId, actorId: ACTOR_USER_ID }))
   res.status(204).end()
 }))
 

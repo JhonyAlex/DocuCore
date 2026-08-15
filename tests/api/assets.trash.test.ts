@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 // ITEM-05: papelera de activos. El DELETE mueve el activo a la papelera
 // (recuperable 30 días), POST /:id/restore lo devuelve y POST /:id/purge lo
@@ -14,7 +14,7 @@ const createdAssetIds: number[] = []
 type AssetRow = { id: number; code: string; name: string; deletedAt: string | null }
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${path}`, init)
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
 }
 
 function uniqueSuffix(): string {
@@ -156,17 +156,17 @@ describe('assets trash lifecycle', () => {
     createdAssetIds.push(((await reuse.json()) as AssetRow).id)
   })
 
-  it('excludes trashed assets from the session asset count', async () => {
-    const before = (await (await api('/api/session')).json()) as { project: { assetCount: number } }
+  it('excludes trashed assets from the project aggregate count', async () => {
+    const before = (await (await api('/api/projects/1')).json()) as { assetCount: number }
     const asset = await createAsset(`QA-SC-${uniqueSuffix()}`)
     expect((await api(`/api/assets/${asset.id}`, { method: 'DELETE' })).status).toBe(204)
 
-    const afterDelete = (await (await api('/api/session')).json()) as { project: { assetCount: number } }
-    expect(afterDelete.project.assetCount).toBe(before.project.assetCount)
+    const afterDelete = (await (await api('/api/projects/1')).json()) as { assetCount: number }
+    expect(afterDelete.assetCount).toBe(before.assetCount)
 
     expect((await api(`/api/assets/${asset.id}/restore`, { method: 'POST' })).status).toBe(200)
-    const afterRestore = (await (await api('/api/session')).json()) as { project: { assetCount: number } }
-    expect(afterRestore.project.assetCount).toBe(before.project.assetCount + 1)
+    const afterRestore = (await (await api('/api/projects/1')).json()) as { assetCount: number }
+    expect(afterRestore.assetCount).toBe(before.assetCount + 1)
 
     expect((await api(`/api/assets/${asset.id}`, { method: 'DELETE' })).status).toBe(204)
     expect((await api(`/api/assets/${asset.id}/purge`, { method: 'POST' })).status).toBe(204)

@@ -15,7 +15,7 @@ export const createAssetSchema = z.object({
   typeId: z.number().int().positive(),
   statusId: z.number().int().positive(),
   locationId: z.number().int().positive(),
-  projectId: z.number().int().positive(),
+  projectId: z.number().int().positive().optional(),
   responsibleId: z.number().int().positive(),
   initials: z.string().min(1),
   dynamicFields: z.array(z.object({ definitionId: z.number().int().positive(), value: z.unknown() }).strict()).max(200).optional(),
@@ -34,7 +34,7 @@ export const createLocationSchema = z.object({
   surface: z.string().trim().min(1).max(60),
   parentId: z.number().int().positive().nullable(),
   responsibleId: z.number().int().positive(),
-  projectId: z.number().int().positive(),
+  projectId: z.number().int().positive().optional(),
 }).strict()
 
 export const updateLocationSchema = createLocationSchema.partial()
@@ -50,9 +50,10 @@ const calendarStatusSchema = z.enum(['overdue', 'today', 'upcoming', 'pending', 
 const optionalQueryText = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((value) => value === '' || value === undefined ? undefined : value, schema.optional())
 const calendarOptionalAssetId = z.preprocess((value) => value === '' || value === undefined ? undefined : value === null || value === 'null' ? null : Number(value), z.number().int().positive().nullable().optional())
 const calendarProjectId = z.preprocess((value) => Number(value), z.number().int().positive())
+const optionalCalendarProjectId = z.preprocess((value) => value === '' || value === undefined ? undefined : Number(value), z.number().int().positive().optional())
 
 export const calendarListQuerySchema = z.object({
-  projectId: calendarProjectId,
+  projectId: optionalCalendarProjectId,
   from: optionalQueryText(isoDateSchema),
   to: optionalQueryText(isoDateSchema),
   source: optionalQueryText(calendarSourceSchema),
@@ -72,7 +73,7 @@ export const calendarCreateEventSchema = z.object({
   date: isoDateSchema,
   category: calendarCategorySchema,
   assetId: calendarOptionalAssetId,
-  projectId: calendarProjectId,
+  projectId: optionalCalendarProjectId,
 }).strict()
 
 export const calendarUpdateEventSchema = z.object({

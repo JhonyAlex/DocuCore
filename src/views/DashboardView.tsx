@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import KpiCard from '@/components/KpiCard'
 import DashboardChart from '@/components/DashboardChart'
 import { fetchDashboard, downloadDashboardExport, type ApiDashboardResponse } from '@/lib/api'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 
 const expirationIcons: Record<string, ReactNode> = {
   file: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
@@ -24,7 +24,8 @@ function formatSpanishDate(isoDateString: string): string {
 
 export default function DashboardView() {
   const navigate = useNavigate()
-  const { session } = useSession()
+  const { project, projectId } = useProject()
+  if (projectId === null) throw new Error('DashboardView requires a project scope')
   const [range, setRange] = useState<'30d' | '7d' | 'year'>('30d')
   const [dashboardData, setDashboardData] = useState<ApiDashboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -35,10 +36,7 @@ export default function DashboardView() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchDashboard({
-        projectId: session?.project.id,
-        range,
-      })
+      const data = await fetchDashboard(projectId, { range })
       setDashboardData(data)
     } catch {
       setDashboardData(null)
@@ -46,7 +44,7 @@ export default function DashboardView() {
     } finally {
       setLoading(false)
     }
-  }, [session?.project.id, range])
+  }, [projectId, range])
 
   useEffect(() => {
     void loadData()
@@ -55,10 +53,7 @@ export default function DashboardView() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      await downloadDashboardExport({
-        projectId: session?.project.id,
-        range,
-      })
+      await downloadDashboardExport(projectId, { range })
     } catch {
       // Error silencioso de descarga
     } finally {
@@ -72,20 +67,20 @@ export default function DashboardView() {
   const bars = dashboardData?.chartBars ?? []
   const activity = dashboardData?.activityFeed ?? []
 
-  const projectName = dashboardData?.project.name ?? session?.project.name ?? 'Sin proyecto'
+  const projectName = dashboardData?.project.name ?? project?.name ?? 'Proyecto'
   const formattedDate = dashboardData ? formatSpanishDate(dashboardData.referenceDate) : 'Cargando datos…'
 
   // Enlazar navegación a KPIs
   const interactiveKpis = kpis.map((kpi) => {
     let onClick: (() => void) | undefined
     if (kpi.id === 'assets') {
-      onClick = () => navigate('/assets')
+      onClick = () => navigate(`/projects/${projectId}/assets`)
     } else if (kpi.id === 'docs') {
-      onClick = () => navigate('/docs')
+      onClick = () => navigate(`/projects/${projectId}/docs`)
     } else if (kpi.id === 'events') {
-      onClick = () => navigate('/calendar')
+      onClick = () => navigate(`/projects/${projectId}/calendar`)
     } else if (kpi.id === 'incidents') {
-      onClick = () => navigate('/assets')
+      onClick = () => navigate(`/projects/${projectId}/assets`)
     }
     return { ...kpi, onClick }
   })
@@ -142,7 +137,7 @@ export default function DashboardView() {
             <h2 className="font-semibold">Próximos vencimientos</h2>
             <button
               type="button"
-              onClick={() => navigate('/calendar')}
+              onClick={() => navigate(`/projects/${projectId}/calendar`)}
               className="text-sm text-brand-600 hover:text-brand-700"
             >
               Ver todos →
@@ -155,11 +150,11 @@ export default function DashboardView() {
             {upcoming.map((exp) => {
               const handleItemClick = () => {
                 if (exp.targetType === 'asset' && exp.targetId) {
-                  navigate(`/assets?assetId=${exp.targetId}`)
+                  navigate(`/projects/${projectId}/assets?assetId=${exp.targetId}`)
                 } else if (exp.targetType === 'docs') {
-                  navigate(exp.searchQuery ? `/docs?search=${encodeURIComponent(exp.searchQuery)}` : '/docs')
+                  navigate(exp.searchQuery ? `/projects/${projectId}/docs?search=${encodeURIComponent(exp.searchQuery)}` : `/projects/${projectId}/docs`)
                 } else {
-                  navigate('/calendar')
+                  navigate(`/projects/${projectId}/calendar`)
                 }
               }
 
@@ -208,13 +203,13 @@ export default function DashboardView() {
             {alerts.map((alert) => {
               const handleAlertClick = () => {
                 if (alert.targetType === 'asset' && alert.targetId) {
-                  navigate(`/assets?assetId=${alert.targetId}`)
+                  navigate(`/projects/${projectId}/assets?assetId=${alert.targetId}`)
                 } else if (alert.targetType === 'assets-filter') {
-                  navigate('/assets?search=Extintor')
+                  navigate(`/projects/${projectId}/assets?search=Extintor`)
                 } else if (alert.targetType === 'docs') {
-                  navigate('/docs')
+                  navigate(`/projects/${projectId}/docs`)
                 } else {
-                  navigate('/assets')
+                  navigate(`/projects/${projectId}/assets`)
                 }
               }
 
@@ -249,14 +244,14 @@ export default function DashboardView() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-6">
         <DashboardChart
           bars={bars}
-          onMonthClick={() => navigate('/calendar')}
+          onMonthClick={() => navigate(`/projects/${projectId}/calendar`)}
         />
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold">Actividad reciente</h2>
             <button
               type="button"
-              onClick={() => navigate('/history')}
+              onClick={() => navigate(`/projects/${projectId}/history`)}
               className="text-sm text-brand-600 hover:text-brand-700"
             >
               Ver historial
@@ -269,9 +264,9 @@ export default function DashboardView() {
             {activity.map((item) => {
               const handleActivityClick = () => {
                 if (item.assetId) {
-                  navigate(`/assets?assetId=${item.assetId}`)
+                  navigate(`/projects/${projectId}/assets?assetId=${item.assetId}`)
                 } else {
-                  navigate('/history')
+                  navigate(`/projects/${projectId}/history`)
                 }
               }
 

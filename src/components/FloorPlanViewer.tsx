@@ -39,9 +39,11 @@ const noopMarkerDragStart = (_markerId: number) => undefined
 const noopMarkerDrag = (_markerId: number, _point: NormalizedPoint) => undefined
 const noopMarkerDragEnd = (_markerId: number) => undefined
 
-function releaseCapturedPointer(element: Element, event: Event) {
+function releaseCapturedPointer(element: Element | null | undefined, event: Event) {
   const pointerEvent = event as PointerEvent
-  if (typeof pointerEvent.pointerId !== 'number' || !element.hasPointerCapture(pointerEvent.pointerId)) return
+  // El release llega en un timeout: OpenSeadragon puede haber desmontado su
+  // tracker entre el pointer-up y esta ejecución.
+  if (!element || typeof pointerEvent.pointerId !== 'number' || !element.hasPointerCapture(pointerEvent.pointerId)) return
   element.releasePointerCapture(pointerEvent.pointerId)
 }
 

@@ -3,13 +3,11 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import type { Prisma } from '@prisma/client'
+import { scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
-
-const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
+const router: Router = Router({ mergeParams: true })
 
 const historyQuerySchema = z.object({
-  projectId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().optional(),
   userId: z.coerce.number().int().positive().optional(),
   action: z.string().trim().optional(),
@@ -86,37 +84,13 @@ function buildHistoryWhere(
   return where
 }
 
-async function resolveProject(projectIdParam?: string, projectIdQuery?: number) {
-  if (projectIdParam) {
-    const id = Number(projectIdParam)
-    if (Number.isInteger(id) && id > 0) {
-      return prisma.project.findUniqueOrThrow({
-        where: { id },
-        select: { id: true, code: true, name: true },
-      })
-    }
-  }
-
-  if (projectIdQuery) {
-    return prisma.project.findUniqueOrThrow({
-      where: { id: projectIdQuery },
-      select: { id: true, code: true, name: true },
-    })
-  }
-
-  return prisma.project.findUniqueOrThrow({
-    where: { code: CURRENT_PROJECT_CODE },
-    select: { id: true, code: true, name: true },
-  })
-}
-
 router.get(
   '/',
   asyncHandler(async (req, res) => {
     res.set('Cache-Control', 'no-store')
     const query = historyQuerySchema.parse(req.query)
-    const project = await resolveProject(req.params.projectId, query.projectId)
-    const where = buildHistoryWhere(project.id, query)
+    const projectId = scopedProjectId(req)
+    const where = buildHistoryWhere(projectId, query)
 
     const [rows, total, availableActions] = await prisma.$transaction([
       prisma.auditLog.findMany({
@@ -137,7 +111,7 @@ router.get(
       }),
       prisma.auditLog.count({ where }),
       prisma.auditLog.findMany({
-        where: { projectId: project.id },
+        where: { projectId },
         distinct: ['action'],
         select: { action: true },
         orderBy: { action: 'asc' },
@@ -166,8 +140,9 @@ router.get(
   '/export',
   asyncHandler(async (req, res) => {
     const query = historyQuerySchema.parse(req.query)
-    const project = await resolveProject(req.params.projectId, query.projectId)
-    const where = buildHistoryWhere(project.id, query)
+    const projectId = scopedProjectId(req)
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { code: true } })
+    const where = buildHistoryWhere(projectId, query)
 
     const rows = await prisma.auditLog.findMany({
       where,

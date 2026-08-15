@@ -34,8 +34,9 @@ async function main() {
   const stamp = Date.now()
   const code = `PERF-${stamp}`
   const user = await prisma.user.findFirstOrThrow({ select: { id: true } })
-  const status = await prisma.status.findFirstOrThrow({ select: { id: true } })
-  const project = await prisma.project.create({ data: { code, name: `Perfil temporal ${stamp}`, description: 'Datos sintéticos eliminados al terminar PERF-01', gradient: 'from-slate-500 to-slate-700' } })
+  const project = await prisma.project.create({ data: { code, name: `Perfil temporal ${stamp}`, description: 'Datos sintéticos eliminados al terminar PERF-01', themeKey: 'slate' } })
+  await prisma.projectMember.create({ data: { projectId: project.id, userId: user.id, role: 'OWNER' } })
+  const status = await prisma.status.create({ data: { projectId: project.id, name: `Activo PERF ${stamp}`, color: 'emerald', sortOrder: 0 } })
   const type = await prisma.assetType.create({ data: { projectId: project.id, name: `Tipo PERF ${stamp}`, iconKey: 'box', sortOrder: 0 } })
   const root = await prisma.location.create({ data: { projectId: project.id, name: `Raíz PERF ${stamp}`, label: `Raíz PERF ${stamp}`, code: `LOC-${stamp}`, surface: '1 m²', responsibleId: user.id } })
   let leaf = root
@@ -76,19 +77,19 @@ async function main() {
     try {
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Performance server did not expose a TCP address')
-      const base = `http://127.0.0.1:${address.port}/api`
+      const base = `http://127.0.0.1:${address.port}/api/projects/${project.id}`
       const [assets, documents, assetSearch, documentSearch, treeBootstrap, subtreeAssets, planAssets, planFacets, markers, calendarDense, historyAssetList] = await Promise.all([
-        measure(`${base}/assets?projectId=${project.id}&limit=20&page=1`),
-        measure(`${base}/documents?projectId=${project.id}&limit=20&page=1`),
-        measure(`${base}/assets?projectId=${project.id}&limit=20&search=000999`),
-        measure(`${base}/documents?projectId=${project.id}&limit=20&search=000999`),
-        measure(`${base}/locations/bootstrap?projectId=${project.id}`),
-        measure(`${base}/assets?projectId=${project.id}&locationId=${root.id}&limit=20`),
+        measure(`${base}/assets?limit=20&page=1`),
+        measure(`${base}/documents?limit=20&page=1`),
+        measure(`${base}/assets?limit=20&search=000999`),
+        measure(`${base}/documents?limit=20&search=000999`),
+        measure(`${base}/locations/bootstrap`),
+        measure(`${base}/assets?locationId=${root.id}&limit=20`),
         measure(`${base}/floor-plans/${planId}/assets?limit=20&search=Activo`),
         measure(`${base}/floor-plans/${planId}/facets`),
         measure(`${base}/floor-plans/${planId}`),
-        measure(`${base}/calendar?projectId=${project.id}&from=2026-07-01&to=2026-07-31&limit=500`),
-        measure(`${base}/assets?projectId=${project.id}&search=PERF-A-${stamp}-0&limit=20`),
+        measure(`${base}/calendar?from=2026-07-01&to=2026-07-31&limit=500`),
+        measure(`${base}/assets?search=PERF-A-${stamp}-0&limit=20`),
       ])
       console.log(JSON.stringify({ recordsPerEntity: count, historyRecordsPerSource: 2_000, assets, documents, assetSearch, documentSearch, treeBootstrap, subtreeAssets, planAssets, planFacets, markers, calendarDense, historyAssetList }, null, 2))
     } finally {

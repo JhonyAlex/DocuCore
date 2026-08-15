@@ -4,6 +4,7 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { PERIODICITIES, PERIODICITY_MODES } from '../lib/assetSchedules'
+import { scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
@@ -22,12 +23,6 @@ const bulkPlanSchema = z.object({
   action: z.enum(['deactivate', 'delete']),
   ids: z.array(z.number().int().positive()).min(1).max(200),
 }).strict()
-
-function projectIdOf(value: string | undefined): number {
-  const id = Number(value)
-  if (!Number.isInteger(id) || id <= 0) throw Object.assign(new Error('Invalid project id'), { status: 400 })
-  return id
-}
 
 const planInclude = {
   tasks: { include: { task: true }, orderBy: { sortOrder: 'asc' as const } },
@@ -57,7 +52,7 @@ function serializePlan(plan: PlanQueryResult) {
 }
 
 router.get('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const includeInactive = req.query.includeInactive === 'true'
   const assetTypeId = req.query.assetTypeId ? Number(req.query.assetTypeId) : null
 
@@ -79,7 +74,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const input = planInputSchema.parse(req.body)
 
   const [validTasks, validTypes] = await Promise.all([
@@ -116,7 +111,7 @@ router.post('/', asyncHandler(async (req, res) => {
 }))
 
 router.get('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
 
@@ -126,7 +121,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.patch('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
 
@@ -171,7 +166,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.post('/:id/duplicate', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
 
@@ -205,7 +200,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
 
@@ -226,7 +221,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.post('/bulk', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const input = bulkPlanSchema.parse(req.body)
   const plans = await prisma.preventivePlan.findMany({ where: { id: { in: input.ids }, projectId } })
   if (plans.length === 0) return res.status(404).json({ error: 'No plans found' })

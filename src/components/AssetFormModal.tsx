@@ -162,7 +162,7 @@ export default function AssetFormModal({
   const selectedLocationLabel = locations.find((location) => location.id === values.locationId)?.label
     ?? (asset?.locationId === values.locationId ? asset.location?.label ?? null : null)
   const searchLocationOptions = async (query: string): Promise<SearchableOption[]> => {
-    const result = await searchLocations(query, 20, values.projectId)
+    const result = await searchLocations(values.projectId, query, 20)
     return [
       ...result.data.map((location) => ({ value: String(location.id), label: location.label, hint: location.code })),
       { value: NEW_LOCATION_OPTION, label: '＋ Crear nueva ubicación…' },

@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 // Valida contra la BD aislada de E2E que POST /api/assets y PUT /api/assets/:id
 // comprueben antes de escribir que la ubicación pertenece al proyecto del activo
@@ -21,7 +21,7 @@ let project1OnlyUser: UserRow
 let bothProjectsUser: UserRow
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${path}`, init)
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
 }
 
 function assetPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -183,7 +183,7 @@ describe('assets relation validation', () => {
       body: JSON.stringify({ projectId: 2 }),
     })
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
+    await expect(response.json()).resolves.toEqual({ error: 'Project id does not match route scope' })
   })
 
   it('rejects a partial PUT that changes only the location to another project', async () => {
@@ -203,7 +203,7 @@ describe('assets relation validation', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Type, location and responsible must belong to the asset project' })
   })
 
-  it('accepts a PUT that moves project, location and responsible coherently', async () => {
+  it('rejects a PUT that attempts to move an asset between projects', async () => {
     const created = await (await api('/api/assets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -219,12 +219,8 @@ describe('assets relation validation', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ projectId: 2, typeId: targetMachine.id, locationId: project2Location.id, responsibleId: bothProjectsUser.id }),
     })
-    expect(response.status).toBe(200)
-    const updated = await response.json() as { projectId: number; typeId: number; locationId: number; responsibleId: number }
-    expect(updated.projectId).toBe(2)
-    expect(updated.typeId).toBe(targetMachine.id)
-    expect(updated.locationId).toBe(project2Location.id)
-    expect(updated.responsibleId).toBe(bothProjectsUser.id)
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Project id does not match route scope' })
   })
 
   it('updates the location label when it followed the old name, keeps custom labels', async () => {

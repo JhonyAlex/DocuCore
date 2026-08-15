@@ -7,15 +7,15 @@ type Status = { id: number; name: string }
 type LocationSummary = { id: number; name: string }
 
 const navDestinations: Array<{ label: string; route: string; heading?: string }> = [
-  { label: 'Panel general', route: '/dashboard' },
-  { label: 'Proyectos', route: '/projects' },
-  { label: 'Activos', route: '/assets' },
-  { label: 'Documentos', route: '/docs' },
-  { label: 'Calendario', route: '/calendar' },
-  { label: 'Planos', route: '/plans', heading: 'Planos interactivos' },
-  { label: 'Ubicaciones', route: '/locations' },
-  { label: 'Historial', route: '/history', heading: 'Historial y auditoría' },
-  { label: 'Configuración', route: '/config' },
+  { label: 'Panel general', route: '/projects/1/dashboard' },
+  { label: 'Proyectos', route: '/projects/1/portfolio' },
+  { label: 'Activos', route: '/projects/1/assets' },
+  { label: 'Documentos', route: '/projects/1/docs' },
+  { label: 'Calendario', route: '/projects/1/calendar' },
+  { label: 'Planos', route: '/projects/1/plans', heading: 'Planos interactivos' },
+  { label: 'Ubicaciones', route: '/projects/1/locations' },
+  { label: 'Historial', route: '/projects/1/history', heading: 'Historial y auditoría' },
+  { label: 'Configuración', route: '/projects/1/config' },
 ]
 
 async function goToAssets(page: Page): Promise<void> {
@@ -86,6 +86,20 @@ test.describe('DocuCore application', () => {
     expect(consoleIssues).toEqual([])
   })
 
+  test('switches project without leaving the current operational section', async ({ page, consoleIssues }) => {
+    await page.goto('/projects/1/assets')
+    await expect(page.getByText('Torno CNC Haas ST-20', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: /Planta Industrial Norte/ }).click()
+    await expect(page.getByPlaceholder('Buscar proyecto…')).toBeVisible()
+    await page.getByRole('button', { name: /Edificio Corporativo Centro/ }).click()
+
+    await expect(page).toHaveURL('/projects/2/assets')
+    await expect(page.getByText('Climatizadora central Daikin VRV', { exact: true })).toBeVisible()
+    await expect(page.getByText('Torno CNC Haas ST-20', { exact: true })).toHaveCount(0)
+    expect(consoleIssues).toEqual([])
+  })
+
   test('opens and closes the asset modal', async ({ page, consoleIssues }) => {
     await goToAssets(page)
     const canonicalRow = page.locator('tbody tr').filter({ hasText: 'CNC-05' })
@@ -131,7 +145,7 @@ test.describe('DocuCore application', () => {
 
   test('keeps the latest filter result when responses arrive out of order', async ({ page, consoleIssues }) => {
     let delayedInstrumentRequest = false
-    await page.route('**/api/assets?**', async (route) => {
+    await page.route('**/api/projects/*/assets?**', async (route) => {
       const url = new URL(route.request().url())
       const shouldDelay = !delayedInstrumentRequest
         && url.searchParams.get('typeId') === '5'
@@ -166,7 +180,7 @@ test.describe('DocuCore application', () => {
 
   test('recovers the assets list after a temporary API failure', async ({ page }) => {
     let apiAvailable = false
-    await page.route('**/api/assets?**', async (route) => {
+    await page.route('**/api/projects/*/assets?**', async (route) => {
       if (apiAvailable) {
         await route.continue()
         return

@@ -49,17 +49,17 @@ async function main(): Promise<void> {
   console.log('  • Proyectos base (2)')
   await prisma.project.createMany({
     data: [
-      { code: 'PRJ-2026-001', name: 'Planta Industrial Norte', description: 'Proyecto base para validación manual.', status: 'ACTIVE', gradient: 'brand-indigo', assetCount: 0, userCount: 2, locationCount: 0 },
-      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Segundo proyecto para pruebas de separación.', status: 'ACTIVE', gradient: 'emerald-teal', assetCount: 0, userCount: 1, locationCount: 0 },
+      { code: 'PRJ-2026-001', name: 'Planta Industrial Norte', description: 'Proyecto base para validación manual.', status: 'ACTIVE', themeKey: 'blue' },
+      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Segundo proyecto para pruebas de separación.', status: 'ACTIVE', themeKey: 'emerald' },
     ],
   })
 
   // Membresías reales: María en ambos proyectos; J. Ramírez solo en el proyecto 1.
   await prisma.projectMember.createMany({
     data: [
-      { projectId: 1, userId: 1, role: 'Administradora' },
-      { projectId: 1, userId: 2, role: 'Técnico' },
-      { projectId: 2, userId: 1, role: 'Administradora' },
+      { projectId: 1, userId: 1, role: 'OWNER' },
+      { projectId: 1, userId: 2, role: 'EDITOR' },
+      { projectId: 2, userId: 1, role: 'OWNER' },
     ],
   })
 

@@ -115,24 +115,28 @@ async function main(): Promise<void> {
   console.log('  • Projects (5)')
   await prisma.project.createMany({
     data: [
-      { code: PROJECT_CODE, name: 'Planta Industrial Norte', description: 'Planta de producción con 3 naves, 142 activos inventariados y 6 usuarios asociados.', status: 'ACTIVE', gradient: 'brand-indigo', assetCount: 142, userCount: 6, locationCount: locationsData.length },
-      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Oficinas centrales · 5 plantas · Gestión de contratos y servicios.', status: 'ACTIVE', gradient: 'emerald-teal', assetCount: 87, userCount: 4, locationCount: 1 },
-      { code: 'PRJ-2026-003', name: 'Almacén Logístico Sur', description: 'Gestión de inventario, vehículos y extintores.', status: 'ACTIVE', gradient: 'amber-orange', assetCount: 213, userCount: 9, locationCount: 15 },
-      { code: 'PRJ-2026-004', name: 'Cliente: Hospitales San Rafael', description: 'Gestión documental y calibraciones para equipo médico.', status: 'ACTIVE', gradient: 'purple-pink', assetCount: 58, userCount: 3, locationCount: 6 },
-      { code: 'PRJ-2025-018', name: 'Auditoría ISO 9001 · 2025', description: 'Proyecto documental cerrado tras certificación.', status: 'ARCHIVED', gradient: 'slate', assetCount: 0, userCount: 2, locationCount: 0, docCount: 34 },
+      { code: PROJECT_CODE, name: 'Planta Industrial Norte', description: 'Planta de producción con 3 naves, 142 activos inventariados y 6 usuarios asociados.', status: 'ACTIVE', themeKey: 'blue' },
+      { code: 'PRJ-2026-002', name: 'Edificio Corporativo Centro', description: 'Oficinas centrales · 5 plantas · Gestión de contratos y servicios.', status: 'ACTIVE', themeKey: 'emerald' },
+      { code: 'PRJ-2026-003', name: 'Almacén Logístico Sur', description: 'Gestión de inventario, vehículos y extintores.', status: 'ACTIVE', themeKey: 'amber' },
+      { code: 'PRJ-2026-004', name: 'Cliente: Hospitales San Rafael', description: 'Gestión documental y calibraciones para equipo médico.', status: 'ACTIVE', themeKey: 'rose' },
+      { code: 'PRJ-2025-018', name: 'Auditoría ISO 9001 · 2025', description: 'Proyecto documental cerrado tras certificación.', status: 'ARCHIVED', themeKey: 'slate' },
     ],
   })
 
   console.log('  • Project members')
   await prisma.projectMember.createMany({
     data: [
-      { projectId: 1, userId: 1, role: 'Administradora' },
-      { projectId: 1, userId: 2, role: 'Técnico' },
-      { projectId: 1, userId: 3, role: 'Técnico' },
-      { projectId: 1, userId: 4, role: 'Laboratorio' },
-      { projectId: 1, userId: 5, role: 'Sistemas' },
-      { projectId: 2, userId: 5, role: 'Sistemas' },
-      { projectId: 2, userId: 1, role: 'Administradora' },
+      { projectId: 1, userId: 1, role: 'OWNER' },
+      { projectId: 1, userId: 2, role: 'EDITOR' },
+      { projectId: 1, userId: 3, role: 'EDITOR' },
+      { projectId: 1, userId: 4, role: 'VIEWER' },
+      { projectId: 1, userId: 5, role: 'EDITOR' },
+      { projectId: 2, userId: 5, role: 'EDITOR' },
+      { projectId: 2, userId: 1, role: 'OWNER' },
+      { projectId: 2, userId: 2, role: 'EDITOR' },
+      { projectId: 3, userId: 1, role: 'OWNER' },
+      { projectId: 4, userId: 1, role: 'OWNER' },
+      { projectId: 5, userId: 1, role: 'OWNER' },
     ],
   })
 
@@ -176,7 +180,7 @@ async function main(): Promise<void> {
         name: location.name,
         label: location.label,
         surface: location.surface,
-        parent: location.parentCode ? { connect: { code: location.parentCode } } : undefined,
+        parent: location.parentCode ? { connect: { projectId_code: { projectId: location.projectCode === 'PRJ-2026-002' ? 2 : 1, code: location.parentCode } } } : undefined,
         responsible: { connect: { email: location.responsibleEmail } },
         project: { connect: { code: location.projectCode ?? PROJECT_CODE } },
       },
@@ -214,7 +218,7 @@ async function main(): Promise<void> {
         initials: asset.initials,
         type: { connect: { projectId_name: { projectId: 1, name: asset.typeName } } },
         status: { connect: { projectId_name: { projectId: 1, name: asset.statusName } } },
-        location: { connect: { code: asset.locationCode } },
+        location: { connect: { projectId_code: { projectId: 1, code: asset.locationCode } } },
         project: { connect: { code: PROJECT_CODE } },
         responsible: { connect: { email: asset.responsibleEmail } },
       },
@@ -229,7 +233,7 @@ async function main(): Promise<void> {
 
   let sequence = 0
   for (const bucket of generatedBuckets) {
-    const location = await prisma.location.findUniqueOrThrow({ where: { code: bucket.locationCode }, select: { id: true, projectId: true } })
+    const location = await prisma.location.findUniqueOrThrow({ where: { projectId_code: { projectId: 1, code: bucket.locationCode } }, select: { id: true, projectId: true } })
     await prisma.asset.createMany({
       data: Array.from({ length: bucket.count }, () => {
         sequence += 1
@@ -249,6 +253,39 @@ async function main(): Promise<void> {
       }),
     })
   }
+
+  // PROJ-01: a second genuinely usable tenant proves that project boundaries
+  // are not merely configuration filters. It deliberately reuses the CNC code
+  // and serial number from project 1; the new composite constraints permit it.
+  console.log('  • Datos operativos diferenciados del proyecto Centro')
+  const centroAsset = await prisma.asset.create({
+    data: {
+      code: 'CNC-05',
+      name: 'Climatizadora central Daikin VRV',
+      serialNumber: 'HA20-2024-8821',
+      installDate: isoFromEu('20/03/2025'),
+      initials: 'HV',
+      type: { connect: { projectId_name: { projectId: 2, name: 'Máquina' } } },
+      status: { connect: { projectId_name: { projectId: 2, name: 'Activo' } } },
+      location: { connect: { projectId_code: { projectId: 2, code: 'ECC-PL1' } } },
+      project: { connect: { id: 2 } },
+      responsible: { connect: { email: 'pmartin@docucore.local' } },
+    },
+    select: { id: true },
+  })
+  const centroDocument = await prisma.document.create({
+    data: {
+      projectId: 2,
+      name: 'Contrato mantenimiento climatización Centro',
+      type: 'Contrato',
+      eventTitle: 'Renovación climatización',
+      assets: { create: [{ assetId: centroAsset.id }] },
+    },
+    select: { id: true },
+  })
+  const centroDocumentBytes = createSeedPdfBuffer('CONTRATO CLIMATIZACION CENTRO')
+  const centroDocumentKey = await storeDocumentBuffer(centroDocumentBytes, 'application/pdf')
+  await prisma.documentVersion.create({ data: { documentId: centroDocument.id, version: 1, originalName: 'contrato-climatizacion-centro.pdf', storageKey: centroDocumentKey, mimeType: 'application/pdf', sizeBytes: centroDocumentBytes.length, issueDate: isoFromEu('20/03/2025'), expiryDate: isoFromEu('20/03/2027') } })
 
   console.log('  • Catalog Tasks (5)')
   const taskSeeds = [
@@ -330,7 +367,7 @@ async function main(): Promise<void> {
   })
 
   console.log('  • Asset Preventive Assignment (CNC-05)')
-  const cncAsset = await prisma.asset.findUniqueOrThrow({ where: { code: 'CNC-05' } })
+  const cncAsset = await prisma.asset.findUniqueOrThrow({ where: { projectId_code: { projectId: 1, code: 'CNC-05' } } })
   const assignedPlan = await prisma.assetPreventivePlan.create({
     data: {
       assetId: cncAsset.id,
@@ -409,7 +446,7 @@ async function main(): Promise<void> {
       },
     })
   }
-  const cnc = await prisma.asset.findUniqueOrThrow({ where: { code: 'CNC-05' }, select: { id: true } })
+  const cnc = await prisma.asset.findUniqueOrThrow({ where: { projectId_code: { projectId: 1, code: 'CNC-05' } }, select: { id: true } })
   const cncValues = [
     { name: 'Fabricante', textValue: 'Haas Automation' },
     { name: 'Modelo', textValue: 'ST-20' },
@@ -429,7 +466,7 @@ async function main(): Promise<void> {
     { assetCode: 'SRV-03', title: 'Revisión firmware', date: '12/08/2026', type: 'Mantenimiento de sistemas' },
   ]
   for (const event of eventData) {
-    const asset = await prisma.asset.findUniqueOrThrow({ where: { code: event.assetCode }, select: { id: true, projectId: true } })
+    const asset = await prisma.asset.findUniqueOrThrow({ where: { projectId_code: { projectId: 1, code: event.assetCode } }, select: { id: true, projectId: true } })
     await prisma.event.create({
       data: {
         title: event.title,
@@ -459,7 +496,7 @@ async function main(): Promise<void> {
         createdAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         updatedAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
         project: { connect: { code: PROJECT_CODE } },
-        assets: { create: [{ asset: { connect: { code: document.assetCode } } }] },
+        assets: { create: [{ asset: { connect: { projectId_code: { projectId: 1, code: document.assetCode } } } }] },
       },
     })
     if (document.previous) {
@@ -491,7 +528,7 @@ async function main(): Promise<void> {
     data: {
       name: 'Plano Planta 1 · Nave A',
       project: { connect: { code: PROJECT_CODE } },
-      location: { connect: { code: 'PIN-NA-01A' } },
+      location: { connect: { projectId_code: { projectId: 1, code: 'PIN-NA-01A' } } },
     },
   })
   const floorPlanBytes = await readFile(path.join(process.cwd(), 'public', 'floor-plan.png'))
@@ -500,7 +537,7 @@ async function main(): Promise<void> {
     data: { floorPlanId: floorPlan.id, version: 1, originalName: 'plano-planta-1-nave-a.png', mimeType: 'image/png', sizeBytes: floorPlanBytes.length, ...storedFloorPlan },
   })
   const directAssets = await prisma.asset.findMany({
-    where: { location: { code: 'PIN-NA-01A' }, deletedAt: null },
+    where: { projectId: 1, location: { code: 'PIN-NA-01A' }, deletedAt: null },
     select: { id: true },
     orderBy: { id: 'asc' },
     take: 5,

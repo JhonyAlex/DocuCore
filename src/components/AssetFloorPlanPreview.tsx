@@ -43,7 +43,7 @@ export default function AssetFloorPlanPreview({ asset }: AssetFloorPlanPreviewPr
     setError(null)
     setPlacements([])
     setActivePlanId(null)
-    void fetchAssetFloorPlanPlacements(asset.id)
+    void fetchAssetFloorPlanPlacements(asset.projectId, asset.id)
       .then((response) => {
         if (!active) return
         setPlacements(response.data)
@@ -52,13 +52,13 @@ export default function AssetFloorPlanPreview({ asset }: AssetFloorPlanPreviewPr
       .catch(() => { if (active) setError('No se pudieron cargar los planos de este activo.') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [asset.id])
+  }, [asset.id, asset.projectId])
 
   const activePlacement = placements.find((placement) => placement.planId === activePlanId) ?? placements[0] ?? null
   const openInPlans = (placement: ApiAssetFloorPlanPlacement | null) => {
     const params = new URLSearchParams({ assetId: String(asset.id) })
     if (placement) params.set('planId', String(placement.planId))
-    navigate(`/plans?${params.toString()}`)
+    navigate(`/projects/${asset.projectId}/plans?${params.toString()}`)
   }
 
   if (loading) return <div className="flex min-h-72 items-center justify-center text-sm text-slate-500">Cargando ubicación en planos…</div>

@@ -5,15 +5,15 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import DynamicFieldFormModal from '@/components/DynamicFieldFormModal'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useSelection } from '@/hooks/useSelection'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 import { archiveDynamicFieldDefinition, createDynamicFieldDefinition, fetchAssetTypes, fetchDynamicFieldDefinitions, updateDynamicFieldDefinition, type ApiAssetType, type ApiDynamicFieldDefinition, type DynamicFieldDefinitionInput } from '@/lib/api'
 
 const typeLabels = { TEXT: 'Texto corto', TEXTAREA: 'Texto largo', NUMBER: 'Número', DATE: 'Fecha', SELECT: 'Selección única', MULTISELECT: 'Selección múltiple', BOOLEAN: 'Sí / No' }
 
 export default function DynamicFieldsConfigView() {
   const navigate = useNavigate()
-  const { session } = useSession()
-  const projectId = session?.project.id ?? 0
+  const { project, projectId } = useProject()
+  if (projectId === null) throw new Error('DynamicFieldsConfigView requires a project scope')
   const selection = useSelection<number>()
   const [fields, setFields] = useState<ApiDynamicFieldDefinition[]>([])
   const [types, setTypes] = useState<ApiAssetType[]>([])
@@ -29,7 +29,6 @@ export default function DynamicFieldsConfigView() {
   const [archiveError, setArchiveError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!projectId) return
     setLoading(true)
     setError(null)
     try {
@@ -46,7 +45,6 @@ export default function DynamicFieldsConfigView() {
   useEffect(() => { void load() }, [load])
 
   const submit = async (input: DynamicFieldDefinitionInput) => {
-    if (!projectId) return
     setSaving(true)
     setFormError(null)
     try {
@@ -63,7 +61,6 @@ export default function DynamicFieldsConfigView() {
   }
 
   const archive = async () => {
-    if (!projectId) return
     setArchiving(true)
     setArchiveError(null)
     try {
@@ -83,9 +80,9 @@ export default function DynamicFieldsConfigView() {
     <section className="fade-in">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <button type="button" onClick={() => navigate('/config')} className="mb-2 text-xs font-medium text-brand-600">← Configuración</button>
+          <button type="button" onClick={() => navigate(`/projects/${projectId}/config`)} className="mb-2 text-xs font-medium text-brand-600">← Configuración</button>
           <h1 className="text-2xl font-semibold tracking-tight">Campos dinámicos</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Características personalizadas del proyecto {session?.project.name ?? ''}</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Características personalizadas del proyecto {project?.name ?? ''}</p>
         </div>
         <button type="button" onClick={() => { setFormError(null); setFormField(null) }} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Nuevo campo</button>
       </div>

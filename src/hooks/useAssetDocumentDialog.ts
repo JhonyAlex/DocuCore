@@ -3,7 +3,7 @@ import { fetchDocument, type ApiDocument } from '@/lib/api'
 
 // Mantiene la ficha del activo debajo del modal de documento y evita que el
 // Escape del modal anidado cierre también la ficha.
-export default function useAssetDocumentDialog(assetId: number | undefined) {
+export default function useAssetDocumentDialog(projectId: number | undefined, assetId: number | undefined) {
   const [createOpen, setCreateOpen] = useState(false)
   const [document, setDocument] = useState<ApiDocument | null>(null)
   const [openingId, setOpeningId] = useState<number | null>(null)
@@ -28,7 +28,8 @@ export default function useAssetDocumentDialog(assetId: number | undefined) {
     setError(null)
     setOpeningId(documentId)
     try {
-      const next = await fetchDocument(documentId)
+      if (!projectId) throw new Error('No hay proyecto seleccionado')
+      const next = await fetchDocument(projectId, documentId)
       if (requestId === requestRef.current) setDocument(next)
     } catch {
       if (requestId === requestRef.current) {

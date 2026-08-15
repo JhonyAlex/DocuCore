@@ -6,12 +6,11 @@ import {
   markNotificationAsRead,
 } from '@/lib/api'
 import type { ApiNotification } from '@/types'
-import { useSession } from './SessionContext'
 import { NotificationContext, type NotificationFilter } from './NotificationContext'
+import { useProject } from './ProjectContext'
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const { session } = useSession()
-  const projectId = session?.project.id
+  const { projectId } = useProject()
 
   const [notifications, setNotifications] = useState<ApiNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -27,8 +26,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetchNotifications({
-          projectId,
+        const res = await fetchNotifications(projectId, {
           filter,
           sync,
           limit: 30,
@@ -56,12 +54,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       )
       setUnreadCount((prev) => (read ? Math.max(0, prev - 1) : prev + 1))
       try {
-        await markNotificationAsRead(id, read)
+        if (!projectId) return
+        await markNotificationAsRead(projectId, id, read)
       } catch {
         void reload(false)
       }
     },
-    [reload],
+    [projectId, reload],
   )
 
   const markAllAsRead = useCallback(async () => {
@@ -84,12 +83,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }
       setTotal((prev) => Math.max(0, prev - 1))
       try {
-        await deleteNotification(id)
+        if (!projectId) return
+        await deleteNotification(projectId, id)
       } catch {
         void reload(false)
       }
     },
-    [notifications, reload],
+    [notifications, projectId, reload],
   )
 
   const toggleOpen = useCallback(() => {

@@ -1,5 +1,15 @@
 # CURRENT_STATUS — DocuCore
 
+## Fecha: 2026-08-15
+
+## PROJ-01 — Sistema multi-proyecto real: FUNCIONAL
+
+- **Ámbito autoritativo**: todas las áreas operativas usan rutas `/projects/:projectId/...` y sus APIs viven bajo `/api/projects/:projectId/...`; ya no hay un proyecto implícito, `CURRENT_PROJECT_CODE`, `projectId = 1`, primer proyecto ni fallback mock en el flujo productivo. `ProjectProvider` resuelve el proyecto explícito de URL y el Sidebar conserva la sección al cambiarlo, descartando el estado de la vista anterior.
+- **Integridad**: `ProjectScope` central valida existencia, membresía, roles de gestión, archivo y relaciones cruzadas. Los proyectos archivados siguen siendo consultables y reactivables, pero devuelven 409 a escrituras ordinarias. Código y serie de activo, y código de ubicación, son únicos dentro de su proyecto. Los resúmenes de cartera usan `_count` real de PostgreSQL, no contadores persistidos.
+- **Proyecto y configuración**: CRUD real, archivo/reactivación y membresías con roles `OWNER/ADMIN/EDITOR/VIEWER`; nunca se permite dejar un proyecto sin owner. La clonación transaccional copia exclusivamente estados, tipos, campos/opciones/asociaciones, tareas y planes preventivos/asociaciones, sin datos operativos.
+- **Seed y escala**: cinco proyectos accesibles; Planta Industrial Norte y Edificio Corporativo Centro tienen datos diferenciados. La cartera y selector están paginados/buscables en servidor; el perfil de 10.000 registros conserva respuestas acotadas. Ver [PROJ-01.md](./PROJ-01.md) y [PROJECT_SCOPE.md](../architecture/PROJECT_SCOPE.md).
+- **Validación**: lint, typecheck, build y Prisma validate ✅; unit/API **236/236** ✅; E2E **79/79** ✅; rendimiento de 10.000 registros ✅; migraciones y seed ✅; Docker saludable y `/api/health` 200. El visual completo queda en **21/30**: Proyectos 3/3 bajo 0,5 %, mientras Panel, Ubicaciones e Historial siguen bloqueados por sus diferencias funcionales previas frente al HTML protegido. No se modificaron HTML, baselines ni umbral.
+
 ## Fecha: 2026-08-14
 
 ## SHELL-01, DASH-01, HIST-01 y Estados — FUNCIONAL

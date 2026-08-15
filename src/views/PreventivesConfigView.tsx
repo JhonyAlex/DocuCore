@@ -4,7 +4,7 @@ import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useSelection } from '@/hooks/useSelection'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 import {
   bulkUpdatePreventivePlans,
   bulkUpdateTasks,
@@ -32,8 +32,8 @@ const controlClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-slate-50
 
 export default function PreventivesConfigView() {
   const navigate = useNavigate()
-  const { session } = useSession()
-  const projectId = session?.project.id ?? 0
+  const { project, projectId } = useProject()
+  if (projectId === null) throw new Error('PreventivesConfigView requires a project scope')
 
   const [activeTab, setActiveTab] = useState<'tasks' | 'plans'>('plans')
 
@@ -78,7 +78,6 @@ export default function PreventivesConfigView() {
   const [deletePlanError, setDeletePlanError] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
-    if (!projectId) return
     setLoading(true)
     setError(null)
     try {
@@ -118,7 +117,6 @@ export default function PreventivesConfigView() {
 
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!projectId) return
     setTaskBusy(true)
     setTaskError(null)
     try {
@@ -137,7 +135,6 @@ export default function PreventivesConfigView() {
   }
 
   const handleToggleTaskActive = async (task: ApiTask) => {
-    if (!projectId) return
     try {
       await updateTask(projectId, task.id, { isActive: !task.isActive })
       await loadData()
@@ -147,7 +144,7 @@ export default function PreventivesConfigView() {
   }
 
   const handleConfirmDeleteTasks = async () => {
-    if (!projectId || deleteTaskIds.length === 0) return
+    if (deleteTaskIds.length === 0) return
     setDeletingTasks(true)
     setDeleteTaskError(null)
     try {
@@ -167,7 +164,7 @@ export default function PreventivesConfigView() {
   }
 
   const handleBulkDeactivateTasks = async () => {
-    if (!projectId || taskSelection.selectedIds.length === 0) return
+    if (taskSelection.selectedIds.length === 0) return
     try {
       await bulkUpdateTasks(projectId, 'deactivate', taskSelection.selectedIds)
       taskSelection.clear()
@@ -191,7 +188,6 @@ export default function PreventivesConfigView() {
 
   const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!projectId) return
     setPlanBusy(true)
     setPlanError(null)
     try {
@@ -218,7 +214,6 @@ export default function PreventivesConfigView() {
   }
 
   const handleDuplicatePlan = async (plan: ApiPreventivePlanTemplate) => {
-    if (!projectId) return
     try {
       await duplicatePreventivePlan(projectId, plan.id)
       await loadData()
@@ -228,7 +223,6 @@ export default function PreventivesConfigView() {
   }
 
   const handleTogglePlanActive = async (plan: ApiPreventivePlanTemplate) => {
-    if (!projectId) return
     try {
       await updatePreventivePlan(projectId, plan.id, { isActive: !plan.isActive })
       await loadData()
@@ -238,7 +232,7 @@ export default function PreventivesConfigView() {
   }
 
   const handleConfirmDeletePlans = async () => {
-    if (!projectId || deletePlanIds.length === 0) return
+    if (deletePlanIds.length === 0) return
     setDeletingPlans(true)
     setDeletePlanError(null)
     try {
@@ -258,7 +252,7 @@ export default function PreventivesConfigView() {
   }
 
   const handleBulkDeactivatePlans = async () => {
-    if (!projectId || planSelection.selectedIds.length === 0) return
+    if (planSelection.selectedIds.length === 0) return
     try {
       await bulkUpdatePreventivePlans(projectId, 'deactivate', planSelection.selectedIds)
       planSelection.clear()
@@ -284,12 +278,12 @@ export default function PreventivesConfigView() {
       {/* Header */}
       <div className="flex items-end justify-between gap-4">
         <div>
-          <button type="button" onClick={() => navigate('/config')} className="mb-2 text-xs font-medium text-brand-600">
+          <button type="button" onClick={() => navigate(`/projects/${projectId}/config`)} className="mb-2 text-xs font-medium text-brand-600">
             ← Configuración
           </button>
           <h1 className="text-2xl font-semibold tracking-tight">Gestión de preventivos</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Catálogo de tareas reutilizables y plantillas de planes preventivos del proyecto {session?.project.name ?? ''}
+            Catálogo de tareas reutilizables y plantillas de planes preventivos del proyecto {project?.name ?? ''}
           </p>
         </div>
         <div>

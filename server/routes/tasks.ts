@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
+import { scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
 const ACTOR_USER_ID = 1
@@ -11,21 +12,15 @@ const bulkTaskSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(200),
 }).strict()
 
-function projectIdOf(value: string | undefined): number {
-  const id = Number(value)
-  if (!Number.isInteger(id) || id <= 0) throw Object.assign(new Error('Invalid project id'), { status: 400 })
-  return id
-}
-
 router.get('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const includeInactive = req.query.includeInactive === 'true'
   const tasks = await prisma.task.findMany({ where: { projectId, isActive: includeInactive ? undefined : true }, orderBy: [{ code: 'asc' }, { id: 'asc' }] })
   res.json(tasks)
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const input = taskSchema.parse(req.body)
   const created = await prisma.$transaction(async (tx) => {
     const task = await tx.task.create({ data: { projectId, ...input, isActive: input.isActive ?? true } })
@@ -36,7 +31,7 @@ router.post('/', asyncHandler(async (req, res) => {
 }))
 
 router.patch('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
   const input = taskSchema.partial().parse(req.body)
@@ -51,7 +46,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' })
   const task = await prisma.task.findFirst({ where: { id, projectId } })
@@ -76,7 +71,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 }))
 
 router.post('/bulk', asyncHandler(async (req, res) => {
-  const projectId = projectIdOf(req.params.projectId)
+  const projectId = scopedProjectId(req)
   const input = bulkTaskSchema.parse(req.body)
   const tasks = await prisma.task.findMany({ where: { id: { in: input.ids }, projectId } })
   if (tasks.length === 0) return res.status(404).json({ error: 'No tasks found' })

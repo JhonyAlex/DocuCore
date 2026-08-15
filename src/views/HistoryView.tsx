@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 import {
   fetchHistory,
   fetchUsers,
@@ -12,7 +12,8 @@ import { formatApiDateTime, getHistoryActionChipClass, responsibleColorMap } fro
 const LIMIT = 20
 
 export default function HistoryView() {
-  const { session } = useSession()
+  const { projectId } = useProject()
+  if (projectId === null) throw new Error('HistoryView requires a project scope')
   const [users, setUsers] = useState<ApiUserRef[]>([])
   const [history, setHistory] = useState<ApiHistoryEntry[]>([])
   const [availableActions, setAvailableActions] = useState<string[]>([])
@@ -41,7 +42,7 @@ export default function HistoryView() {
   // Carga inicial de usuarios para el filtro
   useEffect(() => {
     let active = true
-    fetchUsers()
+    fetchUsers(projectId)
       .then((data) => {
         if (active) setUsers(data)
       })
@@ -49,15 +50,14 @@ export default function HistoryView() {
     return () => {
       active = false
     }
-  }, [])
+  }, [projectId])
 
   // Carga de historial remoto
   const loadHistory = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetchHistory({
-        projectId: session?.project.id,
+      const res = await fetchHistory(projectId, {
         search: debouncedSearch || undefined,
         userId: selectedUserId,
         action: selectedAction || undefined,
@@ -76,7 +76,7 @@ export default function HistoryView() {
     } finally {
       setLoading(false)
     }
-  }, [session?.project.id, debouncedSearch, selectedUserId, selectedAction, page])
+  }, [projectId, debouncedSearch, selectedUserId, selectedAction, page])
 
   useEffect(() => {
     void loadHistory()
@@ -85,8 +85,7 @@ export default function HistoryView() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      await downloadHistoryCsv({
-        projectId: session?.project.id,
+      await downloadHistoryCsv(projectId, {
         search: debouncedSearch || undefined,
         userId: selectedUserId,
         action: selectedAction || undefined,

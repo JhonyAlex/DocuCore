@@ -4,6 +4,7 @@ import SearchableMultiPicker, { type SelectedValue } from '@/components/Searchab
 import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
 import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, fetchDocumentPreview, updateDocument, type ApiDocument, type ApiDocumentDetail, type DocumentMetadataInput } from '@/lib/api'
 import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
+import { useProject } from '@/contexts/ProjectContext'
 
 type DocumentModalProps = {
   document: ApiDocument | null
@@ -24,6 +25,8 @@ function toUtcDateInput(value: string): Date {
 }
 
 export default function DocumentModal({ document, initialAssetIds = [], onClose, onChanged }: DocumentModalProps) {
+  const { projectId } = useProject()
+  if (projectId === null) throw new Error('DocumentModal requires a project scope')
   const [detail, setDetail] = useState<ApiDocumentDetail | null>(null)
   const [name, setName] = useState(document?.name ?? '')
   const [type, setType] = useState(document?.type ?? documentTypes[0])
@@ -82,7 +85,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     let active = true
     setPreview(null)
     setPreviewError(false)
-    fetchDocumentPreview(documentId)
+    fetchDocumentPreview(projectId, documentId)
       .then((blob) => {
         if (!active) return
         if (blob.type.startsWith('text/')) {
@@ -95,7 +98,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       })
       .catch(() => { if (active) setPreviewError(true) })
     return () => { active = false }
-  }, [documentId, versionNumber])
+  }, [documentId, projectId, versionNumber])
 
   // El object URL lo crea el efecto de carga y vive mientras exista `preview`.
   useEffect(() => {
@@ -133,7 +136,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       let blob: Blob | null = null
       const previewableVersion = historicalVersion.mimeType === 'application/pdf' || historicalVersion.mimeType.startsWith('image/') || historicalVersion.mimeType.startsWith('text/')
       if (previewableVersion) {
-        const previewBlob = await fetchDocumentPreview(document.id, historicalVersion.version)
+        const previewBlob = await fetchDocumentPreview(projectId, document.id, historicalVersion.version)
         if (requestId !== previewRequestRef.current) return
         if (previewBlob.type.startsWith('text/')) text = await previewBlob.text()
         else if (previewBlob.type === 'application/pdf') blob = previewBlob
@@ -176,9 +179,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   useEffect(() => {
     if (!document) return
     let active = true
-    fetchDocument(document.id).then((next) => active && setDetail(next)).catch(() => active && setError('No se pudo cargar el historial de versiones.'))
+    fetchDocument(projectId, document.id).then((next) => active && setDetail(next)).catch(() => active && setError('No se pudo cargar el historial de versiones.'))
     return () => { active = false }
-  }, [document])
+  }, [document, projectId])
 
   // DOC-03: precalcula el vencimiento con la periodicidad cuando cambian la
   // regla, el modo o la emisión (salvo edición manual del propio campo).
@@ -195,7 +198,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const metadata = (): DocumentMetadataInput => ({
     name,
     type,
-    projectId: 1,
+    projectId,
     assetIds: assets.map((asset) => asset.id),
     issueDate,
     expiryDate: expiryDate || undefined,
@@ -204,7 +207,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   })
 
   const searchAssets = async (query: string): Promise<SearchableOption[]> => {
-    const res = await fetchAssets({ search: query || undefined, limit: 20 })
+    const res = await fetchAssets(projectId, { search: query || undefined, limit: 20 })
     return res.data.map((asset) => ({ value: String(asset.id), label: `${asset.code} · ${asset.name}`, hint: asset.location?.name }))
   }
 
@@ -213,8 +216,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     if (isNew && !file) return setError('Selecciona un fichero para subir el documento.')
     setSaving(true)
     try {
-      if (isNew && file) await createDocument(metadata(), file)
-      if (!isNew && document) await updateDocument(document.id, { name, type, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity || undefined, periodicityMode: periodicity ? periodicityMode : undefined })
+      if (isNew && file) await createDocument(projectId, metadata(), file)
+      if (!isNew && document) await updateDocument(projectId, document.id, { name, type, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
       await onChanged()
       onClose()
     } catch {
@@ -237,8 +240,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
         nextExpiry = calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10)
       }
-      await createDocumentVersion(document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFile)
-      const next = await fetchDocument(document.id)
+      await createDocumentVersion(projectId, document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFile)
+      const next = await fetchDocument(projectId, document.id)
       setCurrent(next)
       setDetail(next)
       // La versión vigente cambió: la vista previa incrustada se recarga sola
@@ -294,8 +297,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               <div className="select-none cursor-not-allowed rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-6 text-center text-sm text-slate-400">Sin vista previa para este formato. Descarga el archivo para visualizarlo.</div>
             )}
           </div>}
-          {!isNew && document && <div className="flex flex-wrap items-center gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => void uploadNewVersion(event)} disabled={saving} className="sr-only" /></label><button type="button" onClick={() => void downloadDocument(document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar versión actual</button></div>}
-          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingVersion !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingVersion === historyVersion.version ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(document.id, historyVersion.version)}>Descargar</button></span></li>)}</ul></div>}
+          {!isNew && document && <div className="flex flex-wrap items-center gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => void uploadNewVersion(event)} disabled={saving} className="sr-only" /></label><button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar versión actual</button></div>}
+          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingVersion !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingVersion === historyVersion.version ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></li>)}</ul></div>}
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cancelar</button><button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button></div>

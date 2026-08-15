@@ -201,7 +201,7 @@ export interface CompleteCalendarOccurrenceInput {
   source: CalendarEventSource
   sourceId: number
   assetId?: number | null
-  projectId?: number
+  projectId: number
   performedDate: string
   actorId: number
 }
@@ -211,25 +211,25 @@ export async function completeCalendarOccurrence(tx: Prisma.TransactionClient, i
   const performed = asUtcDate(input.performedDate)
   let entityId = `event:${input.sourceId}`
   if (input.source === 'event') {
-    const event = await tx.event.findFirst({ where: { id: input.sourceId, completedAt: null, ...(input.projectId ? { projectId: input.projectId } : {}), ...(input.assetId !== undefined ? { assetId: input.assetId } : {}) }, include: { asset: { select: { code: true } } } })
+    const event = await tx.event.findFirst({ where: { id: input.sourceId, completedAt: null, projectId: input.projectId, ...(input.assetId !== undefined ? { assetId: input.assetId } : {}) }, include: { asset: { select: { code: true } } } })
     if (!event) throw Object.assign(new Error('Event is not pending'), { status: 409 })
     await tx.event.update({ where: { id: event.id }, data: { completedAt: new Date() } })
     entityId = event.asset?.code ?? `event:${event.id}`
   } else if (input.source === 'document') {
     if (!input.assetId) throw Object.assign(new Error('A document occurrence requires an asset'), { status: 400 })
-    const document = await tx.documentItem.findFirst({ where: { documentId: input.sourceId, assetId: input.assetId, asset: { deletedAt: null, ...(input.projectId ? { projectId: input.projectId } : {}) } }, include: { asset: { select: { code: true } } } })
+    const document = await tx.documentItem.findFirst({ where: { documentId: input.sourceId, assetId: input.assetId, asset: { deletedAt: null, projectId: input.projectId } }, include: { asset: { select: { code: true } } } })
     if (!document) throw Object.assign(new Error('Document does not belong to this asset'), { status: 404 })
     await tx.assetEventAcknowledgement.upsert({ where: { assetId_sourceKey: { assetId: input.assetId, sourceKey: `document:${input.sourceId}` } }, create: { assetId: input.assetId, sourceKey: `document:${input.sourceId}`, completedDate: performed }, update: { completedAt: new Date(), completedDate: performed } })
     entityId = document.asset.code
   } else if (input.source === 'dynamic-date') {
     if (!input.assetId) throw Object.assign(new Error('A date occurrence requires an asset'), { status: 400 })
-    const occurrence = await tx.assetDateOccurrence.findFirst({ where: { id: input.sourceId, completedAt: null, schedule: { assetId: input.assetId, asset: { deletedAt: null, ...(input.projectId ? { projectId: input.projectId } : {}) } } }, include: { schedule: { include: { asset: { select: { code: true } } } } } })
+    const occurrence = await tx.assetDateOccurrence.findFirst({ where: { id: input.sourceId, completedAt: null, schedule: { assetId: input.assetId, asset: { deletedAt: null, projectId: input.projectId } } }, include: { schedule: { include: { asset: { select: { code: true } } } } } })
     if (!occurrence) throw Object.assign(new Error('Date occurrence is not pending'), { status: 409 })
     await completeAssetDateOccurrence(tx, occurrence.id, performed)
     entityId = occurrence.schedule.asset.code
   } else {
     if (!input.assetId) throw Object.assign(new Error('A preventive occurrence requires an asset'), { status: 400 })
-    const execution = await tx.preventiveExecution.findFirst({ where: { id: input.sourceId, completedAt: null, plan: { assetId: input.assetId, isActive: true, asset: { deletedAt: null, ...(input.projectId ? { projectId: input.projectId } : {}) } } }, include: { plan: { include: { asset: { select: { code: true } } } }, tasks: true } })
+    const execution = await tx.preventiveExecution.findFirst({ where: { id: input.sourceId, completedAt: null, plan: { assetId: input.assetId, isActive: true, asset: { deletedAt: null, projectId: input.projectId } } }, include: { plan: { include: { asset: { select: { code: true } } } }, tasks: true } })
     if (!execution) throw Object.assign(new Error('Preventive execution is not pending'), { status: 409 })
     if (execution.tasks.some((task) => !task.completedAt)) throw Object.assign(new Error('Complete all preventive tasks first'), { status: 409 })
     await tx.preventiveExecution.update({ where: { id: execution.id }, data: { completedAt: new Date(), completedDate: performed } })

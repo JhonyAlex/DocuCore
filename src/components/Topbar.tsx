@@ -4,6 +4,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { routeLabels } from '@/lib/navigation'
 import { useAssetCreateRequest } from '@/contexts/AssetCreateContext'
 import { useNotifications } from '@/contexts/NotificationContext'
+import { useProject } from '@/contexts/ProjectContext'
 import GlobalSearchModal from '@/components/GlobalSearchModal'
 import NotificationsPopover from '@/components/NotificationsPopover'
 
@@ -13,8 +14,10 @@ export default function Topbar() {
   const navigate = useNavigate()
   const { requestCreate } = useAssetCreateRequest()
   const { unreadCount, isOpen, toggleOpen } = useNotifications()
+  const { project } = useProject()
   const [searchOpen, setSearchOpen] = useState(false)
-  const label = routeLabels[location.pathname] ?? 'Panel general'
+  const scopedPath = location.pathname.replace(/^\/projects\/\d+/, '') || '/dashboard'
+  const label = routeLabels[scopedPath] ?? 'Panel general'
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -28,8 +31,12 @@ export default function Topbar() {
   }, [])
 
   const openAssetForm = () => {
+    if (!project || project.status === 'ARCHIVED') {
+      void navigate('/projects')
+      return
+    }
     requestCreate()
-    void navigate('/assets')
+    void navigate(`/projects/${project.id}/assets`)
   }
 
   return (
@@ -83,7 +90,7 @@ export default function Topbar() {
             <svg className={`w-5 h-5${!isDark ? ' hidden' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
           </button>
 
-          <button type="button" onClick={openAssetForm} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
+          <button type="button" onClick={openAssetForm} disabled={!project || project.status === 'ARCHIVED'} title={project?.status === 'ARCHIVED' ? 'Los proyectos archivados no permiten altas' : undefined} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 text-white text-sm font-medium flex items-center gap-1.5">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Nuevo activo
           </button>

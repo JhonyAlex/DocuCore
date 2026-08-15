@@ -8,13 +8,14 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import { deleteDocument, downloadDocument, fetchDocument, fetchDocumentKpis, fetchDocuments, type ApiDocument } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 
 const LIMIT = 5
 
 export default function DocumentsView() {
   const [searchParams] = useSearchParams()
-  const { session } = useSession()
+  const { projectId } = useProject()
+  if (projectId === null) throw new Error('DocumentsView requires a project scope')
   const selection = useSelection<number>()
   const [documents, setDocuments] = useState<ApiDocument[]>([])
   const [kpis, setKpis] = useState({ vigente: 0, porVencer: 0, vencido: 0, total: 0 })
@@ -39,7 +40,7 @@ export default function DocumentsView() {
   const load = useCallback(async () => {
     setError(null)
     try {
-      const [list, nextKpis] = await Promise.all([fetchDocuments({ ...deferredFilters, page, limit: LIMIT, projectId: session?.project.id }), fetchDocumentKpis(session?.project.id)])
+      const [list, nextKpis] = await Promise.all([fetchDocuments(projectId, { ...deferredFilters, page, limit: LIMIT }), fetchDocumentKpis(projectId)])
       setDocuments(list.data)
       setTotal(list.total)
       setTotalPages(list.totalPages)
@@ -48,7 +49,7 @@ export default function DocumentsView() {
       setError('No se pudieron cargar los documentos. Inténtalo de nuevo.')
       setDocuments([])
     }
-  }, [deferredFilters, page, session?.project.id])
+  }, [deferredFilters, page, projectId])
 
   useEffect(() => { void load() }, [load])
 
@@ -62,8 +63,8 @@ export default function DocumentsView() {
   useEffect(() => {
     if (!Number.isInteger(deepLinkedDocId) || deepLinkedDocId <= 0 || openedDocIdRef.current === deepLinkedDocId) return
     openedDocIdRef.current = deepLinkedDocId
-    void fetchDocument(deepLinkedDocId).then((doc) => setEditing(doc)).catch(() => { openedDocIdRef.current = null })
-  }, [deepLinkedDocId])
+    void fetchDocument(projectId, deepLinkedDocId).then((doc) => setEditing(doc)).catch(() => { openedDocIdRef.current = null })
+  }, [deepLinkedDocId, projectId])
 
   const toUserError = (writeError: unknown) => toUserWriteError(writeError, {
     notFound: 'El documento ya no está disponible. Actualiza la lista e inténtalo de nuevo.',
@@ -82,7 +83,7 @@ export default function DocumentsView() {
     setDeleteError(null)
     setDeleting(true)
     try {
-      await Promise.all(deleteTarget.ids.map((id) => deleteDocument(id)))
+      await Promise.all(deleteTarget.ids.map((id) => deleteDocument(projectId, id)))
       selection.clear()
       setDeleteTarget(null)
       await load()
@@ -95,7 +96,7 @@ export default function DocumentsView() {
 
   const handleBulkDownload = async () => {
     for (const id of selection.selectedIds) {
-      await downloadDocument(id)
+      await downloadDocument(projectId, id)
     }
   }
 
@@ -119,7 +120,7 @@ export default function DocumentsView() {
         documents={documents}
         selection={selection}
         onRowClick={(document) => setEditing(document)}
-        onDownload={(document) => void downloadDocument(document.id)}
+        onDownload={(document) => void downloadDocument(projectId, document.id)}
         onDelete={(document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
       />
       {editing !== undefined && <DocumentModal document={editing} onClose={() => setEditing(undefined)} onChanged={load} />}

@@ -5,7 +5,7 @@ import StatusChip from '@/components/StatusChip'
 import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RowActionsMenu from '@/components/RowActionsMenu'
-import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 import { useSelection } from '@/hooks/useSelection'
 import {
   archiveStatus,
@@ -20,8 +20,8 @@ import type { PulseColor } from '@/types'
 
 export default function StatusesConfigView() {
   const navigate = useNavigate()
-  const { session } = useSession()
-  const projectId = session?.project.id ?? 0
+  const { project, projectId } = useProject()
+  if (projectId === null) throw new Error('StatusesConfigView requires a project scope')
   const selection = useSelection<number>()
   const [statuses, setStatuses] = useState<ApiStatus[]>([])
   const [showInactive, setShowInactive] = useState(false)
@@ -35,7 +35,6 @@ export default function StatusesConfigView() {
   const [archiveError, setArchiveError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!projectId) return
     setLoading(true)
     setError(null)
     try {
@@ -52,7 +51,6 @@ export default function StatusesConfigView() {
   }, [load])
 
   const submit = async (input: StatusInput) => {
-    if (!projectId) return
     setSaving(true)
     setFormError(null)
     try {
@@ -72,7 +70,6 @@ export default function StatusesConfigView() {
   }
 
   const archive = async () => {
-    if (!projectId) return
     setArchiving(true)
     setArchiveError(null)
     try {
@@ -92,7 +89,6 @@ export default function StatusesConfigView() {
   }
 
   const reactivate = async (statusItem: ApiStatus) => {
-    if (!projectId) return
     setError(null)
     try {
       await updateStatus(projectId, statusItem.id, { isActive: true })
@@ -110,14 +106,14 @@ export default function StatusesConfigView() {
         <div>
           <button
             type="button"
-            onClick={() => navigate('/config')}
+            onClick={() => navigate(`/projects/${projectId}/config`)}
             className="mb-2 text-xs font-medium text-brand-600 hover:underline"
           >
             ← Configuración
           </button>
           <h1 className="text-2xl font-semibold tracking-tight">Estados</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Catálogo de estados del proyecto {session?.project.name ?? ''}
+            Catálogo de estados del proyecto {project?.name ?? ''}
           </p>
         </div>
         <button

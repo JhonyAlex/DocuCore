@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 // DOC-03: periodicidad de documentos. Al crear o subir una versión sin
 // vencimiento explícito, el servidor lo calcula según la regla:
@@ -20,7 +20,7 @@ const createdDocumentIds: number[] = []
 const PDF_BYTES = Buffer.from('%PDF-1.4 QA PERIODICITY BYTES')
 
 async function api(apiPath: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${apiPath}`, init)
+  return fetch(`${baseUrl}${projectApiPath(apiPath, init)}`, init)
 }
 
 function uniqueSuffix(): string {

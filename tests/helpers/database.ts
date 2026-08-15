@@ -11,6 +11,20 @@ const composeArgs = ['--project-name', 'docucore-e2e', '--file', 'docker-compose
 
 export const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${testDatabasePort}/docucore?schema=public`
 
+/** Builds canonical project-scoped API URLs for legacy-focused API specifications. */
+export function projectApiPath(path: string, init?: RequestInit): string {
+  if (!path.startsWith('/api/') || path.startsWith('/api/projects/') || path === '/api/health' || path === '/api/session' || path === '/api/projects') return path
+  const url = new URL(path, 'http://docucore.test')
+  let projectId = Number(url.searchParams.get('projectId')) || 0
+  const mayCreateScopedResource = (init?.method ?? 'GET').toUpperCase() === 'POST'
+  if (!projectId && mayCreateScopedResource && typeof init?.body === 'string') {
+    try { projectId = Number((JSON.parse(init.body) as { projectId?: unknown }).projectId) || 0 } catch { /* not JSON */ }
+  }
+  if (!projectId && mayCreateScopedResource && init?.body instanceof FormData) projectId = Number(init.body.get('projectId')) || 0
+  const operationalPath = url.pathname.slice('/api'.length)
+  return `/api/projects/${projectId || 1}${operationalPath}${url.search}`
+}
+
 async function run(command: string, args: string[]): Promise<void> {
   const options = {
     cwd: process.cwd(),

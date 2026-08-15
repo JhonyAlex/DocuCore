@@ -11,6 +11,16 @@ enum ProjectStatus {
   ARCHIVED
 }
 
+// Roles are persisted as a closed catalog. Authentication is intentionally out
+// of scope for PROJ-01, but every project-scoped request can already resolve
+// the membership and role of the current application user.
+enum ProjectRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
 enum FieldType {
   TEXT
   TEXTAREA
@@ -39,18 +49,14 @@ model User {
 }
 
 model Project {
-  id            Int           @id @default(autoincrement())
-  code          String        @unique
-  name          String
-  description   String
-  status        ProjectStatus @default(ACTIVE)
-  gradient      String
-  assetCount    Int           @default(0)
-  userCount     Int           @default(0)
-  locationCount Int           @default(0)
-  docCount      Int?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id          Int           @id @default(autoincrement())
+  code        String        @unique
+  name        String
+  description String
+  status      ProjectStatus @default(ACTIVE)
+  themeKey    String        @default("blue")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   assets           Asset[]
   members          ProjectMember[]
@@ -65,13 +71,16 @@ model Project {
   floorPlans       FloorPlan[]
   auditLogs        AuditLog[]
   notifications    Notification[]
+
+  @@index([status, updatedAt, id])
+  @@index([status, createdAt, id])
 }
 
 model ProjectMember {
   id        Int      @id @default(autoincrement())
   projectId Int
   userId    Int
-  role      String
+  role      ProjectRole
   createdAt DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -178,9 +187,9 @@ model AssetDynamicFieldValue {
 
 model Asset {
   id              Int       @id @default(autoincrement())
-  code            String    @unique
+  code            String
   name            String
-  serialNumber    String    @unique
+  serialNumber    String
   installDate     DateTime
   typeId          Int
   statusId        Int
@@ -216,6 +225,8 @@ model Asset {
   @@index([deletedAt])
   @@index([projectId, deletedAt, id])
   @@index([projectId, deletedAt, typeId, statusId])
+  @@unique([projectId, code])
+  @@unique([projectId, serialNumber])
 }
 
 model Status {
@@ -466,7 +477,7 @@ model Location {
   id            Int      @id @default(autoincrement())
   name          String
   label         String
-  code          String   @unique
+  code          String
   surface       String
   responsibleId Int
   parentId      Int?
@@ -484,6 +495,7 @@ model Location {
   @@index([parentId])
   @@index([projectId])
   @@index([projectId, parentId])
+  @@unique([projectId, code])
 }
 
 model FloorPlan {

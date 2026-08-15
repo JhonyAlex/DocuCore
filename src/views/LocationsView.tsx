@@ -27,6 +27,7 @@ import AssetFormModal from '@/components/AssetFormModal'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useSession } from '@/contexts/SessionContext'
+import { useProject } from '@/contexts/ProjectContext'
 
 interface TreeNode {
   location: ApiLocation
@@ -72,6 +73,8 @@ export default function LocationsView() {
   const [searchParams] = useSearchParams()
   const deepLinkedLocationId = Number(searchParams.get('locationId'))
   const { reload: reloadSession } = useSession()
+  const { projectId, refresh: refreshProject } = useProject()
+  if (projectId === null) throw new Error('LocationsView requires a project scope')
   const [catalog, setCatalog] = useState<ApiLocationsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -108,13 +111,13 @@ export default function LocationsView() {
     setLoading(true)
     setError(null)
     try {
-      const [nextCatalog, nextUsers] = await Promise.all([fetchLocationBootstrap(), fetchUsers()])
+      const [nextCatalog, nextUsers] = await Promise.all([fetchLocationBootstrap(projectId), fetchUsers(projectId)])
       if (requestId !== latestCatalogRequest.current) return
       // A refresh may happen while a nested location is selected (for example
       // after editing an asset in its ficha). Keep only that selected node as
       // an extra DTO; never rebuild its entire ancestor branch.
       const selected = retainedSelectedId && !nextCatalog.locations.some((location) => location.id === retainedSelectedId)
-        ? await fetchLocation(retainedSelectedId).catch(() => null)
+        ? await fetchLocation(projectId, retainedSelectedId).catch(() => null)
         : null
       if (requestId !== latestCatalogRequest.current) return
       setCatalog(selected ? { ...nextCatalog, locations: [...nextCatalog.locations, selected] } : nextCatalog)
@@ -130,7 +133,7 @@ export default function LocationsView() {
     } finally {
       if (requestId === latestCatalogRequest.current) setLoading(false)
     }
-  }, [])
+  }, [projectId])
 
   useEffect(() => {
     void loadCatalog()
@@ -139,7 +142,7 @@ export default function LocationsView() {
   // LOC-02: tipos y estados para la ficha y el formulario de edición del activo.
   useEffect(() => {
     let active = true
-    Promise.all([fetchAssetTypes(), fetchStatuses()])
+    Promise.all([fetchAssetTypes(projectId), fetchStatuses(projectId)])
       .then(([nextTypes, nextStatuses]) => {
         if (!active) return
         setTypes(nextTypes)
@@ -151,7 +154,7 @@ export default function LocationsView() {
     return () => {
       active = false
     }
-  }, [])
+  }, [projectId])
 
   const tree = useMemo(() => (catalog ? buildTree(catalog.locations) : []), [catalog])
 
@@ -190,14 +193,14 @@ export default function LocationsView() {
     }
     const requestId = latestDetailRequest.current + 1
     latestDetailRequest.current = requestId
-    fetchLocation(selectedId)
+    fetchLocation(projectId, selectedId)
       .then((next) => {
         if (requestId === latestDetailRequest.current) setDetail(next)
       })
       .catch(() => {
         if (requestId === latestDetailRequest.current) setDetail(null)
       })
-  }, [selectedId, detailVersion])
+  }, [detailVersion, projectId, selectedId])
 
   useEffect(() => {
     setConfirmDelete(false)
@@ -213,7 +216,7 @@ export default function LocationsView() {
       return
     }
     setLoadingAssets(true)
-    fetchLocationAssets(selectedId, { page: assetsPage, limit: 10 })
+    fetchLocationAssets(projectId, selectedId, { page: assetsPage, limit: 10 })
       .then((res) => {
         setLocationAssets(res.data)
         setLocationAssetsTotal(res.total)
@@ -227,7 +230,7 @@ export default function LocationsView() {
       .finally(() => {
         setLoadingAssets(false)
       })
-  }, [selectedId, assetsPage, detailVersion])
+  }, [assetsPage, detailVersion, projectId, selectedId])
 
   const matchesSearch = useCallback((node: TreeNode, query: string): boolean => {
     const normalized = query.trim().toLowerCase()
@@ -256,7 +259,7 @@ export default function LocationsView() {
 
   const loadChildren = (parentId: number) => {
     if (!catalog || catalog.locations.some((location) => location.parentId === parentId)) return
-    void fetchLocations({ parentId }).then((result) => {
+    void fetchLocations(projectId, { parentId }).then((result) => {
       setCatalog((current) => current ? { ...current, locations: [...current.locations, ...result.locations.filter((next) => !current.locations.some((known) => known.id === next.id))] } : current)
     }).catch(() => setError('No se pudieron cargar las ubicaciones hijas.'))
   }
@@ -273,9 +276,9 @@ export default function LocationsView() {
     try {
       if (formMode === 'edit') {
         if (!selectedId) throw new Error('La ubicación ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
-        await updateLocation(selectedId, values)
+        await updateLocation(projectId, selectedId, values)
       } else {
-        await createLocation({ ...values, projectId: catalog.project.id })
+        await createLocation(projectId, values)
       }
       await loadCatalog()
       setDetailVersion((version) => version + 1)
@@ -290,7 +293,7 @@ export default function LocationsView() {
     setDeleting(true)
     setDeleteError(null)
     try {
-      await deleteLocation(selectedId)
+      await deleteLocation(projectId, selectedId)
       setSelectedId(null)
       setConfirmDelete(false)
       await loadCatalog()
@@ -311,16 +314,17 @@ export default function LocationsView() {
     setDetailVersion((version) => version + 1)
     await loadCatalog()
     reloadSession()
-  }, [loadCatalog, reloadSession])
+    refreshProject()
+  }, [loadCatalog, refreshProject, reloadSession])
 
-  const ficha = useAssetFicha({ onAssetChanged: handleAssetChanged })
+  const ficha = useAssetFicha({ projectId, onAssetChanged: handleAssetChanged })
 
   // LOC-02: alta rápida de ubicación desde el formulario de activo — crea en el
   // proyecto de la vista y refresca el catálogo sin skeleton (la selección del
   // formulario ya apunta a la nueva).
   const createLocationFromAssetForm = async (locationValues: LocationFormValues): Promise<ApiLocation> => {
     try {
-      const created = await createLocation({ ...locationValues, projectId: catalog?.project.id ?? 0 })
+      const created = await createLocation(projectId, locationValues)
       setCatalog((current) => current ? { ...current, locations: [...current.locations, created] } : current)
       return created
     } catch (writeError) {
@@ -454,7 +458,7 @@ export default function LocationsView() {
                   <button type="button" onClick={() => setFormMode('edit')} className="px-3 py-1.5 rounded-md text-xs bg-slate-100 dark:bg-slate-800">Editar</button>
                   <button
                     type="button"
-                    onClick={() => { if (detail.hasFloorPlan) navigate(`/plans?locationId=${detail.id}`) }}
+                    onClick={() => { if (detail.hasFloorPlan) navigate(`/projects/${projectId}/plans?locationId=${detail.id}`) }}
                     disabled={!detail.hasFloorPlan}
                     title={detail.hasFloorPlan ? 'Abrir plano de la ubicación' : 'Disponible cuando PLAN-01 persista los planos'}
                     className={`px-3 py-1.5 rounded-md text-xs ${detail.hasFloorPlan ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'}`}

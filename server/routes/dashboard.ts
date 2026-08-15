@@ -6,13 +6,12 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { assetEventClock } from '../lib/assetEvents'
 import { asCalendarDate } from '../lib/calendarDomain'
 import { listCalendarOccurrences } from '../lib/calendarEvents'
+import { scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
-const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
+const router: Router = Router({ mergeParams: true })
 const DAY_MS = 86_400_000
 
 const dashboardQuerySchema = z.object({
-  projectId: z.coerce.number().int().positive().optional(),
   range: z.enum(['30d', '7d', 'year']).default('30d'),
 })
 
@@ -89,10 +88,8 @@ function expirationVisual(source: 'event' | 'document' | 'dynamic-date' | 'preve
   return { iconBgClass: 'bg-amber-50 dark:bg-amber-900/30 text-amber-600', iconKey: 'grid' }
 }
 
-async function resolveProject(id?: number): Promise<ProjectSummary> {
-  return id
-    ? prisma.project.findUniqueOrThrow({ where: { id }, select: { id: true, code: true, name: true } })
-    : prisma.project.findUniqueOrThrow({ where: { code: CURRENT_PROJECT_CODE }, select: { id: true, code: true, name: true } })
+async function resolveProject(id: number): Promise<ProjectSummary> {
+  return prisma.project.findUniqueOrThrow({ where: { id }, select: { id: true, code: true, name: true } })
 }
 
 async function monthlyChart(projectId: number, now: Date) {
@@ -378,13 +375,13 @@ function escapeCsv(value: string | number): string {
 router.get('/', asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store')
   const query = dashboardQuerySchema.parse(req.query)
-  const project = await resolveProject(query.projectId)
+  const project = await resolveProject(scopedProjectId(req))
   res.json(await buildDashboard(project, query.range))
 }))
 
 router.get('/export', asyncHandler(async (req, res) => {
   const query = dashboardQuerySchema.parse(req.query)
-  const project = await resolveProject(query.projectId)
+  const project = await resolveProject(scopedProjectId(req))
   const dashboard = await buildDashboard(project, query.range)
   const rows = [
     ['DocuCore - Reporte Ejecutivo de Panel General'],

@@ -4,7 +4,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 // IMG-01: imagen del activo. POST /api/assets/:id/image sube o reemplaza la
 // foto (multipart, campo `image`), GET /:id/image la sirve inline y
@@ -25,7 +25,7 @@ const JPEG_BYTES = Buffer.from('ffd8ffe000104a46494600010100000100010000ffdb0043
 const PDF_BYTES = Buffer.from('%PDF-1.4 QA IMAGE REJECT')
 
 async function api(apiPath: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${baseUrl}${apiPath}`, init)
+  return fetch(`${baseUrl}${projectApiPath(apiPath, init)}`, init)
 }
 
 function uniqueSuffix(): string {
@@ -107,7 +107,7 @@ describe('asset image endpoints', () => {
     const upload = await api(`/api/assets/${id}/image`, { method: 'POST', body: uploadForm(PNG_BYTES, 'image/png', 'foto.png') })
     expect(upload.status).toBe(200)
     const updated = (await upload.json()) as { imageUrl: string | null; imageMimeType: string | null; imageSizeBytes: number | null; imageStorageKey?: unknown }
-    expect(updated.imageUrl).toBe(`/api/assets/${id}/image`)
+    expect(updated.imageUrl).toBe(`/api/projects/1/assets/${id}/image`)
     expect(updated.imageMimeType).toBe('image/png')
     expect(updated.imageSizeBytes).toBe(PNG_BYTES.length)
     expect(updated.imageStorageKey).toBeUndefined()

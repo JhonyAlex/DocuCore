@@ -1,13 +1,13 @@
 import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
 
 function api(path: string, options: RequestInit = {}) {
-  return fetch(`${baseUrl}${path}`, options)
+  return fetch(`${baseUrl}${projectApiPath(path, options)}`, options)
 }
 
 describe('dynamic fields API', () => {

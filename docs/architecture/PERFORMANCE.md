@@ -14,6 +14,7 @@ Una pantalla limitada no puede ejecutar trabajo proporcional al tamaño completo
 | Ubicaciones | raíces/hijos máximos 100; preview 3; inventario máximo 100 por página | `bootstrap` carga raíces y hermanos de un único camino (profundidad máxima 12), no el árbol completo. |
 | Calendario | rango máximo 93 días; respuesta máxima 500 | Cada fuente consulta como máximo 501 filas; `truncated` obliga a acotar cuando una fuente o la respuesta supera el contrato. |
 | Autocomplete | activos y planos máximo 50; ubicaciones/documentos máximo 20 | Todos están filtrados por proyecto cuando el consumidor conoce el proyecto activo. |
+| Cartera de proyectos | página máxima 100; Sidebar máximo 20 | Búsqueda, estado, orden y contadores agregados se ejecutan en PostgreSQL. El DTO contiene un máximo de cuatro miembros. |
 
 ## Jerarquías
 

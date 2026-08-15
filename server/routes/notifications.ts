@@ -9,13 +9,11 @@ import {
   setNotificationReadStatus,
   syncProjectNotifications,
 } from '../lib/notifications'
+import { scopedProjectId } from '../lib/projectScope'
 
-const router: Router = Router()
-
-const CURRENT_PROJECT_CODE = 'PRJ-2026-001'
+const router: Router = Router({ mergeParams: true })
 
 const listNotificationsQuerySchema = z.object({
-  projectId: z.coerce.number().int().positive().optional(),
   filter: z.enum(['all', 'unread', 'critical']).default('all'),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   sync: z.enum(['true', 'false']).transform((v) => v === 'true').optional().default('true'),
@@ -25,9 +23,7 @@ const patchReadSchema = z.object({
   read: z.boolean().optional().default(true),
 })
 
-const readAllSchema = z.object({
-  projectId: z.coerce.number().int().positive().optional(),
-})
+const readAllSchema = z.object({}).strict()
 
 const createNotificationSchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
@@ -39,23 +35,12 @@ const createNotificationSchema = z.object({
   targetId: z.string().nullable().optional(),
 })
 
-async function resolveProjectId(explicitId?: number): Promise<number> {
-  if (explicitId && Number.isInteger(explicitId) && explicitId > 0) {
-    return explicitId
-  }
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { code: CURRENT_PROJECT_CODE },
-    select: { id: true },
-  })
-  return project.id
-}
-
 router.get(
   '/',
   asyncHandler(async (req, res) => {
     res.set('Cache-Control', 'no-store')
     const query = listNotificationsQuerySchema.parse(req.query)
-    const projectId = await resolveProjectId(query.projectId)
+    const projectId = scopedProjectId(req)
 
     if (query.sync) {
       await syncProjectNotifications(prisma, projectId)
@@ -80,7 +65,7 @@ router.patch(
     }
 
     const body = patchReadSchema.parse(req.body ?? {})
-    const existing = await prisma.notification.findUnique({ where: { id } })
+    const existing = await prisma.notification.findFirst({ where: { id, projectId: scopedProjectId(req) } })
     if (!existing) {
       return res.status(404).json({ error: 'Notification not found' })
     }
@@ -93,8 +78,8 @@ router.patch(
 router.post(
   '/read-all',
   asyncHandler(async (req, res) => {
-    const body = readAllSchema.parse(req.body ?? {})
-    const projectId = await resolveProjectId(body.projectId)
+    readAllSchema.parse(req.body ?? {})
+    const projectId = scopedProjectId(req)
 
     const updatedCount = await markAllNotificationsAsRead(prisma, projectId)
     res.json({ success: true, count: updatedCount })
@@ -109,7 +94,7 @@ router.delete(
       return res.status(400).json({ error: 'Invalid notification id' })
     }
 
-    const existing = await prisma.notification.findUnique({ where: { id } })
+    const existing = await prisma.notification.findFirst({ where: { id, projectId: scopedProjectId(req) } })
     if (!existing) {
       return res.status(404).json({ error: 'Notification not found' })
     }
@@ -123,7 +108,8 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const input = createNotificationSchema.parse(req.body)
-    const projectId = await resolveProjectId(input.projectId)
+    const projectId = scopedProjectId(req)
+    if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
 
     const created = await prisma.notification.create({
       data: {

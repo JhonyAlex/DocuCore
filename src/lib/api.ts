@@ -1,8 +1,10 @@
 import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
 import type { DashboardKpi, UpcomingExpiration, AlertItem, ChartBar, ActivityItem } from '@/types'
 import type { AssetIconKey } from '../../shared/assetIconCatalog'
+import type { ProjectThemeKey } from '../../shared/projectThemes'
 
 const API_BASE = '/api'
+const projectPath = (projectId: number, path = '') => `/projects/${projectId}${path}`
 
 export interface ApiAssetType {
   id: number
@@ -57,17 +59,30 @@ export interface ApiSessionUser {
   color: string
 }
 
-export interface ApiSessionProject {
+export interface ApiSession {
+  user: ApiSessionUser
+}
+
+export type ApiProjectRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER'
+export type ApiProjectStatus = 'ACTIVE' | 'ARCHIVED'
+export interface ApiProjectMember extends ApiUserRef { email?: string; role: ApiProjectRole }
+export interface ApiProjectSummary {
   id: number
   code: string
   name: string
+  description: string
+  status: ApiProjectStatus
+  themeKey: ProjectThemeKey
+  createdAt: string
+  updatedAt: string
   assetCount: number
+  documentCount: number
+  locationCount: number
+  memberCount: number
+  members: ApiProjectMember[]
 }
-
-export interface ApiSession {
-  project: ApiSessionProject
-  user: ApiSessionUser
-}
+export interface ApiProjectListResponse { data: ApiProjectSummary[]; total: number; page: number; limit: number; totalPages: number }
+export interface ProjectInput { code: string; name: string; description: string; themeKey: ProjectThemeKey; memberIds?: Array<{ userId: number; role: ApiProjectRole }>; copyConfigurationFromProjectId?: number }
 
 export interface ApiAssetEvent {
   id: string
@@ -513,7 +528,7 @@ export interface FetchAssetsResponse {
   totalPages: number
 }
 
-export async function fetchAssets(params: FetchAssetsParams = {}): Promise<FetchAssetsResponse> {
+export async function fetchAssets(projectId: number, params: Omit<FetchAssetsParams, 'projectId'> = {}): Promise<FetchAssetsResponse> {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))
   if (params.limit) q.set('limit', String(params.limit))
@@ -521,9 +536,8 @@ export async function fetchAssets(params: FetchAssetsParams = {}): Promise<Fetch
   if (params.typeId) q.set('typeId', String(params.typeId))
   if (params.statusId) q.set('statusId', String(params.statusId))
   if (params.locationId) q.set('locationId', String(params.locationId))
-  if (params.projectId) q.set('projectId', String(params.projectId))
   if (params.trashed) q.set('trashed', 'true')
-  const res = await request<FetchAssetsResponse>(`/assets?${q.toString()}`)
+  const res = await request<FetchAssetsResponse>(`${projectPath(projectId, '/assets')}?${q.toString()}`)
   const rows = res.data ?? res.assets ?? []
   return { ...res, assets: res.assets ?? rows, data: rows }
 }
@@ -539,69 +553,68 @@ interface ApiAssetSuggestionsResponse {
   values: ApiAssetSuggestionRow[]
 }
 
-export async function fetchAssetSuggestions(field: ApiAssetSuggestionField, q = '', excludeId?: number, projectId?: number): Promise<ApiAssetSuggestionRow[]> {
+export async function fetchAssetSuggestions(projectId: number, field: ApiAssetSuggestionField, q = '', excludeId?: number): Promise<ApiAssetSuggestionRow[]> {
   const query = new URLSearchParams({ field })
   if (q.trim()) query.set('q', q.trim())
   if (excludeId) query.set('excludeId', String(excludeId))
-  if (projectId) query.set('projectId', String(projectId))
-  const response = await request<ApiAssetSuggestionsResponse>(`/assets/suggestions?${query.toString()}`)
+  const response = await request<ApiAssetSuggestionsResponse>(`${projectPath(projectId, '/assets/suggestions')}?${query.toString()}`)
   return response.values
 }
 
-export function fetchAsset(id: number): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${id}`)
+export function fetchAsset(projectId: number, id: number): Promise<ApiAsset> {
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}`))
 }
 
-export function createAsset(data: AssetWriteInput, imageFile?: File | null): Promise<ApiAsset> {
-  if (!imageFile) return request<ApiAsset>('/assets', { method: 'POST', body: JSON.stringify(data) })
+export function createAsset(projectId: number, data: AssetWriteInput, imageFile?: File | null): Promise<ApiAsset> {
+  if (!imageFile) return request<ApiAsset>(projectPath(projectId, '/assets'), { method: 'POST', body: JSON.stringify(data) })
   const formData = new FormData()
   formData.set('data', JSON.stringify(data))
   formData.set('image', imageFile)
-  return request<ApiAsset>('/assets', { method: 'POST', body: formData })
+  return request<ApiAsset>(projectPath(projectId, '/assets'), { method: 'POST', body: formData })
 }
 
-export function updateAsset(id: number, data: Partial<AssetWriteInput>, imageFile?: File | null): Promise<ApiAsset> {
-  if (!imageFile) return request<ApiAsset>(`/assets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+export function updateAsset(projectId: number, id: number, data: Partial<AssetWriteInput>, imageFile?: File | null): Promise<ApiAsset> {
+  if (!imageFile) return request<ApiAsset>(projectPath(projectId, `/assets/${id}`), { method: 'PUT', body: JSON.stringify(data) })
   const formData = new FormData()
   formData.set('data', JSON.stringify(data))
   formData.set('image', imageFile)
-  return request<ApiAsset>(`/assets/${id}`, { method: 'PUT', body: formData })
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}`), { method: 'PUT', body: formData })
 }
 
-export function uploadAssetImage(id: number, imageFile: File): Promise<ApiAsset> {
+export function uploadAssetImage(projectId: number, id: number, imageFile: File): Promise<ApiAsset> {
   const formData = new FormData()
   formData.set('image', imageFile)
-  return request<ApiAsset>(`/assets/${id}/image`, { method: 'POST', body: formData })
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/image`), { method: 'POST', body: formData })
 }
 
-export function removeAssetImage(id: number): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${id}/image`, { method: 'DELETE' })
+export function removeAssetImage(projectId: number, id: number): Promise<ApiAsset> {
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/image`), { method: 'DELETE' })
 }
 
-export function updateAssetStatus(id: number, statusId: number): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${id}/status`, { method: 'PATCH', body: JSON.stringify({ statusId }) })
+export function updateAssetStatus(projectId: number, id: number, statusId: number): Promise<ApiAsset> {
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/status`), { method: 'PATCH', body: JSON.stringify({ statusId }) })
 }
 
 export const changeAssetStatus = updateAssetStatus
 
-export function deleteAsset(id: number): Promise<void> {
-  return request<void>(`/assets/${id}`, { method: 'DELETE' })
+export function deleteAsset(projectId: number, id: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/assets/${id}`), { method: 'DELETE' })
 }
 
-export function restoreAsset(id: number): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${id}/restore`, { method: 'POST' })
+export function restoreAsset(projectId: number, id: number): Promise<ApiAsset> {
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/restore`), { method: 'POST' })
 }
 
-export function purgeAsset(id: number): Promise<void> {
-  return request<void>(`/assets/${id}/purge`, { method: 'POST' })
+export function purgeAsset(projectId: number, id: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/assets/${id}/purge`), { method: 'POST' })
 }
 
-export function fetchAssetTypes(projectId = 1, options?: { includeInactive?: boolean; withCounts?: boolean }): Promise<ApiAssetType[]> {
+export function fetchAssetTypes(projectId: number, options?: { includeInactive?: boolean; withCounts?: boolean }): Promise<ApiAssetType[]> {
   const query = new URLSearchParams()
   if (options?.includeInactive) query.set('includeInactive', 'true')
   if (options?.withCounts) query.set('withCounts', 'true')
   const q = query.toString()
-  return request<ApiAssetType[]>(`/projects/${projectId}/asset-types${q ? `?${q}` : ''}`)
+  return request<ApiAssetType[]>(`${projectPath(projectId, '/asset-types')}${q ? `?${q}` : ''}`)
 }
 
 export function fetchConfiguredAssetTypes(projectId: number, includeInactive = false): Promise<ApiAssetType[]> {
@@ -660,40 +673,37 @@ export function duplicatePreventivePlan(projectId: number, id: number): Promise<
 export function deletePreventivePlan(projectId: number, id: number): Promise<void> { return request(`/projects/${projectId}/preventive-plans/${id}`, { method: 'DELETE' }) }
 export function bulkUpdatePreventivePlans(projectId: number, action: 'deactivate' | 'delete', ids: number[]): Promise<void> { return request(`/projects/${projectId}/preventive-plans/bulk`, { method: 'POST', body: JSON.stringify({ action, ids }) }) }
 
-export function completeAssetDynamicDate(assetId: number, definitionId: number, performedDate: string): Promise<ApiAsset> {
-  return request<ApiAsset>(`/assets/${assetId}/dynamic-fields/${definitionId}/complete`, { method: 'POST', body: JSON.stringify({ performedDate }) })
+export function completeAssetDynamicDate(projectId: number, assetId: number, definitionId: number, performedDate: string): Promise<ApiAsset> {
+  return request<ApiAsset>(projectPath(projectId, `/assets/${assetId}/dynamic-fields/${definitionId}/complete`), { method: 'POST', body: JSON.stringify({ performedDate }) })
 }
 
-export function fetchAssetEventHistory(assetId: number): Promise<ApiAssetEventHistory[]> { return request(`/assets/${assetId}/events`) }
-export function fetchAssetHistory(assetId: number, page = 1): Promise<ApiAssetHistoryPage> { return request(`/assets/${assetId}/history?page=${page}&limit=20`) }
-export function completeAssetEvent(assetId: number, source: ApiAssetEventHistory['source'], id: number, performedDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/events/complete`, { method: 'POST', body: JSON.stringify({ source, id, performedDate }) }) }
-export function createAssetPreventive(assetId: number, input: { planId: number; scheduledDate: string }): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives`, { method: 'POST', body: JSON.stringify(input) }) }
-export function updateAssetPreventiveDate(assetId: number, planId: number, scheduledDate: string): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'PATCH', body: JSON.stringify({ scheduledDate }) }) }
-export function deleteAssetPreventive(assetId: number, planId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/${planId}`, { method: 'DELETE' }) }
-export function completePreventiveTask(assetId: number, executionId: number, taskId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/${taskId}/complete`, { method: 'POST' }) }
-export function completeAllPreventiveTasks(assetId: number, executionId: number): Promise<ApiAsset> { return request(`/assets/${assetId}/preventives/executions/${executionId}/tasks/complete`, { method: 'POST' }) }
+export function fetchAssetEventHistory(projectId: number, assetId: number): Promise<ApiAssetEventHistory[]> { return request(projectPath(projectId, `/assets/${assetId}/events`)) }
+export function fetchAssetHistory(projectId: number, assetId: number, page = 1): Promise<ApiAssetHistoryPage> { return request(projectPath(projectId, `/assets/${assetId}/history?page=${page}&limit=20`)) }
+export function completeAssetEvent(projectId: number, assetId: number, source: ApiAssetEventHistory['source'], id: number, performedDate: string): Promise<ApiAsset> { return request(projectPath(projectId, `/assets/${assetId}/events/complete`), { method: 'POST', body: JSON.stringify({ source, id, performedDate }) }) }
+export function createAssetPreventive(projectId: number, assetId: number, input: { planId: number; scheduledDate: string }): Promise<ApiAsset> { return request(projectPath(projectId, `/assets/${assetId}/preventives`), { method: 'POST', body: JSON.stringify(input) }) }
+export function updateAssetPreventiveDate(projectId: number, assetId: number, planId: number, scheduledDate: string): Promise<ApiAsset> { return request(projectPath(projectId, `/assets/${assetId}/preventives/${planId}`), { method: 'PATCH', body: JSON.stringify({ scheduledDate }) }) }
+export function deleteAssetPreventive(projectId: number, assetId: number, planId: number): Promise<ApiAsset> { return request(projectPath(projectId, `/assets/${assetId}/preventives/${planId}`), { method: 'DELETE' }) }
+export function completePreventiveTask(projectId: number, assetId: number, executionId: number, taskId: number): Promise<ApiAsset> { return request(projectPath(projectId, `/assets/${assetId}/preventives/executions/${executionId}/tasks/${taskId}/complete`), { method: 'POST' }) }
+export function completeAllPreventiveTasks(projectId: number, assetId: number, executionId: number): Promise<ApiAsset> { return request(projectPath(projectId, `/assets/${assetId}/preventives/executions/${executionId}/tasks/complete`), { method: 'POST' }) }
 
-export function fetchCalendar(input: CalendarQuery): Promise<ApiCalendarResponse> {
+export function fetchCalendar(projectId: number, input: Omit<CalendarQuery, 'projectId'>): Promise<ApiCalendarResponse> {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(input)) if (value !== undefined && value !== '') query.set(key, String(value))
-  return request<ApiCalendarResponse>(`/calendar?${query.toString()}`)
+  return request<ApiCalendarResponse>(`${projectPath(projectId, '/calendar')}?${query.toString()}`)
 }
-export function createCalendarEvent(input: CalendarManualEventInput): Promise<ApiCalendarEventOccurrence> {
-  return request('/calendar/events', { method: 'POST', body: JSON.stringify(input) })
+export function createCalendarEvent(projectId: number, input: Omit<CalendarManualEventInput, 'projectId'>): Promise<ApiCalendarEventOccurrence> {
+  return request(projectPath(projectId, '/calendar/events'), { method: 'POST', body: JSON.stringify(input) })
 }
-export function updateCalendarEvent(id: number, input: Partial<Pick<CalendarManualEventInput, 'title' | 'date' | 'category' | 'assetId'>>): Promise<ApiCalendarEventOccurrence> {
-  return request(`/calendar/events/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+export function updateCalendarEvent(projectId: number, id: number, input: Partial<Pick<CalendarManualEventInput, 'title' | 'date' | 'category' | 'assetId'>>): Promise<ApiCalendarEventOccurrence> {
+  return request(projectPath(projectId, `/calendar/events/${id}`), { method: 'PATCH', body: JSON.stringify(input) })
 }
-export function deleteCalendarEvent(id: number): Promise<void> { return request(`/calendar/events/${id}`, { method: 'DELETE' }) }
+export function deleteCalendarEvent(projectId: number, id: number): Promise<void> { return request(projectPath(projectId, `/calendar/events/${id}`), { method: 'DELETE' }) }
 export function completeCalendarEvent(input: Pick<ApiCalendarEventOccurrence, 'source' | 'sourceId' | 'assetId' | 'projectId'> & { performedDate: string }): Promise<void> {
-  return request<void>('/calendar/events/complete', { method: 'POST', body: JSON.stringify(input) })
+  return request<void>(projectPath(input.projectId, '/calendar/events/complete'), { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function fetchStatuses(projectId?: number): Promise<ApiStatus[]> {
-  const query = new URLSearchParams()
-  if (projectId) query.set('projectId', String(projectId))
-  const q = query.toString()
-  return request<ApiStatus[]>(`/statuses${q ? `?${q}` : ''}`)
+export function fetchStatuses(projectId: number): Promise<ApiStatus[]> {
+  return request<ApiStatus[]>(projectPath(projectId, '/statuses'))
 }
 
 export function fetchConfiguredStatuses(projectId: number, includeInactive = false): Promise<ApiStatus[]> {
@@ -712,71 +722,70 @@ export function archiveStatus(projectId: number, id: number): Promise<void> {
   return request<void>(`/projects/${projectId}/statuses/${id}`, { method: 'DELETE' })
 }
 
-export async function fetchLocations(options?: { parentId?: number | null; limit?: number }): Promise<ApiLocationsResponse> {
+export async function fetchLocations(projectId: number, options?: { parentId?: number | null; limit?: number }): Promise<ApiLocationsResponse> {
   const query = new URLSearchParams()
   if (options && Object.prototype.hasOwnProperty.call(options, 'parentId')) query.set('parentId', options.parentId === null ? 'root' : String(options.parentId))
   if (options?.limit) query.set('limit', String(options.limit))
-  const res = await request<ApiLocationsResponse>(`/locations${query.size ? `?${query.toString()}` : ''}`)
+  const res = await request<ApiLocationsResponse>(`${projectPath(projectId, '/locations')}${query.size ? `?${query.toString()}` : ''}`)
   return { ...res, locations: res.locations ?? res.tree ?? [] }
 }
-export async function fetchLocationBootstrap(): Promise<ApiLocationBootstrapResponse> {
-  const res = await request<ApiLocationBootstrapResponse>('/locations/bootstrap')
+export async function fetchLocationBootstrap(projectId: number): Promise<ApiLocationBootstrapResponse> {
+  const res = await request<ApiLocationBootstrapResponse>(projectPath(projectId, '/locations/bootstrap'))
   return { ...res, locations: res.locations ?? res.tree ?? [], selectedId: res.selectedId ?? null, openBranchIds: res.openBranchIds ?? [] }
 }
-export function searchLocations(search = '', limit = 20, projectId?: number): Promise<{ data: ApiLocation[] }> {
+export function searchLocations(projectId: number, search = '', limit = 20): Promise<{ data: ApiLocation[] }> {
   const query = new URLSearchParams({ search, limit: String(limit) })
-  if (projectId) query.set('projectId', String(projectId))
-  return request(`/locations/search?${query.toString()}`)
+  return request(`${projectPath(projectId, '/locations/search')}?${query.toString()}`)
 }
 
-export function fetchLocation(id: number): Promise<ApiLocationDetail> {
-  return request<ApiLocationDetail>(`/locations/${id}`)
+export function fetchLocation(projectId: number, id: number): Promise<ApiLocationDetail> {
+  return request<ApiLocationDetail>(projectPath(projectId, `/locations/${id}`))
 }
 
-export function fetchLocationAssets(id: number, params: { page?: number; limit?: number; search?: string } = {}): Promise<{ data: ApiLocationAsset[]; total: number; page: number; totalPages: number }> {
+export function fetchLocationAssets(projectId: number, id: number, params: { page?: number; limit?: number; search?: string } = {}): Promise<{ data: ApiLocationAsset[]; total: number; page: number; totalPages: number }> {
   const query = new URLSearchParams()
   if (params.page) query.set('page', String(params.page))
   if (params.limit) query.set('limit', String(params.limit))
   if (params.search) query.set('search', params.search)
-  return request(`/locations/${id}/assets${query.size ? `?${query.toString()}` : ''}`)
+  return request(`${projectPath(projectId, `/locations/${id}/assets`)}${query.size ? `?${query.toString()}` : ''}`)
 }
 
-export function createLocation(data: LocationWriteInput): Promise<ApiLocation> {
-  return request<ApiLocation>('/locations', { method: 'POST', body: JSON.stringify(data) })
+export function createLocation(projectId: number, data: Omit<LocationWriteInput, 'projectId'>): Promise<ApiLocation> {
+  return request<ApiLocation>(projectPath(projectId, '/locations'), { method: 'POST', body: JSON.stringify(data) })
 }
 
-export function updateLocation(id: number, data: Partial<LocationWriteInput>): Promise<ApiLocation> {
-  return request<ApiLocation>(`/locations/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+export function updateLocation(projectId: number, id: number, data: Partial<Omit<LocationWriteInput, 'projectId'>>): Promise<ApiLocation> {
+  return request<ApiLocation>(projectPath(projectId, `/locations/${id}`), { method: 'PUT', body: JSON.stringify(data) })
 }
 
-export function deleteLocation(id: number): Promise<void> {
-  return request<void>(`/locations/${id}`, { method: 'DELETE' })
+export function deleteLocation(projectId: number, id: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/locations/${id}`), { method: 'DELETE' })
 }
 
 export function fetchFloorPlans(projectId: number, locationId?: number): Promise<{ data: ApiFloorPlan[] }> {
-  const query = new URLSearchParams({ projectId: String(projectId) })
+  const query = new URLSearchParams()
   if (locationId) query.set('locationId', String(locationId))
-  return request(`/floor-plans?${query.toString()}`)
+  return request(`${projectPath(projectId, '/floor-plans')}?${query.toString()}`)
 }
 
-export function fetchFloorPlan(id: number): Promise<ApiFloorPlan> {
-  return request(`/floor-plans/${id}`)
+export function fetchFloorPlan(projectId: number, id: number): Promise<ApiFloorPlan> {
+  return request(projectPath(projectId, `/floor-plans/${id}`))
 }
 
-export function fetchFloorPlanAssets(id: number, search = '', limit = 20): Promise<{ data: ApiFloorPlanAsset[] }> {
+export function fetchFloorPlanAssets(projectId: number, id: number, search = '', limit = 20): Promise<{ data: ApiFloorPlanAsset[] }> {
   const query = new URLSearchParams({ limit: String(limit) })
   if (search.trim()) query.set('search', search.trim())
-  return request(`/floor-plans/${id}/assets?${query.toString()}`)
+  return request(`${projectPath(projectId, `/floor-plans/${id}/assets`)}?${query.toString()}`)
 }
-export function fetchFloorPlanFacets(id: number): Promise<{ types: ApiFloorPlanFacet[] }> {
-  return request(`/floor-plans/${id}/facets`)
+export function fetchFloorPlanFacets(projectId: number, id: number): Promise<{ types: ApiFloorPlanFacet[] }> {
+  return request(projectPath(projectId, `/floor-plans/${id}/facets`))
 }
-export function fetchFloorPlanMarkers(id: number, page: number, limit = 500): Promise<{ data: ApiFloorPlanMarker[]; total: number; page: number; totalPages: number }> {
-  return request(`/floor-plans/${id}/markers?page=${page}&limit=${limit}`)
+export function fetchFloorPlanMarkers(projectId: number, id: number, page: number, limit = 500): Promise<{ data: ApiFloorPlanMarker[]; total: number; page: number; totalPages: number }> {
+  return request(`${projectPath(projectId, `/floor-plans/${id}/markers`)}?page=${page}&limit=${limit}`)
 }
 
-export function fetchAssetFloorPlanPlacements(assetId: number): Promise<{ data: ApiAssetFloorPlanPlacement[] }> {
-  return request(`/assets/${assetId}/floor-plans`)
+export function fetchAssetFloorPlanPlacements(projectId: number, assetId: number): Promise<{ data: ApiAssetFloorPlanPlacement[] }> {
+  return request(projectPath(projectId, `/assets/${assetId}/floor-plans`))
 }
 
 function floorPlanFormData(input: FloorPlanWriteInput, file: File): FormData {
@@ -788,92 +797,146 @@ function floorPlanFormData(input: FloorPlanWriteInput, file: File): FormData {
   return form
 }
 
-export function createFloorPlan(input: FloorPlanWriteInput, file: File): Promise<ApiFloorPlan> {
-  return request('/floor-plans', { method: 'POST', body: floorPlanFormData(input, file) })
+export function createFloorPlan(projectId: number, input: Omit<FloorPlanWriteInput, 'projectId'>, file: File): Promise<ApiFloorPlan> {
+  return request(projectPath(projectId, '/floor-plans'), { method: 'POST', body: floorPlanFormData({ ...input, projectId }, file) })
 }
 
-export function updateFloorPlan(id: number, input: Partial<FloorPlanWriteInput>): Promise<ApiFloorPlan> {
-  return request(`/floor-plans/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+export function updateFloorPlan(projectId: number, id: number, input: Partial<Omit<FloorPlanWriteInput, 'projectId'>>): Promise<ApiFloorPlan> {
+  return request(projectPath(projectId, `/floor-plans/${id}`), { method: 'PATCH', body: JSON.stringify(input) })
 }
 
-export function deleteFloorPlan(id: number): Promise<void> {
-  return request<void>(`/floor-plans/${id}`, { method: 'DELETE' })
+export function deleteFloorPlan(projectId: number, id: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/floor-plans/${id}`), { method: 'DELETE' })
 }
 
-export function createFloorPlanVersion(id: number, file: File): Promise<ApiFloorPlan> {
+export function createFloorPlanVersion(projectId: number, id: number, file: File): Promise<ApiFloorPlan> {
   const form = new FormData()
   form.set('file', file)
-  return request(`/floor-plans/${id}/versions`, { method: 'POST', body: form })
+  return request(projectPath(projectId, `/floor-plans/${id}/versions`), { method: 'POST', body: form })
 }
 
-export function createFloorPlanMarker(id: number, input: Pick<ApiFloorPlanMarker, 'assetId' | 'x' | 'y'>): Promise<ApiFloorPlanMarker> {
-  return request(`/floor-plans/${id}/markers`, { method: 'POST', body: JSON.stringify(input) })
+export function createFloorPlanMarker(projectId: number, id: number, input: Pick<ApiFloorPlanMarker, 'assetId' | 'x' | 'y'>): Promise<ApiFloorPlanMarker> {
+  return request(projectPath(projectId, `/floor-plans/${id}/markers`), { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function updateFloorPlanMarker(id: number, markerId: number, input: Pick<ApiFloorPlanMarker, 'x' | 'y'>): Promise<ApiFloorPlanMarker> {
-  return request(`/floor-plans/${id}/markers/${markerId}`, { method: 'PATCH', body: JSON.stringify(input) })
+export function updateFloorPlanMarker(projectId: number, id: number, markerId: number, input: Pick<ApiFloorPlanMarker, 'x' | 'y'>): Promise<ApiFloorPlanMarker> {
+  return request(projectPath(projectId, `/floor-plans/${id}/markers/${markerId}`), { method: 'PATCH', body: JSON.stringify(input) })
 }
 
-export function deleteFloorPlanMarker(id: number, markerId: number): Promise<void> {
-  return request<void>(`/floor-plans/${id}/markers/${markerId}`, { method: 'DELETE' })
+export function deleteFloorPlanMarker(projectId: number, id: number, markerId: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/floor-plans/${id}/markers/${markerId}`), { method: 'DELETE' })
 }
 
-export function floorPlanDziUrl(id: number, version: number): string {
-  return `${API_BASE}/floor-plans/${id}/versions/${version}/dzi`
+export function floorPlanDziUrl(projectId: number, id: number, version: number): string {
+  return `${API_BASE}${projectPath(projectId, `/floor-plans/${id}/versions/${version}/dzi`)}`
 }
 
-export function fetchUsers(): Promise<ApiUserRef[]> {
-  return request<ApiUserRef[]>('/users')
+export function fetchUsers(projectId: number): Promise<ApiUserRef[]> {
+  return request<ApiUserRef[]>(projectPath(projectId, '/users'))
 }
 
 export function fetchSession(): Promise<ApiSession> {
   return request<ApiSession>('/session')
 }
 
-export async function fetchDocuments(params: DocumentListParams = {}): Promise<ApiDocumentListResponse> {
+export function fetchProjects(options: { search?: string; status?: ApiProjectStatus | 'ALL'; sort?: 'updatedAt' | 'name' | 'code' | 'createdAt'; page?: number; limit?: number } = {}): Promise<ApiProjectListResponse> {
+  const query = new URLSearchParams()
+  if (options.search?.trim()) query.set('search', options.search.trim())
+  if (options.status) query.set('status', options.status === 'ALL' ? 'all' : options.status === 'ACTIVE' ? 'active' : 'archived')
+  if (options.sort) query.set('sort', options.sort === 'updatedAt' ? 'updated' : options.sort === 'createdAt' ? 'created' : options.sort)
+  if (options.page) query.set('page', String(options.page))
+  if (options.limit) query.set('limit', String(options.limit))
+  return request<ApiProjectListResponse>(`/projects${query.size ? `?${query.toString()}` : ''}`)
+}
+
+export function fetchProject(projectId: number): Promise<ApiProjectSummary> {
+  return request<ApiProjectSummary>(`/projects/${projectId}`)
+}
+
+export function createProject(input: ProjectInput): Promise<ApiProjectSummary> {
+  return request<ApiProjectSummary>('/projects', { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateProject(projectId: number, input: Partial<Pick<ProjectInput, 'code' | 'name' | 'description' | 'themeKey'>>): Promise<ApiProjectSummary> {
+  return request<ApiProjectSummary>(`/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+export function archiveProject(projectId: number): Promise<ApiProjectSummary> {
+  return request<ApiProjectSummary>(`/projects/${projectId}/archive`, { method: 'POST' })
+}
+
+export function restoreProject(projectId: number): Promise<ApiProjectSummary> {
+  return request<ApiProjectSummary>(`/projects/${projectId}/restore`, { method: 'POST' })
+}
+
+export function copyProjectConfiguration(projectId: number, sourceProjectId: number): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/projects/${projectId}/copy-configuration`, { method: 'POST', body: JSON.stringify({ sourceProjectId }) })
+}
+
+export function fetchProjectMembers(projectId: number, options: { search?: string; page?: number; limit?: number } = {}): Promise<{ data: ApiProjectMember[]; total: number; page: number; limit: number; totalPages: number }> {
+  const query = new URLSearchParams()
+  if (options.search?.trim()) query.set('search', options.search.trim())
+  if (options.page) query.set('page', String(options.page))
+  if (options.limit) query.set('limit', String(options.limit))
+  return request(`/projects/${projectId}/members${query.size ? `?${query.toString()}` : ''}`)
+}
+
+export function addProjectMember(projectId: number, input: { userId: number; role: ApiProjectRole }): Promise<ApiProjectMember> {
+  return request<ApiProjectMember>(`/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function updateProjectMember(projectId: number, userId: number, role: ApiProjectRole): Promise<ApiProjectMember> {
+  return request<ApiProjectMember>(`/projects/${projectId}/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) })
+}
+
+export function removeProjectMember(projectId: number, userId: number): Promise<void> {
+  return request<void>(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' })
+}
+
+export async function fetchDocuments(projectId: number, params: Omit<DocumentListParams, 'projectId'> = {}): Promise<ApiDocumentListResponse> {
   const q = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') q.set(key, String(value))
-  return request<ApiDocumentListResponse>(`/documents?${q.toString()}`)
+  return request<ApiDocumentListResponse>(`${projectPath(projectId, '/documents')}?${q.toString()}`)
 }
 
-export function fetchDocumentKpis(projectId?: number): Promise<{ vigente: number; porVencer: number; vencido: number; total: number }> {
-  return request(`/documents/kpis${projectId ? `?projectId=${projectId}` : ''}`)
+export function fetchDocumentKpis(projectId: number): Promise<{ vigente: number; porVencer: number; vencido: number; total: number }> {
+  return request(projectPath(projectId, '/documents/kpis'))
 }
 
-export function fetchDocument(id: number): Promise<ApiDocumentDetail> {
-  return request(`/documents/${id}`)
+export function fetchDocument(projectId: number, id: number): Promise<ApiDocumentDetail> {
+  return request(projectPath(projectId, `/documents/${id}`))
 }
 
-export function createDocument(input: DocumentMetadataInput, file: File): Promise<ApiDocument> {
-  return request('/documents', { method: 'POST', body: documentFormData(input, file) })
+export function createDocument(projectId: number, input: Omit<DocumentMetadataInput, 'projectId'>, file: File): Promise<ApiDocument> {
+  return request(projectPath(projectId, '/documents'), { method: 'POST', body: documentFormData({ ...input, projectId }, file) })
 }
 
-export function createDocumentVersion(id: number, input: Pick<DocumentMetadataInput, 'issueDate' | 'expiryDate'>, file: File): Promise<ApiDocument> {
+export function createDocumentVersion(projectId: number, id: number, input: Pick<DocumentMetadataInput, 'issueDate' | 'expiryDate'>, file: File): Promise<ApiDocument> {
   const body = new FormData()
   body.set('issueDate', input.issueDate)
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
   body.set('file', file)
-  return request(`/documents/${id}/versions`, { method: 'POST', body })
+  return request(projectPath(projectId, `/documents/${id}/versions`), { method: 'POST', body })
 }
 
-export function updateDocument(id: number, input: Partial<Pick<DocumentMetadataInput, 'name' | 'type' | 'projectId' | 'assetIds' | 'issueDate' | 'expiryDate' | 'periodicity' | 'periodicityMode'>>): Promise<ApiDocument> {
-  return request(`/documents/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+export function updateDocument(projectId: number, id: number, input: Partial<Omit<DocumentMetadataInput, 'projectId'>>): Promise<ApiDocument> {
+  return request(projectPath(projectId, `/documents/${id}`), { method: 'PATCH', body: JSON.stringify(input) })
 }
 
-export function deleteDocument(id: number): Promise<void> {
-  return request(`/documents/${id}`, { method: 'DELETE' })
+export function deleteDocument(projectId: number, id: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/documents/${id}`), { method: 'DELETE' })
 }
 
-export async function fetchDocumentPreview(id: number, version?: number): Promise<Blob> {
+export async function fetchDocumentPreview(projectId: number, id: number, version?: number): Promise<Blob> {
   const suffix = version ? `/versions/${version}/preview` : '/preview'
-  const response = await fetch(`${API_BASE}/documents/${id}${suffix}`)
+  const response = await fetch(`${API_BASE}${projectPath(projectId, `/documents/${id}${suffix}`)}`)
   if (!response.ok) throw new Error(`API ${response.status}: preview failed`)
   return response.blob()
 }
 
-export async function downloadDocument(id: number, version?: number): Promise<void> {
+export async function downloadDocument(projectId: number, id: number, version?: number): Promise<void> {
   const suffix = version ? `/versions/${version}/download` : '/download'
-  const response = await fetch(`${API_BASE}/documents/${id}${suffix}`)
+  const response = await fetch(`${API_BASE}${projectPath(projectId, `/documents/${id}${suffix}`)}`)
   if (!response.ok) throw new Error(`API ${response.status}: download failed`)
   const blob = await response.blob()
   const url = URL.createObjectURL(blob)
@@ -912,20 +975,18 @@ export interface ApiDashboardResponse {
   activityFeed: ActivityItem[]
 }
 
-export function fetchDashboard(params?: { projectId?: number; range?: '30d' | '7d' | 'year' }): Promise<ApiDashboardResponse> {
+export function fetchDashboard(projectId: number, params?: { range?: '30d' | '7d' | 'year' }): Promise<ApiDashboardResponse> {
   const q = new URLSearchParams()
-  if (params?.projectId) q.set('projectId', String(params.projectId))
   if (params?.range) q.set('range', params.range)
   const queryStr = q.toString()
-  return request<ApiDashboardResponse>(`/dashboard${queryStr ? `?${queryStr}` : ''}`)
+  return request<ApiDashboardResponse>(`${projectPath(projectId, '/dashboard')}${queryStr ? `?${queryStr}` : ''}`)
 }
 
-export async function downloadDashboardExport(params?: { projectId?: number; range?: '30d' | '7d' | 'year' }): Promise<void> {
+export async function downloadDashboardExport(projectId: number, params?: { range?: '30d' | '7d' | 'year' }): Promise<void> {
   const q = new URLSearchParams()
-  if (params?.projectId) q.set('projectId', String(params.projectId))
   if (params?.range) q.set('range', params.range)
   const queryStr = q.toString()
-  const response = await fetch(`${API_BASE}/dashboard/export${queryStr ? `?${queryStr}` : ''}`)
+  const response = await fetch(`${API_BASE}${projectPath(projectId, '/dashboard/export')}${queryStr ? `?${queryStr}` : ''}`)
   if (!response.ok) throw new Error('Error al descargar reporte de dashboard')
   const blob = await response.blob()
   const url = URL.createObjectURL(blob)
@@ -1011,45 +1072,42 @@ export interface ApiGlobalSearchResult {
   totalMatches: number
 }
 
-export function searchGlobal(query: string, projectId?: number, signal?: AbortSignal): Promise<ApiGlobalSearchResult> {
+export function searchGlobal(projectId: number, query: string, signal?: AbortSignal): Promise<ApiGlobalSearchResult> {
   const q = new URLSearchParams()
   q.set('q', query)
-  if (projectId) q.set('projectId', String(projectId))
-  return request<ApiGlobalSearchResult>(`/search?${q.toString()}`, { signal })
+  return request<ApiGlobalSearchResult>(`${projectPath(projectId, '/search')}?${q.toString()}`, { signal })
 }
 
 export interface FetchNotificationsParams {
-  projectId?: number
   filter?: 'all' | 'unread' | 'critical'
   limit?: number
   sync?: boolean
 }
 
-export function fetchNotifications(params: FetchNotificationsParams = {}): Promise<import('@/types').NotificationsResponse> {
+export function fetchNotifications(projectId: number, params: FetchNotificationsParams = {}): Promise<import('@/types').NotificationsResponse> {
   const q = new URLSearchParams()
-  if (params.projectId) q.set('projectId', String(params.projectId))
   if (params.filter) q.set('filter', params.filter)
   if (params.limit) q.set('limit', String(params.limit))
   if (params.sync !== undefined) q.set('sync', String(params.sync))
-  return request<import('@/types').NotificationsResponse>(`/notifications?${q.toString()}`)
+  return request<import('@/types').NotificationsResponse>(`${projectPath(projectId, '/notifications')}?${q.toString()}`)
 }
 
-export function markNotificationAsRead(id: number, read = true): Promise<import('@/types').ApiNotification> {
-  return request<import('@/types').ApiNotification>(`/notifications/${id}/read`, {
+export function markNotificationAsRead(projectId: number, id: number, read = true): Promise<import('@/types').ApiNotification> {
+  return request<import('@/types').ApiNotification>(projectPath(projectId, `/notifications/${id}/read`), {
     method: 'PATCH',
     body: JSON.stringify({ read }),
   })
 }
 
-export function markAllNotificationsAsRead(projectId?: number): Promise<{ success: boolean; count: number }> {
-  return request<{ success: boolean; count: number }>('/notifications/read-all', {
+export function markAllNotificationsAsRead(projectId: number): Promise<{ success: boolean; count: number }> {
+  return request<{ success: boolean; count: number }>(projectPath(projectId, '/notifications/read-all'), {
     method: 'POST',
-    body: JSON.stringify(projectId ? { projectId } : {}),
+    body: JSON.stringify({}),
   })
 }
 
-export function deleteNotification(id: number): Promise<void> {
-  return request<void>(`/notifications/${id}`, {
+export function deleteNotification(projectId: number, id: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/notifications/${id}`), {
     method: 'DELETE',
   })
 }
@@ -1065,7 +1123,6 @@ export interface ApiHistoryEntry {
 }
 
 export interface ApiHistoryQuery {
-  projectId?: number
   search?: string
   userId?: number
   action?: string
@@ -1084,9 +1141,8 @@ export interface ApiHistoryPage {
   availableActions: string[]
 }
 
-export function fetchHistory(query: ApiHistoryQuery = {}, signal?: AbortSignal): Promise<ApiHistoryPage> {
+export function fetchHistory(projectId: number, query: ApiHistoryQuery = {}, signal?: AbortSignal): Promise<ApiHistoryPage> {
   const q = new URLSearchParams()
-  if (query.projectId) q.set('projectId', String(query.projectId))
   if (query.search?.trim()) q.set('search', query.search.trim())
   if (query.userId) q.set('userId', String(query.userId))
   if (query.action?.trim()) q.set('action', query.action.trim())
@@ -1095,19 +1151,18 @@ export function fetchHistory(query: ApiHistoryQuery = {}, signal?: AbortSignal):
   if (query.page) q.set('page', String(query.page))
   if (query.limit) q.set('limit', String(query.limit))
   const qs = q.toString()
-  return request<ApiHistoryPage>(`/history${qs ? `?${qs}` : ''}`, { signal })
+  return request<ApiHistoryPage>(`${projectPath(projectId, '/history')}${qs ? `?${qs}` : ''}`, { signal })
 }
 
-export async function downloadHistoryCsv(query: ApiHistoryQuery = {}): Promise<void> {
+export async function downloadHistoryCsv(projectId: number, query: ApiHistoryQuery = {}): Promise<void> {
   const q = new URLSearchParams()
-  if (query.projectId) q.set('projectId', String(query.projectId))
   if (query.search?.trim()) q.set('search', query.search.trim())
   if (query.userId) q.set('userId', String(query.userId))
   if (query.action?.trim()) q.set('action', query.action.trim())
   if (query.startDate) q.set('startDate', query.startDate)
   if (query.endDate) q.set('endDate', query.endDate)
   const qs = q.toString()
-  const res = await fetch(`${API_BASE}/history/export${qs ? `?${qs}` : ''}`)
+  const res = await fetch(`${API_BASE}${projectPath(projectId, '/history/export')}${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error('Error al descargar el archivo CSV')
   const blob = await res.blob()
   const url = window.URL.createObjectURL(blob)

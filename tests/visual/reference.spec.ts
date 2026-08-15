@@ -22,16 +22,16 @@ type VisualTarget = {
 }
 
 const targets: VisualTarget[] = [
-  { name: 'dashboard', route: '/dashboard', referenceView: 'dashboard', heading: 'Panel general' },
-  { name: 'projects', route: '/projects', referenceView: 'projects', heading: 'Proyectos' },
-  { name: 'items', route: '/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems', evolvedContract: true },
-  { name: 'documents', route: '/docs', referenceView: 'docs', heading: 'Documentos', evolvedContract: true },
-  { name: 'calendar', route: '/calendar', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
-  { name: 'plans', route: '/plans', referenceView: 'plans', heading: 'Planos interactivos', evolvedContract: true },
-  { name: 'locations', route: '/locations', referenceView: 'locations', heading: 'Ubicaciones' },
-  { name: 'history', route: '/history', referenceView: 'history', heading: 'Historial y auditoría' },
-  { name: 'config', route: '/config', referenceView: 'config', heading: 'Configuración', evolvedContract: true },
-  { name: 'item-modal', route: '/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true, evolvedContract: true },
+  { name: 'dashboard', route: '/projects/1/dashboard', referenceView: 'dashboard', heading: 'Panel general' },
+  { name: 'projects', route: '/projects/1/portfolio', referenceView: 'projects', heading: 'Proyectos' },
+  { name: 'items', route: '/projects/1/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems', evolvedContract: true },
+  { name: 'documents', route: '/projects/1/docs', referenceView: 'docs', heading: 'Documentos', evolvedContract: true },
+  { name: 'calendar', route: '/projects/1/calendar', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
+  { name: 'plans', route: '/projects/1/plans', referenceView: 'plans', heading: 'Planos interactivos', evolvedContract: true },
+  { name: 'locations', route: '/projects/1/locations', referenceView: 'locations', heading: 'Ubicaciones' },
+  { name: 'history', route: '/projects/1/history', referenceView: 'history', heading: 'Historial y auditoría' },
+  { name: 'config', route: '/projects/1/config', referenceView: 'config', heading: 'Configuración', evolvedContract: true },
+  { name: 'item-modal', route: '/projects/1/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true, evolvedContract: true },
 ]
 
 const variants: Array<{ name: string; width: number; height: number; theme: Theme }> = [
@@ -52,19 +52,19 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
   await page.goto(target.route, { waitUntil: 'domcontentloaded' })
   // El shell carga la sesión (proyecto activo + usuario) de forma asíncrona.
   await expect(page.getByText('María Fernández', { exact: true }).first()).toBeVisible()
-  if (target.route === '/assets') {
+  if (target.name === 'items' || target.name === 'item-modal') {
     await expect(page.getByText('CNC-05', { exact: true })).toBeVisible()
   }
-  if (target.route === '/docs') {
+  if (target.name === 'documents') {
     await expect(page.getByText('Certificado ITV 2025', { exact: true })).toBeVisible()
   }
-  if (target.route === '/calendar') {
+  if (target.name === 'calendar') {
     // La primera carga fija `view` y `date` en la URL, lo que provoca una
     // segunda consulta. Esperamos al control funcional para no capturar ese
     // estado transitorio de carga como parte del contrato evolucionado.
     await expect(page.getByRole('button', { name: 'Nuevo evento' })).toBeVisible()
   }
-  if (target.route === '/plans') {
+  if (target.name === 'plans') {
     await expect(page.getByTestId('floor-plan-viewer')).toHaveAttribute('data-floor-plan-loaded', 'true')
     const firstMarker = page.getByRole('button', { name: /^Abrir activo / }).first()
     await expect(firstMarker).toBeVisible()
@@ -76,7 +76,7 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
     })).toBe(true)
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   }
-  if (target.route === '/locations') {
+  if (target.name === 'locations') {
     await expect(page.getByRole('heading', { name: 'Planta 1 · Nave A', exact: true })).toBeVisible()
   }
   await setTheme(page, theme)
@@ -85,6 +85,7 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
     await page.locator('tbody tr').filter({ hasText: 'CNC-05' }).click()
   }
   await expect(page.getByRole('heading', { name: target.heading, exact: true })).toBeVisible()
+  await expect(page.locator('.animate-pulse')).toHaveCount(0)
 }
 
 async function openReferenceTarget(page: Page, target: VisualTarget, theme: Theme): Promise<void> {

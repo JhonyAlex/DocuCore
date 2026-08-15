@@ -2,13 +2,13 @@ import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl = ''
 const prisma = new PrismaClient()
 
-function api(path: string, init: RequestInit = {}) { return fetch(`${baseUrl}${path}`, init) }
+function api(path: string, init: RequestInit = {}) { return fetch(`${baseUrl}${projectApiPath(path, init)}`, init) }
 
 describe('PERF-01 bounded data contracts', () => {
   beforeAll(async () => {

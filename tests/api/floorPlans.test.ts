@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
 
 let server: Server | undefined
 let baseUrl: string
@@ -16,7 +16,7 @@ let highResolutionPlanId: number | null = null
 let secondPlacementPlanId: number | null = null
 const formatPlanIds: number[] = []
 
-async function api(pathname: string, init?: RequestInit): Promise<Response> { return fetch(`${baseUrl}${pathname}`, init) }
+async function api(pathname: string, init?: RequestInit): Promise<Response> { return fetch(`${baseUrl}${projectApiPath(pathname, init)}`, init) }
 function form(name: string, locationId: number, bytes = image, mimeType = 'image/png', fileName = 'plano.png'): FormData {
   const data = new FormData()
   data.set('name', name); data.set('projectId', '1'); data.set('locationId', String(locationId))
@@ -63,8 +63,9 @@ describe('floor plan API', () => {
     expect(Buffer.from(await original.arrayBuffer())).toEqual(image)
 
     const dzi = await api(`/api/floor-plans/${plan.id}/versions/1/dzi`)
-    expect(dzi.status).toBe(200)
-    expect(await dzi.text()).toContain(`/api/floor-plans/${plan.id}/versions/1/tiles/`)
+    const dziText = await dzi.text()
+    expect(dzi.status, dziText).toBe(200)
+    expect(dziText).toContain(`/api/projects/1/floor-plans/${plan.id}/versions/1/tiles/`)
     const level = Math.ceil(Math.log2(Math.max(plan.currentVersion.width, plan.currentVersion.height)))
     const tile = await api(`/api/floor-plans/${plan.id}/versions/1/tiles/${level}/0_0.jpeg`)
     expect(tile.status).toBe(200)
@@ -95,7 +96,7 @@ describe('floor plan API', () => {
     const plan = await (await api(`/api/floor-plans/${planId}`)).json() as { locationId: number }
     const assets = await (await api(`/api/assets?locationId=${plan.locationId}&limit=100`)).json() as { data: Array<{ id: number }> }
     const assetId = assets.data[0].id
-    const invalid = await api('/api/floor-plans', { method: 'POST', body: (() => { const data = form('Proyecto incorrecto', plan.locationId); data.set('projectId', '2'); return data })() })
+    const invalid = await fetch(`${baseUrl}/api/projects/1/floor-plans`, { method: 'POST', body: (() => { const data = form('Proyecto incorrecto', plan.locationId); data.set('projectId', '2'); return data })() })
     expect(invalid.status).toBe(400)
 
     const placed = await api(`/api/floor-plans/${planId}/markers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assetId, x: 0.2, y: 0.3 }) })
@@ -212,7 +213,7 @@ describe('floor plan API', () => {
     expect(firstMarker.asset.type.iconKey).toBe(asset.type.iconKey)
 
     const one = await (await api(`/api/assets/${asset.id}/floor-plans`)).json() as { data: Array<{ planId: number; markerId: number; x: number; y: number; dziUrl: string; currentVersion: { width: number; height: number } }> }
-    expect(one.data).toEqual([expect.objectContaining({ planId, markerId: firstMarker.id, x: 0.19, y: 0.37, dziUrl: expect.stringContaining(`/api/floor-plans/${planId}/versions/`) })])
+    expect(one.data).toEqual([expect.objectContaining({ planId, markerId: firstMarker.id, x: 0.19, y: 0.37, dziUrl: expect.stringContaining(`/api/projects/1/floor-plans/${planId}/versions/`) })])
     expect(one.data[0]!.currentVersion.width).toBeGreaterThan(0)
 
     const secondPlanResponse = await api('/api/floor-plans', { method: 'POST', body: form(`QA segundo plano PLAN-04 ${Date.now()}`, plan.locationId) })
