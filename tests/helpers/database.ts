@@ -42,10 +42,12 @@ async function run(command: string, args: string[]): Promise<void> {
 }
 
 export async function ensureTestDatabase(): Promise<void> {
-  try {
-    await run(dockerCommand, ['compose', ...composeArgs, 'up', '-d', 'db'])
-  } catch {
-    // Container might already be running or port mapped externally
+  if (!process.env.CI) {
+    try {
+      await run(dockerCommand, ['compose', ...composeArgs, 'up', '-d', 'db'])
+    } catch {
+      // Container might already be running or port mapped externally
+    }
   }
 
   // Un volumen E2E nuevo no tiene esquema: aplicar las migraciones antes del

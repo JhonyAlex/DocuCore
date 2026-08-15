@@ -97,3 +97,13 @@ jobs:
 
       - name: Run Visual Regression Tests
         run: pnpm test:visual
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
