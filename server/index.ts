@@ -19,6 +19,7 @@ import searchRouter from './routes/search'
 import historyRouter from './routes/history'
 import notificationsRouter from './routes/notifications'
 import projectsRouter from './routes/projects'
+import { sessionHandler } from './routes/meta'
 import { errorHandler } from './middleware/error'
 import { requireProjectScope } from './lib/projectScope'
 
@@ -30,30 +31,41 @@ app.use(express.json())
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
+app.get('/api/session', sessionHandler)
 app.use('/api/projects', projectsRouter)
 
+const readOnlyMethods = new Set(['GET', 'HEAD', 'OPTIONS'])
+function projectScope(capability?: 'OPERATE' | 'MANAGE_CONFIGURATION') {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const write = !readOnlyMethods.has(req.method)
+    requireProjectScope({ write, capability: write ? capability : undefined })(req, res, next)
+  }
+}
+
 // Every operational API is below the explicit project URL boundary. The
-// middleware resolves existence and membership once, and turns archived
-// projects read-only before a resource router can perform a write.
-const projectRouter = express.Router({ mergeParams: true })
-projectRouter.use((req, res, next) => requireProjectScope({ write: !['GET', 'HEAD', 'OPTIONS'].includes(req.method) })(req, res, next))
-projectRouter.use('/assets', assetsRouter)
-projectRouter.use('/documents', documentsRouter)
-projectRouter.use('/locations', locationsRouter)
-projectRouter.use('/dynamic-fields', dynamicFieldsRouter)
-projectRouter.use('/asset-types', assetTypesRouter)
-projectRouter.use('/statuses', statusesRouter)
-projectRouter.use('/tasks', tasksRouter)
-projectRouter.use('/preventive-plans', preventivePlansRouter)
-projectRouter.use('/floor-plans', floorPlansRouter)
-projectRouter.use('/calendar', calendarRouter)
-projectRouter.use('/dashboard', dashboardRouter)
-projectRouter.use('/search', searchRouter)
-projectRouter.use('/history', historyRouter)
-projectRouter.use('/notifications', notificationsRouter)
-projectRouter.use('/', metaRouter)
-app.use('/api/projects/:projectId', projectRouter)
-app.use('/api', metaRouter)
+// mount policy resolves scope once per request, blocks viewers centrally, and
+// reserves structural configuration mutations for project managers.
+const operationalScope = projectScope('OPERATE')
+const configurationScope = projectScope('MANAGE_CONFIGURATION')
+for (const [path, router] of [
+  ['/assets', assetsRouter],
+  ['/documents', documentsRouter],
+  ['/locations', locationsRouter],
+  ['/floor-plans', floorPlansRouter],
+  ['/calendar', calendarRouter],
+  ['/dashboard', dashboardRouter],
+  ['/search', searchRouter],
+  ['/history', historyRouter],
+  ['/notifications', notificationsRouter],
+] as const) app.use(`/api/projects/:projectId${path}`, operationalScope, router)
+for (const [path, router] of [
+  ['/dynamic-fields', dynamicFieldsRouter],
+  ['/asset-types', assetTypesRouter],
+  ['/statuses', statusesRouter],
+  ['/tasks', tasksRouter],
+  ['/preventive-plans', preventivePlansRouter],
+] as const) app.use(`/api/projects/:projectId${path}`, configurationScope, router)
+app.use('/api/projects/:projectId', projectScope(), metaRouter)
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Not found' })

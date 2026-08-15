@@ -971,6 +971,7 @@ export interface ApiDashboardResponse {
   kpis: DashboardKpi[]
   upcomingExpirations: UpcomingExpiration[]
   criticalAlerts: AlertItem[]
+  criticalAlertCount?: number
   chartBars: ChartBar[]
   activityFeed: ActivityItem[]
 }

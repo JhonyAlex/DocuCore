@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { BrowserContext, Page, TestInfo } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { compareImages, VISUAL_THRESHOLD_PERCENT, visualOutputPath } from './imageDiff'
+import { installProtectedVisualFixtures } from './contractFixtures'
 
 type Theme = 'dark' | 'light'
 
@@ -49,6 +50,9 @@ async function setTheme(page: Page, theme: Theme): Promise<void> {
 }
 
 async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Promise<void> {
+  if (target.name === 'dashboard' || target.name === 'locations' || target.name === 'history') {
+    await installProtectedVisualFixtures(page, target.name)
+  }
   await page.goto(target.route, { waitUntil: 'domcontentloaded' })
   // El shell carga la sesión (proyecto activo + usuario) de forma asíncrona.
   await expect(page.getByText('María Fernández', { exact: true }).first()).toBeVisible()

@@ -16,9 +16,15 @@ test.describe('PROJ-01 proyectos', () => {
 
     const card = page.locator('[role="button"]').filter({ hasText: code })
     await expect(card).toBeVisible()
+    let projectLoads = 0
+    page.on('request', (request) => {
+      if (request.method() === 'GET' && /\/api\/projects\/\d+$/.test(new URL(request.url()).pathname)) projectLoads += 1
+    })
     await card.click()
     await expect(page).toHaveURL(/\/projects\/\d+\/dashboard$/)
     await expect(page.locator('aside')).toContainText(name)
+    await page.waitForTimeout(150)
+    expect(projectLoads).toBe(1)
 
     await page.goto('/projects')
     await card.hover()

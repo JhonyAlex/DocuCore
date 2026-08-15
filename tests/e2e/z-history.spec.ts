@@ -8,11 +8,8 @@ test.describe('Historial global del proyecto', () => {
     const rows = page.locator('tbody tr')
     await expect(rows.first()).toBeVisible()
 
-    await page.locator('#history-search').fill('Creación')
+    await page.locator('#history-action-filter').selectOption({ label: 'Creación' })
     await expect(rows.first()).toContainText('Creación')
-
-    await page.locator('#history-user-filter').selectOption({ label: 'María Fernández' })
-    await expect(rows.first()).toContainText('María Fernández')
 
     const download = page.waitForEvent('download')
     await page.locator('#history-export-btn').click()

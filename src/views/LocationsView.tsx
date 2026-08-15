@@ -5,7 +5,6 @@ import {
   deleteLocation,
   fetchAssetTypes,
   fetchLocation,
-  fetchLocationAssets,
   fetchLocationBootstrap,
   fetchLocations,
   fetchStatuses,
@@ -13,7 +12,6 @@ import {
   updateLocation,
   type ApiAssetType,
   type ApiLocation,
-  type ApiLocationAsset,
   type ApiLocationDetail,
   type ApiLocationsResponse,
   type ApiStatus,
@@ -67,6 +65,7 @@ const chevronRight = <svg className="w-3 h-3 text-slate-400" viewBox="0 0 24 24"
 const houseIcon = <svg className="w-4 h-4 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
 const buildingIcon = <svg className="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /></svg>
 const pinIcon = (className: string) => <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+const PREVIEW_ASSET_COUNT = 3
 
 export default function LocationsView() {
   const navigate = useNavigate()
@@ -180,12 +179,6 @@ export default function LocationsView() {
     })
   }, [catalog, selectedId])
 
-  const [assetsPage, setAssetsPage] = useState(1)
-  const [locationAssets, setLocationAssets] = useState<ApiLocationAsset[]>([])
-  const [locationAssetsTotal, setLocationAssetsTotal] = useState(0)
-  const [locationAssetsTotalPages, setLocationAssetsTotalPages] = useState(1)
-  const [loadingAssets, setLoadingAssets] = useState(false)
-
   useEffect(() => {
     if (selectedId === null) {
       setDetail(null)
@@ -205,32 +198,7 @@ export default function LocationsView() {
   useEffect(() => {
     setConfirmDelete(false)
     setDeleteError(null)
-    setAssetsPage(1)
   }, [selectedId])
-
-  useEffect(() => {
-    if (selectedId === null) {
-      setLocationAssets([])
-      setLocationAssetsTotal(0)
-      setLocationAssetsTotalPages(1)
-      return
-    }
-    setLoadingAssets(true)
-    fetchLocationAssets(projectId, selectedId, { page: assetsPage, limit: 10 })
-      .then((res) => {
-        setLocationAssets(res.data)
-        setLocationAssetsTotal(res.total)
-        setLocationAssetsTotalPages(res.totalPages)
-      })
-      .catch(() => {
-        setLocationAssets([])
-        setLocationAssetsTotal(0)
-        setLocationAssetsTotalPages(1)
-      })
-      .finally(() => {
-        setLoadingAssets(false)
-      })
-  }, [assetsPage, detailVersion, projectId, selectedId])
 
   const matchesSearch = useCallback((node: TreeNode, query: string): boolean => {
     const normalized = query.trim().toLowerCase()
@@ -384,7 +352,7 @@ export default function LocationsView() {
     : detail && catalog
       ? catalog.project.name
       : ''
-  const displayedAssets = locationAssets.map(mapApiLocationAssetToDisplay)
+  const displayedAssets = (detail?.assets ?? []).slice(0, PREVIEW_ASSET_COUNT).map(mapApiLocationAssetToDisplay)
   const hasLocations = (catalog?.locations.length ?? 0) > 0
 
   return (
@@ -485,21 +453,11 @@ export default function LocationsView() {
               </div>
 
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-sm flex items-center gap-1.5">
-                  Activos en esta ubicación
-                  {locationAssetsTotal > 0 && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">({locationAssetsTotal})</span>
-                  )}
-                </h3>
+                <h3 className="font-medium text-sm">Activos en esta ubicación</h3>
                 <button type="button" onClick={() => { setConfirmDelete(true); setDeleteError(null) }} className="text-xs text-red-600 hover:text-red-700">Eliminar ubicación</button>
               </div>
               <div className="space-y-2">
-                {loadingAssets && (
-                  <div className="space-y-2 animate-pulse">
-                    {Array.from({ length: 3 }, (_, i) => <div key={i} className="h-12 rounded-lg bg-slate-100 dark:bg-slate-800" />)}
-                  </div>
-                )}
-                {!loadingAssets && displayedAssets.map((asset) => (
+                {displayedAssets.map((asset) => (
                   <button
                     key={asset.id}
                     type="button"
@@ -516,33 +474,10 @@ export default function LocationsView() {
                     <span className={`chip ${asset.statusChipClass}`}>{asset.statusLabel}</span>
                   </button>
                 ))}
-                {!loadingAssets && displayedAssets.length === 0 && (
+                {displayedAssets.length === 0 && (
                   <div className="text-sm text-slate-500 dark:text-slate-400">Sin activos en esta ubicación.</div>
                 )}
               </div>
-              {locationAssetsTotalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-xs text-slate-500">
-                  <span>Página {assetsPage} de {locationAssetsTotalPages}</span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={assetsPage <= 1}
-                      onClick={() => setAssetsPage((p) => Math.max(1, p - 1))}
-                      className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
-                    >
-                      Anterior
-                    </button>
-                    <button
-                      type="button"
-                      disabled={assetsPage >= locationAssetsTotalPages}
-                      onClick={() => setAssetsPage((p) => Math.min(locationAssetsTotalPages, p + 1))}
-                      className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-medium"
-                    >
-                      Siguiente
-                    </button>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>

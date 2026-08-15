@@ -7,6 +7,26 @@ import prisma from './prisma'
 // authenticated identity later does not change any route-level contract.
 export const CURRENT_ACTOR_USER_ID = 1
 
+/**
+ * PROJ-01 intentionally keeps a single local actor until AUTH-01 supplies an
+ * authenticated identity. Tests can select a seeded actor per request without
+ * adding a production-facing impersonation mechanism.
+ */
+export function actorIdFromRequest(req: Request): number {
+  if (process.env.NODE_ENV !== 'test') return CURRENT_ACTOR_USER_ID
+  const candidate = Number(req.get('x-docucore-test-actor-id'))
+  return Number.isInteger(candidate) && candidate > 0 ? candidate : CURRENT_ACTOR_USER_ID
+}
+
+export const projectCapabilities = {
+  OPERATE: ['OWNER', 'ADMIN', 'EDITOR'],
+  MANAGE_PROJECT: ['OWNER', 'ADMIN'],
+  MANAGE_MEMBERS: ['OWNER', 'ADMIN'],
+  MANAGE_CONFIGURATION: ['OWNER', 'ADMIN'],
+} as const satisfies Record<string, readonly ProjectRole[]>
+
+export type ProjectCapability = keyof typeof projectCapabilities
+
 export interface ProjectScope {
   projectId: number
   project: { id: number; code: string; name: string; status: ProjectStatus; themeKey: string }
@@ -55,10 +75,11 @@ export async function resolveProjectScope(projectId: number, actorId = CURRENT_A
   return { projectId, project, membership }
 }
 
-export function requireProjectScope(options: { write?: boolean } = {}): RequestHandler {
+export function requireProjectScope(options: { write?: boolean; capability?: ProjectCapability } = {}): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction) => {
     try {
-      const scope = await resolveProjectScope(projectIdFromRequest(req))
+      const scope = await resolveProjectScope(projectIdFromRequest(req), actorIdFromRequest(req))
+      if (options.capability) requireProjectCapability(scope, options.capability)
       if (options.write && scope.project.status === 'ARCHIVED') throw scopeError('Archived projects are read-only', 409)
       req.projectScope = scope
       next()
@@ -74,6 +95,11 @@ export function requireProjectWriteScope(): RequestHandler {
 
 export function requireProjectRole(scope: ProjectScope, allowed: readonly ProjectRole[]): void {
   if (!allowed.includes(scope.membership.role)) throw scopeError('Insufficient project role', 403)
+}
+
+/** Central policy boundary for every project-scoped capability. */
+export function requireProjectCapability(scope: ProjectScope, capability: ProjectCapability): void {
+  requireProjectRole(scope, projectCapabilities[capability])
 }
 
 export function scopedProjectId(req: Request): number {

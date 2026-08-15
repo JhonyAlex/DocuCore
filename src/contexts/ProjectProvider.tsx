@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchProject, type ApiProjectSummary } from '@/lib/api'
 import { ProjectContext } from './ProjectContext'
@@ -12,11 +12,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(Boolean(projectId))
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const loadedProjectIdRef = useRef<number | null>(null)
 
   const refresh = useCallback(() => setReloadToken((value) => value + 1), [])
 
   useEffect(() => {
     if (!projectId) {
+      loadedProjectIdRef.current = null
       setProject(null)
       setError(null)
       setLoading(false)
@@ -27,17 +29,19 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     // activos) no debe desmontar la vista operativa ni perder la ficha,
     // filtros o selección actuales. Al cambiar realmente de proyecto sí se
     // entra en carga y el outlet descarta el estado anterior.
-    const isCurrentScope = project?.id === projectId
+    const isCurrentScope = loadedProjectIdRef.current === projectId
     if (!isCurrentScope) setLoading(true)
     setError(null)
     fetchProject(projectId)
       .then((next) => {
         if (cancelled) return
+        loadedProjectIdRef.current = next.id
         setProject(next)
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, String(next.id))
       })
       .catch((reason: unknown) => {
         if (cancelled) return
+        loadedProjectIdRef.current = null
         setProject(null)
         setError(reason instanceof Error ? reason.message : 'No se pudo cargar el proyecto')
       })
@@ -47,7 +51,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [project?.id, projectId, reloadToken])
+  }, [projectId, reloadToken])
 
   const value = useMemo(() => ({ projectId, project, loading, error, refresh }), [error, loading, project, projectId, refresh])
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>

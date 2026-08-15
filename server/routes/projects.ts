@@ -4,11 +4,10 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProjectConfiguration } from '../lib/projectConfiguration'
-import { CURRENT_ACTOR_USER_ID, parseProjectId, requireProjectRole, resolveProjectScope } from '../lib/projectScope'
+import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
 
 const router = Router()
-const managementRoles: ProjectRole[] = ['OWNER', 'ADMIN']
 const projectRoleSchema = z.enum(['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'])
 
 const memberInputSchema = z.object({ userId: z.number().int().positive(), role: projectRoleSchema }).strict()
@@ -75,9 +74,9 @@ async function ensureUsersExist(members: Array<{ userId: number }>): Promise<voi
   if (count !== uniqueIds.length) throw Object.assign(new Error('Uno o más usuarios no existen'), { status: 400 })
 }
 
-async function ensureManagementScope(projectId: number) {
-  const scope = await resolveProjectScope(projectId)
-  requireProjectRole(scope, managementRoles)
+async function ensureManagementScope(projectId: number, actorId: number, capability: 'MANAGE_PROJECT' | 'MANAGE_MEMBERS' | 'MANAGE_CONFIGURATION' = 'MANAGE_PROJECT') {
+  const scope = await resolveProjectScope(projectId, actorId)
+  requireProjectCapability(scope, capability)
   return scope
 }
 
@@ -88,9 +87,10 @@ async function ensureOwnerRemains(projectId: number, affectedRole: ProjectRole):
 }
 
 router.get('/', asyncHandler(async (req, res) => {
+  const actorId = actorIdFromRequest(req)
   const query = listSchema.parse(req.query)
   const where: Prisma.ProjectWhereInput = {
-    members: { some: { userId: CURRENT_ACTOR_USER_ID } },
+    members: { some: { userId: actorId } },
     status: query.status === 'all' ? undefined : query.status === 'active' ? 'ACTIVE' : 'ARCHIVED',
     ...(query.search ? {
       OR: [
@@ -115,9 +115,10 @@ router.get('/', asyncHandler(async (req, res) => {
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
+  const actorId = actorIdFromRequest(req)
   const input = projectInputSchema.parse(req.body)
   await ensureUsersExist(input.memberIds)
-  if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId)
+  if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
   const created = await prisma.$transaction(async (tx) => {
     const project = await tx.project.create({
@@ -125,11 +126,11 @@ router.post('/', asyncHandler(async (req, res) => {
       select: { id: true },
     })
     const memberByUserId = new Map(input.memberIds.map((member) => [member.userId, member.role]))
-    memberByUserId.set(CURRENT_ACTOR_USER_ID, 'OWNER')
+    memberByUserId.set(actorId, 'OWNER')
     await tx.projectMember.createMany({ data: [...memberByUserId].map(([userId, role]) => ({ projectId: project.id, userId, role })) })
     if (input.copyConfigurationFromProjectId) await copyProjectConfiguration(tx, input.copyConfigurationFromProjectId, project.id)
     else await createMinimalProjectConfiguration(tx, project.id)
-    await tx.auditLog.create({ data: { projectId: project.id, userId: CURRENT_ACTOR_USER_ID, action: 'Creación', entityId: `project:${project.id}`, detail: `Proyecto "${input.name}" creado${input.copyConfigurationFromProjectId ? ' copiando configuración' : ''}`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: project.id, userId: actorId, action: 'Creación', entityId: `project:${project.id}`, detail: `Proyecto "${input.name}" creado${input.copyConfigurationFromProjectId ? ' copiando configuración' : ''}`, timestamp: new Date() } })
     return project.id
   })
   const project = await prisma.project.findUniqueOrThrow({ where: { id: created }, include: projectInclude })
@@ -138,19 +139,20 @@ router.post('/', asyncHandler(async (req, res) => {
 
 router.get('/:projectId', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  await resolveProjectScope(projectId)
+  await resolveProjectScope(projectId, actorIdFromRequest(req))
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: projectInclude })
   res.json(serializeProject(project))
 }))
 
 router.patch('/:projectId', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  const scope = await ensureManagementScope(projectId)
+  const actorId = actorIdFromRequest(req)
+  const scope = await ensureManagementScope(projectId, actorId)
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   const input = projectPatchSchema.parse(req.body)
   const project = await prisma.$transaction(async (tx) => {
     const updated = await tx.project.update({ where: { id: projectId }, data: input, include: projectInclude })
-    await tx.auditLog.create({ data: { projectId, userId: CURRENT_ACTOR_USER_ID, action: 'Actualización', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" actualizado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Actualización', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" actualizado`, timestamp: new Date() } })
     return updated
   })
   res.json(serializeProject(project))
@@ -158,10 +160,11 @@ router.patch('/:projectId', asyncHandler(async (req, res) => {
 
 router.post('/:projectId/archive', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  await ensureManagementScope(projectId)
+  const actorId = actorIdFromRequest(req)
+  await ensureManagementScope(projectId, actorId)
   const project = await prisma.$transaction(async (tx) => {
     const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ARCHIVED' }, include: projectInclude })
-    await tx.auditLog.create({ data: { projectId, userId: CURRENT_ACTOR_USER_ID, action: 'Archivo', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" archivado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Archivo', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" archivado`, timestamp: new Date() } })
     return updated
   })
   res.json(serializeProject(project))
@@ -169,10 +172,11 @@ router.post('/:projectId/archive', asyncHandler(async (req, res) => {
 
 router.post('/:projectId/restore', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  await ensureManagementScope(projectId)
+  const actorId = actorIdFromRequest(req)
+  await ensureManagementScope(projectId, actorId)
   const project = await prisma.$transaction(async (tx) => {
     const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ACTIVE' }, include: projectInclude })
-    await tx.auditLog.create({ data: { projectId, userId: CURRENT_ACTOR_USER_ID, action: 'Reactivación', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" reactivado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Reactivación', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" reactivado`, timestamp: new Date() } })
     return updated
   })
   res.json(serializeProject(project))
@@ -180,11 +184,12 @@ router.post('/:projectId/restore', asyncHandler(async (req, res) => {
 
 router.post('/:projectId/copy-configuration', asyncHandler(async (req, res) => {
   const targetProjectId = parseProjectId(req.params.projectId)
+  const actorId = actorIdFromRequest(req)
   const input = z.object({ sourceProjectId: z.number().int().positive() }).strict().parse(req.body)
-  const targetScope = await ensureManagementScope(targetProjectId)
+  const targetScope = await ensureManagementScope(targetProjectId, actorId, 'MANAGE_CONFIGURATION')
   if (targetScope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   if (input.sourceProjectId === targetProjectId) return res.status(400).json({ error: 'El proyecto origen debe ser distinto' })
-  await ensureManagementScope(input.sourceProjectId)
+  await ensureManagementScope(input.sourceProjectId, actorId, 'MANAGE_CONFIGURATION')
   const copied = await prisma.$transaction(async (tx) => {
     const operationalRows = await Promise.all([
       tx.asset.count({ where: { projectId: targetProjectId } }),
@@ -196,7 +201,7 @@ router.post('/:projectId/copy-configuration', asyncHandler(async (req, res) => {
     if (operationalRows.some(Boolean)) throw Object.assign(new Error('Solo se puede copiar configuración a un proyecto sin datos operativos'), { status: 409 })
     await clearProjectConfiguration(tx, targetProjectId)
     await copyProjectConfiguration(tx, input.sourceProjectId, targetProjectId)
-    await tx.auditLog.create({ data: { projectId: targetProjectId, userId: CURRENT_ACTOR_USER_ID, action: 'Copia de configuración', entityId: `project:${targetProjectId}`, detail: `Configuración copiada desde proyecto ${input.sourceProjectId}`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: targetProjectId, userId: actorId, action: 'Copia de configuración', entityId: `project:${targetProjectId}`, detail: `Configuración copiada desde proyecto ${input.sourceProjectId}`, timestamp: new Date() } })
     return true
   })
   res.status(201).json({ success: copied })
@@ -204,7 +209,7 @@ router.post('/:projectId/copy-configuration', asyncHandler(async (req, res) => {
 
 router.get('/:projectId/members', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  await resolveProjectScope(projectId)
+  await resolveProjectScope(projectId, actorIdFromRequest(req))
   const query = membersQuerySchema.parse(req.query)
   const where: Prisma.ProjectMemberWhereInput = {
     projectId,
@@ -219,13 +224,14 @@ router.get('/:projectId/members', asyncHandler(async (req, res) => {
 
 router.post('/:projectId/members', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  const scope = await ensureManagementScope(projectId)
+  const actorId = actorIdFromRequest(req)
+  const scope = await ensureManagementScope(projectId, actorId, 'MANAGE_MEMBERS')
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   const input = memberInputSchema.parse(req.body)
   await ensureUsersExist([input])
   const member = await prisma.$transaction(async (tx) => {
     const created = await tx.projectMember.create({ data: { projectId, userId: input.userId, role: input.role }, include: { user: { select: { id: true, name: true, email: true, initials: true, color: true } } } })
-    await tx.auditLog.create({ data: { projectId, userId: CURRENT_ACTOR_USER_ID, action: 'Miembro añadido', entityId: `project-member:${created.id}`, detail: `${created.user.name} añadido al proyecto`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Miembro añadido', entityId: `project-member:${created.id}`, detail: `${created.user.name} añadido al proyecto`, timestamp: new Date() } })
     return created
   })
   res.status(201).json({ ...member.user, role: member.role })
@@ -233,7 +239,8 @@ router.post('/:projectId/members', asyncHandler(async (req, res) => {
 
 router.patch('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  const scope = await ensureManagementScope(projectId)
+  const actorId = actorIdFromRequest(req)
+  const scope = await ensureManagementScope(projectId, actorId, 'MANAGE_MEMBERS')
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   const userId = parseProjectId(req.params.userId)
   const input = z.object({ role: projectRoleSchema }).strict().parse(req.body)
@@ -242,7 +249,7 @@ router.patch('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   if (before.role === 'OWNER' && input.role !== 'OWNER') await ensureOwnerRemains(projectId, before.role)
   const member = await prisma.$transaction(async (tx) => {
     const updated = await tx.projectMember.update({ where: { id: before.id }, data: { role: input.role }, include: { user: { select: { id: true, name: true, email: true, initials: true, color: true } } } })
-    await tx.auditLog.create({ data: { projectId, userId: CURRENT_ACTOR_USER_ID, action: 'Rol actualizado', entityId: `project-member:${updated.id}`, detail: `Rol de ${updated.user.name} actualizado a ${updated.role}`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Rol actualizado', entityId: `project-member:${updated.id}`, detail: `Rol de ${updated.user.name} actualizado a ${updated.role}`, timestamp: new Date() } })
     return updated
   })
   res.json({ ...member.user, role: member.role })
@@ -250,7 +257,8 @@ router.patch('/:projectId/members/:userId', asyncHandler(async (req, res) => {
 
 router.delete('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
-  const scope = await ensureManagementScope(projectId)
+  const actorId = actorIdFromRequest(req)
+  const scope = await ensureManagementScope(projectId, actorId, 'MANAGE_MEMBERS')
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   const userId = parseProjectId(req.params.userId)
   const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
@@ -258,7 +266,7 @@ router.delete('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   await ensureOwnerRemains(projectId, member.role)
   await prisma.$transaction([
     prisma.projectMember.delete({ where: { id: member.id } }),
-    prisma.auditLog.create({ data: { projectId, userId: CURRENT_ACTOR_USER_ID, action: 'Miembro retirado', entityId: `project-member:${member.id}`, detail: `${member.user.name} retirado del proyecto`, timestamp: new Date() } }),
+    prisma.auditLog.create({ data: { projectId, userId: actorId, action: 'Miembro retirado', entityId: `project-member:${member.id}`, detail: `${member.user.name} retirado del proyecto`, timestamp: new Date() } }),
   ])
   res.status(204).end()
 }))

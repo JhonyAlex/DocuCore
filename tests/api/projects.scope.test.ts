@@ -6,6 +6,16 @@ import { databaseUrl, ensureTestDatabase } from '../helpers/database'
 let server: Server | undefined
 let baseUrl = ''
 const api = (path: string, init?: RequestInit) => fetch(`${baseUrl}${path}`, init)
+function apiAs(actorId: number, path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  headers.set('x-docucore-test-actor-id', String(actorId))
+  return api(path, { ...init, headers })
+}
+function jsonAs(actorId: number, path: string, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body?: unknown): Promise<Response> {
+  const headers = new Headers({ 'content-type': 'application/json' })
+  headers.set('x-docucore-test-actor-id', String(actorId))
+  return api(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+}
 const scoped = (projectId: number, path: string) => `/api/projects/${projectId}${path}`
 
 type Catalog = { id: number; name: string }
@@ -44,6 +54,80 @@ afterAll(async () => {
 })
 
 describe('PROJ-01 project scope', () => {
+  it('applies central capabilities to OWNER, ADMIN, EDITOR, VIEWER and non-members', async () => {
+    const code = `ROLES-${Date.now()}`
+    const createdResponse = await jsonAs(1, '/api/projects', 'POST', {
+      code,
+      name: 'Proyecto de permisos centralizados',
+      description: 'Aísla la matriz de capacidades de PROJ-01.1',
+      themeKey: 'blue',
+      copyConfigurationFromProjectId: 1,
+      memberIds: [
+        { userId: 2, role: 'ADMIN' },
+        { userId: 3, role: 'EDITOR' },
+        { userId: 4, role: 'VIEWER' },
+      ],
+    })
+    expect(createdResponse.status).toBe(201)
+    const project = await createdResponse.json() as { id: number }
+    const projectId = project.id
+
+    for (const actorId of [1, 2, 3, 4]) {
+      expect((await apiAs(actorId, scoped(projectId, '/assets?limit=1'))).status).toBe(200)
+    }
+    expect((await apiAs(5, scoped(projectId, '/assets?limit=1'))).status).toBe(403)
+
+    expect((await jsonAs(1, scoped(projectId, '/statuses'), 'POST', { name: `Estado OWNER ${code}`, color: 'emerald' })).status).toBe(201)
+    expect((await jsonAs(2, scoped(projectId, '/statuses'), 'POST', { name: `Estado ADMIN ${code}`, color: 'indigo' })).status).toBe(201)
+    expect((await jsonAs(3, scoped(projectId, '/statuses'), 'POST', { name: `Estado EDITOR ${code}`, color: 'amber' })).status).toBe(403)
+    expect((await jsonAs(4, scoped(projectId, '/statuses'), 'POST', { name: `Estado VIEWER ${code}`, color: 'amber' })).status).toBe(403)
+
+    const locationResponse = await jsonAs(1, scoped(projectId, '/locations'), 'POST', {
+      code: `LOC-${code}`,
+      name: 'Ubicación de permisos',
+      surface: '100 m²',
+      parentId: null,
+      responsibleId: 3,
+    })
+    expect(locationResponse.status).toBe(201)
+    const location = await locationResponse.json() as { id: number }
+    const [typesResponse, statusesResponse] = await Promise.all([
+      apiAs(3, scoped(projectId, '/asset-types')),
+      apiAs(3, scoped(projectId, '/statuses')),
+    ])
+    const type = (await typesResponse.json() as Catalog[])[0]
+    const status = (await statusesResponse.json() as Catalog[])[0]
+    expect((await jsonAs(3, scoped(projectId, '/assets'), 'POST', {
+      code: `EDITOR-${code}`,
+      name: 'Activo creado por editor',
+      serialNumber: `SN-EDITOR-${code}`,
+      installDate: '2026-07-15',
+      typeId: type.id,
+      statusId: status.id,
+      locationId: location.id,
+      responsibleId: 3,
+      initials: 'ED',
+    })).status).toBe(201)
+    expect((await jsonAs(4, scoped(projectId, '/assets'), 'POST', {})).status).toBe(403)
+    expect((await jsonAs(5, scoped(projectId, '/assets'), 'POST', {})).status).toBe(403)
+
+    expect((await jsonAs(3, `/api/projects/${projectId}`, 'PATCH', { name: 'Intento editor' })).status).toBe(403)
+    expect((await jsonAs(4, `/api/projects/${projectId}/members`, 'POST', { userId: 5, role: 'VIEWER' })).status).toBe(403)
+    expect((await jsonAs(2, `/api/projects/${projectId}`, 'PATCH', { name: 'Proyecto administrado' })).status).toBe(200)
+    expect((await jsonAs(2, `/api/projects/${projectId}/members`, 'POST', { userId: 5, role: 'VIEWER' })).status).toBe(201)
+
+    expect((await jsonAs(2, `/api/projects/${projectId}/archive`, 'POST')).status).toBe(200)
+    expect((await jsonAs(3, scoped(projectId, '/assets'), 'POST', {})).status).toBe(409)
+    expect((await jsonAs(4, scoped(projectId, '/assets'), 'POST', {})).status).toBe(403)
+    expect((await jsonAs(2, `/api/projects/${projectId}/restore`, 'POST')).status).toBe(200)
+  })
+
+  it('keeps only /api/session global and returns 404 for residual /api/users', async () => {
+    expect((await api('/api/session')).status).toBe(200)
+    expect((await api('/api/users')).status).toBe(404)
+    expect((await api(scoped(1, '/users'))).status).toBe(200)
+  })
+
   it('creates, updates and manages project members without allowing duplicate or orphaned ownership', async () => {
     const code = `PROJECT-CRUD-${Date.now()}`
     const createdResponse = await api('/api/projects', {

@@ -193,7 +193,7 @@ export default function DashboardView() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold">Alertas críticas</h2>
             <span className="chip bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300">
-              {alerts.length}
+              {dashboardData?.criticalAlertCount ?? alerts.length}
             </span>
           </div>
           <div className="space-y-3">
@@ -282,7 +282,7 @@ export default function DashboardView() {
                       handleActivityClick()
                     }
                   }}
-                  className="ml-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/30 p-1.5 rounded transition -my-1.5"
+                  className="ml-4"
                 >
                   <span className={`absolute -left-1.5 flex items-center justify-center w-3 h-3 ${item.dotColorClass} rounded-full ring-4 ring-white dark:ring-slate-900`} />
                   <time className="text-xs text-slate-500 dark:text-slate-400">{item.time}</time>

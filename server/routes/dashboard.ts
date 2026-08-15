@@ -363,6 +363,7 @@ async function buildDashboard(project: ProjectSummary, range: '30d' | '7d' | 'ye
     ],
     upcomingExpirations,
     criticalAlerts,
+    criticalAlertCount: criticalAssets.length,
     chartBars,
     activityFeed,
   }
