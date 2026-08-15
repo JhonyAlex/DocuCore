@@ -92,11 +92,8 @@ jobs:
       - name: Install Playwright Browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run E2E & Visual Regression Tests
-        env:
-          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
-          DOCUCORE_DB_PORT: '5432'
-          NODE_ENV: test
-        run: |
-          pnpm test:e2e
-          pnpm test:visual
+      - name: Run E2E Tests
+        run: pnpm test:e2e
+
+      - name: Run Visual Regression Tests
+        run: pnpm test:visual

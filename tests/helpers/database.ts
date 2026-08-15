@@ -38,15 +38,8 @@ async function run(command: string, args: string[]): Promise<void> {
     timeout: 120_000,
   }
 
-  if (process.platform === 'win32') {
-    const commandLine = [command, ...args].map((part) => `"${part.replace(/"/g, '\\"')}"`).join(' ')
-    await execAsync(commandLine, options)
-    return
-  }
-
-  await execFileAsync(command, args, {
-    ...options,
-  })
+  const commandLine = [command, ...args].map((part) => `"${part.replace(/"/g, '\\"')}"`).join(' ')
+  await execAsync(commandLine, options)
 }
 
 export async function ensureTestDatabase(): Promise<void> {
