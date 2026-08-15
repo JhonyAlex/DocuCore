@@ -17,6 +17,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx server/seed.ts",
+    "db:bootstrap-admin": "tsx server/bootstrap-admin.ts",
     "db:reset:manual-test": "tsx server/reset-manual-test.ts",
     "server": "tsx watch server/index.ts",
     "start": "tsx server/index.ts"

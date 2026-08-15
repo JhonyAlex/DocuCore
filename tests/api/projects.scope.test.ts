@@ -122,9 +122,10 @@ describe('PROJ-01 project scope', () => {
     expect((await jsonAs(2, `/api/projects/${projectId}/restore`, 'POST')).status).toBe(200)
   })
 
-  it('keeps only /api/session global and returns 404 for residual /api/users', async () => {
-    expect((await api('/api/session')).status).toBe(200)
-    expect((await api('/api/users')).status).toBe(404)
+  it('exposes only the authenticated session and user administration contracts', async () => {
+    expect((await api('/api/session')).status).toBe(404)
+    expect((await api('/api/auth/session')).status).toBe(200)
+    expect((await api('/api/users?projectId=1')).status).toBe(200)
     expect((await api(scoped(1, '/users'))).status).toBe(200)
   })
 

@@ -173,6 +173,10 @@ test.describe('Visual contract against protected reference and approved baseline
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext({ deviceScaleFactor: 1 })
+    const login = await context.request.post('http://127.0.0.1:5173/api/auth/login', {
+      data: { email: 'maria@docucore.local', password: 'DocuCore!2026' },
+    })
+    if (!login.ok()) throw new Error(`Visual test authentication failed: ${login.status()}`)
   })
 
   test.afterAll(async () => {

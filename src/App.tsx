@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, useParams } from 'react-router-dom'
 import AppLayout from '@/layouts/AppLayout'
+import { SessionProvider } from '@/contexts/SessionProvider'
+import { useSession } from '@/contexts/SessionContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { ACTIVE_PROJECT_STORAGE_KEY } from '@/contexts/ProjectProvider'
 
@@ -19,6 +21,9 @@ const DynamicFieldsConfigView = lazy(() => import('@/views/DynamicFieldsConfigVi
 const AssetTypesConfigView = lazy(() => import('@/views/AssetTypesConfigView'))
 const StatusesConfigView = lazy(() => import('@/views/StatusesConfigView'))
 const PreventivesConfigView = lazy(() => import('@/views/PreventivesConfigView'))
+const LoginView = lazy(() => import('@/views/LoginView'))
+const AccountView = lazy(() => import('@/views/AccountView'))
+const UsersConfigView = lazy(() => import('@/views/UsersConfigView'))
 
 function DeferredRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -31,9 +36,28 @@ function DeferredRoute({ children }: { children: React.ReactNode }) {
 function ProjectScopedOutlet() {
   const { projectId } = useParams()
   const { project, loading, error } = useProject()
-  if (loading || project?.id !== Number(projectId)) return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Cargando proyecto…</div>
+  if (loading || (project !== null && project.id !== Number(projectId))) return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Cargando proyecto…</div>
   if (!project || error) return <div className="p-6 text-sm text-red-600 dark:text-red-300">{error ?? `El proyecto ${projectId ?? ''} no está disponible.`}</div>
   return <Outlet key={project.id} />
+}
+
+function AuthenticatedOutlet() {
+  const { authenticated, loading } = useSession()
+  const location = useLocation()
+  // A background refresh after an operational write must not unmount the
+  // application (and its open modal) while the previous valid identity exists.
+  if (loading && !authenticated) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">Comprobando sesión…</div>
+  if (!authenticated) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />
+  return <Outlet />
+}
+
+function LoginRoute() {
+  const { authenticated, loading } = useSession()
+  const location = useLocation()
+  if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">Comprobando sesión…</div>
+  const destination = (location.state as { from?: unknown } | null)?.from
+  if (authenticated) return <Navigate to={typeof destination === 'string' && destination.startsWith('/projects') ? destination : '/projects'} replace />
+  return <DeferredRoute><LoginView /></DeferredRoute>
 }
 
 function LegacyProjectRedirect({ section }: { section: string }) {
@@ -50,8 +74,11 @@ function ProjectTasksRedirect() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
+    <SessionProvider>
+      <Routes>
+        <Route path="/login" element={<LoginRoute />} />
+        <Route element={<AuthenticatedOutlet />}>
+        <Route element={<AppLayout />}>
         <Route path="/" element={<Navigate to="/projects" replace />} />
         <Route path="/projects" element={<DeferredRoute><ProjectsView /></DeferredRoute>} />
         <Route path="/projects/:projectId" element={<ProjectScopedOutlet />}>
@@ -69,6 +96,7 @@ export default function App() {
           <Route path="config/asset-types" element={<DeferredRoute><AssetTypesConfigView /></DeferredRoute>} />
           <Route path="config/statuses" element={<DeferredRoute><StatusesConfigView /></DeferredRoute>} />
           <Route path="config/preventives" element={<DeferredRoute><PreventivesConfigView /></DeferredRoute>} />
+          <Route path="config/users" element={<DeferredRoute><UsersConfigView /></DeferredRoute>} />
           <Route path="config/tasks" element={<ProjectTasksRedirect />} />
         </Route>
         <Route path="/dashboard" element={<LegacyProjectRedirect section="/dashboard" />} />
@@ -85,7 +113,10 @@ export default function App() {
         <Route path="/config/statuses" element={<LegacyProjectRedirect section="/config/statuses" />} />
         <Route path="/config/preventives" element={<LegacyProjectRedirect section="/config/preventives" />} />
         <Route path="/config/tasks" element={<LegacyProjectRedirect section="/config/preventives" />} />
-      </Route>
-    </Routes>
+        <Route path="/account" element={<DeferredRoute><AccountView /></DeferredRoute>} />
+        </Route>
+        </Route>
+      </Routes>
+    </SessionProvider>
   )
 }

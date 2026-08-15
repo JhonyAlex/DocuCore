@@ -54,6 +54,7 @@ export interface ApiUserRef {
 export interface ApiSessionUser {
   id: number
   name: string
+  email: string
   role: string
   initials: string
   color: string
@@ -80,6 +81,7 @@ export interface ApiProjectSummary {
   locationCount: number
   memberCount: number
   members: ApiProjectMember[]
+  currentRole?: ApiProjectRole
 }
 export interface ApiProjectListResponse { data: ApiProjectSummary[]; total: number; page: number; limit: number; totalPages: number }
 export interface ProjectInput { code: string; name: string; description: string; themeKey: ProjectThemeKey; memberIds?: Array<{ userId: number; role: ApiProjectRole }>; copyConfigurationFromProjectId?: number }
@@ -497,7 +499,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' })
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null
     throw Object.assign(new Error(payload?.error ?? `API error ${response.status}`), { status: response.status })
@@ -836,7 +838,19 @@ export function fetchUsers(projectId: number): Promise<ApiUserRef[]> {
 }
 
 export function fetchSession(): Promise<ApiSession> {
-  return request<ApiSession>('/session')
+  return request<ApiSession>('/auth/session')
+}
+
+export function login(email: string, password: string): Promise<ApiSession> {
+  return request<ApiSession>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+}
+
+export function logout(): Promise<void> {
+  return request<void>('/auth/logout', { method: 'POST' })
+}
+
+export function changePassword(input: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<void> {
+  return request<void>('/auth/password', { method: 'POST', body: JSON.stringify(input) })
 }
 
 export function fetchProjects(options: { search?: string; status?: ApiProjectStatus | 'ALL'; sort?: 'updatedAt' | 'name' | 'code' | 'createdAt'; page?: number; limit?: number } = {}): Promise<ApiProjectListResponse> {
@@ -891,6 +905,19 @@ export function updateProjectMember(projectId: number, userId: number, role: Api
 
 export function removeProjectMember(projectId: number, userId: number): Promise<void> {
   return request<void>(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' })
+}
+
+export interface ApiManagedUser extends ApiUserRef { email: string; role: string; isActive: boolean; createdAt: string; updatedAt: string; projectRole?: ApiProjectRole }
+export function fetchManagedUsers(projectId: number, search = ''): Promise<{ data: ApiManagedUser[]; total: number; page: number; totalPages: number }> {
+  const query = new URLSearchParams({ projectId: String(projectId) })
+  if (search.trim()) query.set('search', search.trim())
+  return request(`/users?${query}`)
+}
+export function createManagedUser(input: { projectId: number; name: string; email: string; password: string; initials: string; color: string; isActive: boolean; role: ApiProjectRole }): Promise<ApiManagedUser> {
+  return request<ApiManagedUser>('/users', { method: 'POST', body: JSON.stringify(input) })
+}
+export function updateManagedUser(userId: number, input: { projectId: number; name?: string; email?: string; initials?: string; color?: string; isActive?: boolean }): Promise<ApiManagedUser> {
+  return request<ApiManagedUser>(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify(input) })
 }
 
 export async function fetchDocuments(projectId: number, params: Omit<DocumentListParams, 'projectId'> = {}): Promise<ApiDocumentListResponse> {

@@ -1,5 +1,11 @@
 # Changelog
 
+## AUTH-01
+
+- Sesiones HTTP-only persistidas y revocables, login/logout, login UI y protección de rutas.
+- Auditoría y ProjectScope usan ahora el usuario autenticado; se retiró el actor fijo productivo.
+- Gestión básica de usuarios, membresías, roles, estado activo e inicialización segura del primer administrador.
+
 ## Unreleased
 
 ### Release

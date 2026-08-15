@@ -5,11 +5,10 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { createLocationSchema, updateLocationSchema } from '../lib/validate'
 import { descendantLocationIds } from '../lib/locationTree'
 import { LOCATION_PREVIEW_SIZE, pageLimit } from '../lib/performance'
-import { scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
 
-const ACTOR_USER_ID = 1
 const BOOTSTRAP_BRANCH_SIZE = 100
 const BOOTSTRAP_DEPTH = 12
 
@@ -286,7 +285,7 @@ router.post(
       prisma.auditLog.create({
         data: {
           projectId: scopeProjectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Creación',
           entityId: parsed.code,
           detail: `Nueva ubicación "${parsed.name}" creada`,
@@ -353,7 +352,7 @@ router.put(
       prisma.auditLog.create({
         data: {
           projectId: targetProject,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Actualización',
           entityId: String(id),
           detail: 'Ubicación actualizada',
@@ -398,7 +397,7 @@ router.delete(
       prisma.auditLog.create({
         data: {
           projectId: location.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Eliminación',
           entityId: location.code,
           detail: `Ubicación "${location.name}" eliminada`,

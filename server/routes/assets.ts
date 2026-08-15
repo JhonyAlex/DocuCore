@@ -13,11 +13,10 @@ import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/cale
 import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE } from '../lib/performance'
 import { nextAssetEventsById } from '../lib/nextAssetEvents'
-import { scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
 
-const ACTOR_USER_ID = 1
 const preventiveAssignmentSchema = z.object({ planId: z.number().int().positive(), scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
 const updatePreventiveAssignmentSchema = z.object({ scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
 const completeEventSchema = z.object({ source: z.enum(['event', 'document', 'dynamic-date', 'preventive']), id: z.number().int().positive(), performedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict()
@@ -271,7 +270,7 @@ function serializeAssetList(asset: AssetListRow, nextEvent: DerivedAssetEvent | 
 
 // ITEM-05: purga perezosa de la papelera — borra físicamente los activos cuyo
 // `deletedAt` supera la ventana de retención, con auditoría por activo.
-async function purgeExpiredTrashedAssets(projectId: number, now = assetEventClock()): Promise<void> {
+async function purgeExpiredTrashedAssets(projectId: number, actorId: number, now = assetEventClock()): Promise<void> {
   const cutoff = new Date(now.getTime() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
   const expired = await prisma.asset.findMany({
     where: { projectId, deletedAt: { not: null, lt: cutoff } },
@@ -286,7 +285,7 @@ async function purgeExpiredTrashedAssets(projectId: number, now = assetEventCloc
     ...expired.map((asset) => prisma.auditLog.create({
       data: {
         projectId: asset.projectId,
-        userId: ACTOR_USER_ID,
+        userId: actorId,
         action: 'Eliminación definitiva',
         entityId: asset.code,
         detail: `Activo "${asset.name}" purgado (más de ${TRASH_RETENTION_DAYS} días en papelera)`,
@@ -329,7 +328,7 @@ router.get(
     const limit = Number.isFinite(limitParam) && limitParam >= 1 ? Math.min(100, Math.floor(limitParam)) : 10
 
     // Al consultar la papelera se purgan primero los activos vencidos.
-    if (trashed) await purgeExpiredTrashedAssets(projectId)
+    if (trashed) await purgeExpiredTrashedAssets(projectId, actorIdFromRequest(req))
 
     const conditions: Prisma.Sql[] = [
       Prisma.sql`asset."projectId" = ${projectId}`,
@@ -446,7 +445,7 @@ router.post('/:id/events/complete', asyncHandler(async (req, res) => {
   const input = completeEventSchema.parse(req.body)
   const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { id: true, code: true, projectId: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
-  await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { source: input.source, sourceId: input.id, assetId: id, projectId: asset.projectId, performedDate: input.performedDate, actorId: ACTOR_USER_ID }))
+  await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { source: input.source, sourceId: input.id, assetId: id, projectId: asset.projectId, performedDate: input.performedDate, actorId: actorIdFromRequest(req) }))
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
   res.json(withDerivedEvents(updated))
 }))
@@ -482,7 +481,7 @@ router.post('/:id/preventives', asyncHandler(async (req, res) => {
       },
     })
     await createPreventiveExecution(tx, plan.id, asUtcDate(input.scheduledDate))
-    await tx.auditLog.create({ data: { projectId: asset.projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: asset.code, detail: `Plan periódico "${template.name}" asignado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: asset.projectId, userId: actorIdFromRequest(req), action: 'Creación', entityId: asset.code, detail: `Plan periódico "${template.name}" asignado`, timestamp: new Date() } })
   })
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
   res.status(201).json(withDerivedEvents(updated))
@@ -496,7 +495,7 @@ router.delete('/:id/preventives/:planId', asyncHandler(async (req, res) => {
   if (!plan) return res.status(404).json({ error: 'Preventive plan assignment not found' })
   await prisma.$transaction(async (tx) => {
     await tx.assetPreventivePlan.update({ where: { id: planId }, data: { isActive: false } })
-    await tx.auditLog.create({ data: { projectId: plan.asset.projectId, userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `asset:${id}`, detail: `Plan periódico "${plan.name}" desvinculado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: plan.asset.projectId, userId: actorIdFromRequest(req), action: 'Desactivación', entityId: `asset:${id}`, detail: `Plan periódico "${plan.name}" desvinculado`, timestamp: new Date() } })
   })
   const updated = await prisma.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
   res.json(withDerivedEvents(updated))
@@ -520,7 +519,7 @@ router.patch('/:id/preventives/:planId', asyncHandler(async (req, res) => {
     await tx.auditLog.create({
       data: {
         projectId: plan.asset.projectId,
-        userId: ACTOR_USER_ID,
+        userId: actorIdFromRequest(req),
         action: 'Actualización',
         entityId: `asset:${id}`,
         detail: `Fecha de ejecución del plan "${plan.name}" actualizada a ${input.scheduledDate}`,
@@ -550,7 +549,7 @@ router.post('/:id/preventives/executions/:executionId/tasks/complete', asyncHand
     if (execution.completedAt || !execution.plan.isActive) throw Object.assign(new Error('Preventive execution is not pending'), { status: 409 })
     const completed = await tx.preventiveExecutionTask.updateMany({ where: { executionId, completedAt: null }, data: { completedAt: new Date() } })
     if (completed.count === 0) throw Object.assign(new Error('All preventive tasks are already complete'), { status: 409 })
-    await tx.auditLog.create({ data: { projectId: asset.projectId, userId: ACTOR_USER_ID, action: 'Tareas preventivas completadas', entityId: asset.code, detail: `${completed.count} tareas pendientes completadas en "${execution.plan.name}"`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: asset.projectId, userId: actorIdFromRequest(req), action: 'Tareas preventivas completadas', entityId: asset.code, detail: `${completed.count} tareas pendientes completadas en "${execution.plan.name}"`, timestamp: new Date() } })
     return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
   })
   res.json(withDerivedEvents(updated))
@@ -577,7 +576,7 @@ router.post('/:id/preventives/executions/:executionId/tasks/:taskId/complete', a
     prisma.auditLog.create({
       data: {
         projectId: task.execution.plan.asset.projectId,
-        userId: ACTOR_USER_ID,
+        userId: actorIdFromRequest(req),
         action: task.completedAt ? 'Tarea preventiva reabierta' : 'Tarea preventiva completada',
         entityId: task.execution.plan.asset.code,
         detail: `Tarea ${task.completedAt ? 'reabierta' : 'completada'} en "${task.execution.plan.name}"`,
@@ -603,7 +602,7 @@ router.post(
     const performed = asUtcDate(performedDate)
     const updated = await prisma.$transaction(async (tx) => {
       await completeAssetDateOccurrence(tx, schedule.occurrences[0].id, performed)
-      await tx.auditLog.create({ data: { projectId: asset.projectId, userId: ACTOR_USER_ID, action: 'Realización', entityId: asset.code, detail: `${schedule.definition.fieldName}: ocurrencia ${schedule.occurrences[0].scheduledDate.toISOString().slice(0, 10)} completada el ${performedDate}`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId: asset.projectId, userId: actorIdFromRequest(req), action: 'Realización', entityId: asset.code, detail: `${schedule.definition.fieldName}: ocurrencia ${schedule.occurrences[0].scheduledDate.toISOString().slice(0, 10)} completada el ${performedDate}`, timestamp: new Date() } })
       return tx.asset.findUniqueOrThrow({ where: { id }, include: assetInclude })
     })
     res.json(withDerivedEvents(updated))
@@ -700,7 +699,7 @@ router.post(
       await tx.auditLog.create({
         data: {
           projectId: base.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Creación',
           entityId: parsed.code,
           detail: `Nuevo activo "${parsed.name}" creado`,
@@ -789,7 +788,7 @@ router.put(
       await tx.auditLog.create({
         data: {
           projectId: finalProjectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Actualización',
           entityId: String(id),
           detail: removedMarkers ? `Activo actualizado; ${removedMarkers} marcador(es) retirado(s) por cambio de ubicación` : 'Activo actualizado',
@@ -825,7 +824,7 @@ router.delete(
       prisma.auditLog.create({
         data: {
           projectId: asset.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Eliminación',
           entityId: asset.code,
           detail: `Activo "${asset.name}" movido a la papelera`,
@@ -858,7 +857,7 @@ router.post(
       prisma.auditLog.create({
         data: {
           projectId: asset.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Restauración',
           entityId: asset.code,
           detail: `Activo "${asset.name}" restaurado de la papelera`,
@@ -897,7 +896,7 @@ router.post(
       prisma.auditLog.create({
         data: {
           projectId: asset.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Eliminación definitiva',
           entityId: asset.code,
           detail: `Activo "${asset.name}" eliminado definitivamente`,
@@ -944,7 +943,7 @@ router.patch(
       prisma.auditLog.create({
         data: {
           projectId: existing.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Cambio estado',
           entityId: existing.code,
           detail: `${existing.status.name} → ${targetStatus.name}`,
@@ -1004,7 +1003,7 @@ router.post(
         prisma.auditLog.create({
           data: {
             projectId: existing.projectId,
-            userId: ACTOR_USER_ID,
+            userId: actorIdFromRequest(req),
             action: 'Imagen de activo',
             entityId: existing.code,
             detail: `Imagen subida para "${existing.name}" (${req.file.size} bytes)`,
@@ -1047,7 +1046,7 @@ router.delete(
       prisma.auditLog.create({
         data: {
           projectId: existing.projectId,
-          userId: ACTOR_USER_ID,
+          userId: actorIdFromRequest(req),
           action: 'Imagen de activo eliminada',
           entityId: existing.code,
           detail: `Imagen de "${existing.name}" eliminada`,

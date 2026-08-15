@@ -2,10 +2,9 @@ import { Router } from 'express'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { assetTypeCreateSchema, assetTypeUpdateSchema } from '../lib/assetTypes'
-import { scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 
 const includeUsage = {
   _count: { select: { assets: true, fieldDefinitions: true } },
@@ -51,7 +50,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const sortOrder = input.sortOrder ?? ((await prisma.assetType.aggregate({ where: { projectId }, _max: { sortOrder: true } }))._max.sortOrder ?? -1) + 1
   const created = await prisma.$transaction(async (tx) => {
     const type = await tx.assetType.create({ data: { projectId, name: input.name, iconKey: input.iconKey, sortOrder }, include: includeUsage })
-    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `asset-type:${type.id}`, detail: `Tipo de activo "${type.name}" creado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Creación', entityId: `asset-type:${type.id}`, detail: `Tipo de activo "${type.name}" creado`, timestamp: new Date() } })
     return type
   })
   res.status(201).json(serializeAssetType(created))
@@ -73,7 +72,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       : input.isActive === true && !before.isActive
         ? `Tipo de activo "${type.name}" reactivado`
         : `Tipo de activo "${type.name}" actualizado`
-    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: input.isActive === true && !before.isActive ? 'Reactivación' : 'Actualización', entityId: `asset-type:${id}`, detail, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: input.isActive === true && !before.isActive ? 'Reactivación' : 'Actualización', entityId: `asset-type:${id}`, detail, timestamp: new Date() } })
     return type
   })
   res.json(serializeAssetType(updated))
@@ -87,7 +86,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (!type.isActive) return res.status(204).end()
   await prisma.$transaction([
     prisma.assetType.update({ where: { id }, data: { isActive: false } }),
-    prisma.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Archivo', entityId: `asset-type:${id}`, detail: `Tipo de activo "${type.name}" archivado`, timestamp: new Date() } }),
+    prisma.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Archivo', entityId: `asset-type:${id}`, detail: `Tipo de activo "${type.name}" archivado`, timestamp: new Date() } }),
   ])
   res.status(204).end()
 }))

@@ -2,14 +2,12 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from '@/components/Sidebar'
 import Topbar from '@/components/Topbar'
 import { AssetCreateProvider } from '@/contexts/AssetCreateProvider'
-import { SessionProvider } from '@/contexts/SessionProvider'
 import { NotificationProvider } from '@/contexts/NotificationProvider'
 import { ProjectProvider } from '@/contexts/ProjectProvider'
 
 export default function AppLayout() {
   return (
-    <SessionProvider>
-      <ProjectProvider>
+    <ProjectProvider>
         <NotificationProvider>
           <AssetCreateProvider>
             <div className="flex h-screen overflow-hidden">
@@ -23,7 +21,6 @@ export default function AppLayout() {
             </div>
           </AssetCreateProvider>
         </NotificationProvider>
-      </ProjectProvider>
-    </SessionProvider>
+    </ProjectProvider>
   )
 }

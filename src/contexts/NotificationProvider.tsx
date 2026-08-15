@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   deleteNotification,
   fetchNotifications,
@@ -19,10 +19,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<NotificationFilter>('all')
   const [isOpen, setIsOpen] = useState(false)
+  const latestRequest = useRef(0)
 
   const reload = useCallback(
     async (sync = true) => {
       if (!projectId) return
+      const requestId = ++latestRequest.current
       setLoading(true)
       setError(null)
       try {
@@ -31,13 +33,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           sync,
           limit: 30,
         })
+        if (requestId !== latestRequest.current) return
         setNotifications(res.notifications)
         setUnreadCount(res.unreadCount)
         setTotal(res.total)
       } catch {
-        setError('Error al cargar notificaciones')
+        if (requestId === latestRequest.current) setError('Error al cargar notificaciones')
       } finally {
-        setLoading(false)
+        if (requestId === latestRequest.current) setLoading(false)
       }
     },
     [projectId, filter],
@@ -65,6 +68,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const markAllAsRead = useCallback(async () => {
     if (!projectId) return
+    // A filter-triggered request may still be in flight. Its stale unread
+    // aggregate must not overwrite this explicit user action.
+    latestRequest.current += 1
     setNotifications((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() })))
     setUnreadCount(0)
     try {

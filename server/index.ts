@@ -19,19 +19,32 @@ import searchRouter from './routes/search'
 import historyRouter from './routes/history'
 import notificationsRouter from './routes/notifications'
 import projectsRouter from './routes/projects'
-import { sessionHandler } from './routes/meta'
+import authRouter from './routes/auth'
+import usersRouter from './routes/users'
 import { errorHandler } from './middleware/error'
 import { requireProjectScope } from './lib/projectScope'
+import { optionalAuth, requireAuth } from './lib/auth'
 
 const app = express()
 
-app.use(cors())
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false)
+const allowedOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean)
+app.use(cors({
+  // Same-origin is the default deployment. Cross-origin credentialed requests
+  // must opt in to an explicit allow-list; reflecting arbitrary origins would
+  // undermine the cookie session boundary.
+  origin: allowedOrigins?.length ? (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)) : false,
+  credentials: Boolean(allowedOrigins?.length),
+}))
 app.use(express.json())
+app.use(optionalAuth)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
-app.get('/api/session', sessionHandler)
+app.use('/api/auth', authRouter)
+app.use('/api', requireAuth)
+app.use('/api/users', usersRouter)
 app.use('/api/projects', projectsRouter)
 
 const readOnlyMethods = new Set(['GET', 'HEAD', 'OPTIONS'])

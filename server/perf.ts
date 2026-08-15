@@ -11,12 +11,12 @@ function percentile(values: number[], p: number): number {
   return sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)] ?? 0
 }
 
-async function measure(url: string, runs = 12): Promise<{ p50: number; p95: number; bytes: number }> {
+async function measure(url: string, sessionCookie: string, runs = 12): Promise<{ p50: number; p95: number; bytes: number }> {
   const timings: number[] = []
   let bytes = 0
   for (let index = 0; index < runs; index += 1) {
     const start = performance.now()
-    const response = await fetch(url)
+    const response = await fetch(url, { headers: { cookie: sessionCookie } })
     const body = await response.text()
     if (!response.ok) throw new Error(`${url} returned ${response.status}`)
     timings.push(performance.now() - start)
@@ -33,7 +33,7 @@ async function main() {
   if (!Number.isSafeInteger(count) || count < 1 || count > 100_000) throw new Error('PERF_RECORDS must be an integer between 1 and 100000')
   const stamp = Date.now()
   const code = `PERF-${stamp}`
-  const user = await prisma.user.findFirstOrThrow({ select: { id: true } })
+  const user = await prisma.user.findFirstOrThrow({ select: { id: true, email: true } })
   const project = await prisma.project.create({ data: { code, name: `Perfil temporal ${stamp}`, description: 'Datos sintéticos eliminados al terminar PERF-01', themeKey: 'slate' } })
   await prisma.projectMember.create({ data: { projectId: project.id, userId: user.id, role: 'OWNER' } })
   const status = await prisma.status.create({ data: { projectId: project.id, name: `Activo PERF ${stamp}`, color: 'emerald', sortOrder: 0 } })
@@ -78,18 +78,25 @@ async function main() {
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Performance server did not expose a TCP address')
       const base = `http://127.0.0.1:${address.port}/api/projects/${project.id}`
+      const login = await fetch(`http://127.0.0.1:${address.port}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: user.email, password: 'DocuCore!2026' }),
+      })
+      const sessionCookie = login.headers.get('set-cookie')?.split(';')[0]
+      if (!login.ok || !sessionCookie) throw new Error(`Performance authentication failed (${login.status})`)
       const [assets, documents, assetSearch, documentSearch, treeBootstrap, subtreeAssets, planAssets, planFacets, markers, calendarDense, historyAssetList] = await Promise.all([
-        measure(`${base}/assets?limit=20&page=1`),
-        measure(`${base}/documents?limit=20&page=1`),
-        measure(`${base}/assets?limit=20&search=000999`),
-        measure(`${base}/documents?limit=20&search=000999`),
-        measure(`${base}/locations/bootstrap`),
-        measure(`${base}/assets?locationId=${root.id}&limit=20`),
-        measure(`${base}/floor-plans/${planId}/assets?limit=20&search=Activo`),
-        measure(`${base}/floor-plans/${planId}/facets`),
-        measure(`${base}/floor-plans/${planId}`),
-        measure(`${base}/calendar?from=2026-07-01&to=2026-07-31&limit=500`),
-        measure(`${base}/assets?search=PERF-A-${stamp}-0&limit=20`),
+        measure(`${base}/assets?limit=20&page=1`, sessionCookie),
+        measure(`${base}/documents?limit=20&page=1`, sessionCookie),
+        measure(`${base}/assets?limit=20&search=000999`, sessionCookie),
+        measure(`${base}/documents?limit=20&search=000999`, sessionCookie),
+        measure(`${base}/locations/bootstrap`, sessionCookie),
+        measure(`${base}/assets?locationId=${root.id}&limit=20`, sessionCookie),
+        measure(`${base}/floor-plans/${planId}/assets?limit=20&search=Activo`, sessionCookie),
+        measure(`${base}/floor-plans/${planId}/facets`, sessionCookie),
+        measure(`${base}/floor-plans/${planId}`, sessionCookie),
+        measure(`${base}/calendar?from=2026-07-01&to=2026-07-31&limit=500`, sessionCookie),
+        measure(`${base}/assets?search=PERF-A-${stamp}-0&limit=20`, sessionCookie),
       ])
       console.log(JSON.stringify({ recordsPerEntity: count, historyRecordsPerSource: 2_000, assets, documents, assetSearch, documentSearch, treeBootstrap, subtreeAssets, planAssets, planFacets, markers, calendarDense, historyAssetList }, null, 2))
     } finally {

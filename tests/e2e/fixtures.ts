@@ -52,6 +52,7 @@ export const test = base.extend<ConsoleFixture, WorkerFixtures>({
   // floor-plan suite verifies its touch interaction with marker.tap().
   e2eContext: [async ({ browser }, runFixture) => {
     const context = await browser.newContext({ ...devices['Desktop Chrome'], hasTouch: true })
+    await context.setExtraHTTPHeaders({ 'x-docucore-test-actor-id': '1' })
     await context.addInitScript(() => window.localStorage.setItem('docucore.activeProjectId', '1'))
     scopeLegacyRequestContext(context.request as unknown as Record<string, unknown>)
     try {
@@ -65,6 +66,7 @@ export const test = base.extend<ConsoleFixture, WorkerFixtures>({
   },
   page: async ({ context, baseURL }, runFixture) => {
     await context.clearCookies()
+    await context.request.post(`${baseURL}/api/auth/login`, { data: { email: 'maria@docucore.local', password: 'DocuCore!2026' } })
     const page = await context.newPage()
     const nativeGoto = page.goto.bind(page)
     page.goto = ((url: string, options?: Parameters<typeof page.goto>[1]) => nativeGoto(url.startsWith('/') ? new URL(url, baseURL).toString() : url, options)) as typeof page.goto

@@ -7,10 +7,9 @@ import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile,
 import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
-import { requireDocumentInProject, scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, requireDocumentInProject, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -311,7 +310,7 @@ router.post('/', asyncHandler(async (req, res) => {
       await tx.documentVersion.create({
         data: { documentId: document.id, version: 1, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate },
       })
-      await tx.auditLog.create({ data: { projectId: document.projectId, userId: ACTOR_USER_ID, action: 'Documento subido', entityId: String(document.id), detail: `${input.name} · v1` } })
+      await tx.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action: 'Documento subido', entityId: String(document.id), detail: `${input.name} · v1` } })
       return tx.document.findUniqueOrThrow({ where: { id: document.id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(created))
@@ -345,7 +344,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
       const version = (lastVersion?.version ?? 0) + 1
       await tx.documentVersion.create({ data: { documentId: id, version, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate } })
       await tx.document.update({ where: { id }, data: {} })
-      await tx.auditLog.create({ data: { projectId: before.projectId, userId: ACTOR_USER_ID, action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida` } })
+      await tx.auditLog.create({ data: { projectId: before.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida` } })
       return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(updated))
@@ -418,7 +417,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       versionMetadataChanged ? `Fechas de v${currentVersion?.version ?? 1} actualizadas` : null,
       periodicityChanged ? `Periodicidad ${before.periodicity ?? 'Sin'} → ${periodicity ?? 'Sin'} · modo ${input.periodicityMode === null ? '—' : (input.periodicityMode ?? before.periodicityMode ?? '—')}` : null,
     ].filter(Boolean).join(' · ') || 'Nombre, tipo o proyecto actualizado'
-    await tx.auditLog.create({ data: { projectId: document.projectId, userId: ACTOR_USER_ID, action, entityId: String(id), detail } })
+    await tx.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action, entityId: String(id), detail } })
     return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
   })
   res.json(serializeDocument(updated))
@@ -474,7 +473,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (!document) return res.status(404).json({ error: 'Not found' })
   await prisma.$transaction([
     prisma.document.delete({ where: { id } }),
-    prisma.auditLog.create({ data: { projectId: document.projectId, userId: ACTOR_USER_ID, action: 'Documento eliminado', entityId: String(id), detail: document.name } }),
+    prisma.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action: 'Documento eliminado', entityId: String(id), detail: document.name } }),
   ])
   await Promise.all(document.versions.map((version) => removeDocumentFile(version.storageKey)))
   res.status(204).end()

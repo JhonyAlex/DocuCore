@@ -9,6 +9,7 @@ import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import { cleanDocumentStorage } from './lib/documentStorage'
 import { cleanFloorPlanStorage } from './lib/floorPlanStorage'
+import { hashPassword } from './lib/passwords'
 
 const prisma = new PrismaClient()
 
@@ -39,10 +40,11 @@ async function main(): Promise<void> {
   `)
 
   console.log('  • Usuarios (2)')
+  const developmentPasswordHash = await hashPassword('DocuCore!2026')
   await prisma.user.createMany({
     data: [
-      { name: 'María Fernández', email: 'maria@docucore.local', role: 'Administradora', initials: 'MF', color: 'brand' },
-      { name: 'J. Ramírez', email: 'jr@docucore.local', role: 'Técnico', initials: 'JR', color: 'emerald' },
+      { name: 'María Fernández', email: 'maria@docucore.local', passwordHash: developmentPasswordHash, role: 'Administradora', initials: 'MF', color: 'brand' },
+      { name: 'J. Ramírez', email: 'jr@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'JR', color: 'emerald' },
     ],
   })
 

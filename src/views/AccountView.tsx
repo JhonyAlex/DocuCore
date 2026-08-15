@@ -1,0 +1,13 @@
+import { useState } from 'react'
+import { changePassword } from '@/lib/api'
+
+export default function AccountView() {
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(null); setMessage(null); try { await changePassword({ currentPassword, newPassword, confirmPassword }); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setMessage('Contraseña actualizada. Las demás sesiones se han revocado.') } catch (reason) { setError(reason instanceof Error ? reason.message : 'No se pudo actualizar la contraseña.') } finally { setBusy(false) } }
+  return <section className="max-w-xl fade-in"><h1 className="text-2xl font-semibold tracking-tight">Mi cuenta</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Actualiza tu contraseña. Debe tener al menos 12 caracteres.</p><form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">{error && <p role="alert" className="text-sm text-red-600 dark:text-red-300">{error}</p>}{message && <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">{message}</p>}<label className="block text-sm font-medium">Contraseña actual<input required type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900" /></label><label className="block text-sm font-medium">Nueva contraseña<input required minLength={12} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900" /></label><label className="block text-sm font-medium">Confirmar nueva contraseña<input required minLength={12} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900" /></label><button disabled={busy} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{busy ? 'Guardando…' : 'Cambiar contraseña'}</button></form></section>
+}

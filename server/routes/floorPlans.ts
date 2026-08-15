@@ -9,10 +9,9 @@ import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE, MAX_MARKER_PAGE_SIZE, pageLimit } from '../lib/performance'
 import { nextAssetEventsById } from '../lib/nextAssetEvents'
 import type { DerivedAssetEvent } from '../lib/assetEvents'
-import { requireAssetInProject, requireLocationInProject, scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, requireAssetInProject, requireLocationInProject, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FLOOR_PLAN_SIZE_BYTES, files: 1 },
@@ -219,7 +218,7 @@ router.post('/', asyncHandler(async (req, res) => {
     const plan = await prisma.$transaction(async (tx) => {
       const created = await tx.floorPlan.create({ data: { name: input.name, projectId, locationId: input.locationId } })
       await tx.floorPlanVersion.create({ data: { floorPlanId: created.id, version: 1, originalName: req.file!.originalname, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, ...stored } })
-      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
+      await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: created.id }, include: planInclude })
     })
     res.status(201).json(await serializePlan(plan))
@@ -234,7 +233,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   await assertMoveAllowed(plan, projectId, locationId)
   const updated = await prisma.$transaction(async (tx) => {
     const next = await tx.floorPlan.update({ where: { id: planId }, data: { name: input.name, locationId }, include: planInclude })
-    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Plano actualizado', entityId: String(planId), detail: `Plano ${plan.name} actualizado` } })
+    await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Plano actualizado', entityId: String(planId), detail: `Plano ${plan.name} actualizado` } })
     return next
   })
   res.json(await serializePlan(updated))
@@ -248,7 +247,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
     const updated = await prisma.$transaction(async (tx) => {
       const nextVersion = (versionOf(plan) ?? 0) + 1
       await tx.floorPlanVersion.create({ data: { floorPlanId: planId, version: nextVersion, originalName: req.file!.originalname, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, ...stored } })
-      await tx.auditLog.create({ data: { projectId: plan.projectId, userId: ACTOR_USER_ID, action: 'Nueva versión de plano', entityId: String(planId), detail: `${plan.name} · v${nextVersion}` } })
+      await tx.auditLog.create({ data: { projectId: plan.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de plano', entityId: String(planId), detail: `${plan.name} · v${nextVersion}` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: planId }, include: planInclude })
     })
     res.status(201).json(await serializePlan(updated))
@@ -261,7 +260,7 @@ router.post('/:id/markers', asyncHandler(async (req, res) => {
   await assertAssetPlacement(plan.projectId, plan.locationId, input.assetId)
   const marker = await prisma.$transaction(async (tx) => {
     const created = await tx.floorPlanMarker.create({ data: { floorPlanId: planId, ...input }, include: { asset: { select: floorPlanAssetSelect } } })
-    await tx.auditLog.create({ data: { projectId: plan.projectId, userId: ACTOR_USER_ID, action: 'Activo colocado en plano', entityId: String(input.assetId), detail: `${plan.name} · (${input.x.toFixed(3)}, ${input.y.toFixed(3)})` } })
+    await tx.auditLog.create({ data: { projectId: plan.projectId, userId: actorIdFromRequest(req), action: 'Activo colocado en plano', entityId: String(input.assetId), detail: `${plan.name} · (${input.x.toFixed(3)}, ${input.y.toFixed(3)})` } })
     return created
   })
   res.status(201).json(await serializeMarker(marker as PlanWithCurrent['markers'][number]))
@@ -274,7 +273,7 @@ router.patch('/:id/markers/:markerId', asyncHandler(async (req, res) => {
   if (!marker) return res.status(404).json({ error: 'Floor plan marker not found' })
   const updated = await prisma.$transaction(async (tx) => {
     const next = await tx.floorPlanMarker.update({ where: { id: markerId }, data: input, include: { asset: { select: floorPlanAssetSelect } } })
-    await tx.auditLog.create({ data: { projectId: marker.floorPlan.projectId, userId: ACTOR_USER_ID, action: 'Marcador movido', entityId: String(marker.assetId), detail: `Plano #${planId} · (${next.x.toFixed(3)}, ${next.y.toFixed(3)})` } })
+    await tx.auditLog.create({ data: { projectId: marker.floorPlan.projectId, userId: actorIdFromRequest(req), action: 'Marcador movido', entityId: String(marker.assetId), detail: `Plano #${planId} · (${next.x.toFixed(3)}, ${next.y.toFixed(3)})` } })
     return next
   })
   res.json(await serializeMarker(updated as PlanWithCurrent['markers'][number]))
@@ -285,7 +284,7 @@ router.delete('/:id/markers/:markerId', asyncHandler(async (req, res) => {
   const plan = await getPlan(planId, scopedProjectId(req))
   const marker = await prisma.floorPlanMarker.findFirst({ where: { id: markerId, floorPlanId: planId, floorPlan: { projectId: plan.projectId } }, include: { asset: { select: { code: true } } } })
   if (!marker) return res.status(404).json({ error: 'Floor plan marker not found' })
-  await prisma.$transaction([prisma.floorPlanMarker.delete({ where: { id: markerId } }), prisma.auditLog.create({ data: { projectId: plan.projectId, userId: ACTOR_USER_ID, action: 'Activo retirado del plano', entityId: marker.asset.code, detail: `Plano #${planId}` } })])
+  await prisma.$transaction([prisma.floorPlanMarker.delete({ where: { id: markerId } }), prisma.auditLog.create({ data: { projectId: plan.projectId, userId: actorIdFromRequest(req), action: 'Activo retirado del plano', entityId: marker.asset.code, detail: `Plano #${planId}` } })])
   res.status(204).end()
 }))
 
@@ -328,7 +327,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 router.delete('/:id', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId, scopedProjectId(req))
   const versions = await prisma.floorPlanVersion.findMany({ where: { floorPlanId: planId }, select: { storageKey: true, dziKey: true } })
-  await prisma.$transaction([prisma.floorPlan.delete({ where: { id: planId } }), prisma.auditLog.create({ data: { projectId: plan.projectId, userId: ACTOR_USER_ID, action: 'Plano eliminado', entityId: String(planId), detail: plan.name } })])
+  await prisma.$transaction([prisma.floorPlan.delete({ where: { id: planId } }), prisma.auditLog.create({ data: { projectId: plan.projectId, userId: actorIdFromRequest(req), action: 'Plano eliminado', entityId: String(planId), detail: plan.name } })])
   await Promise.all(versions.map(removeFloorPlanFiles)); res.status(204).end()
 }))
 

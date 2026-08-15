@@ -6,6 +6,7 @@ import { StorageMarkerError, cleanDocumentStorage, storeDocumentBuffer } from '.
 import { FloorPlanStorageError, cleanFloorPlanStorage, storeFloorPlanBuffer } from './lib/floorPlanStorage'
 import { fieldKey } from './lib/dynamicFields'
 import { createSeedPdfBuffer } from './lib/seedPdf'
+import { hashPassword } from './lib/passwords'
 
 const prisma = new PrismaClient()
 
@@ -101,14 +102,16 @@ async function main(): Promise<void> {
     if (!(error instanceof FloorPlanStorageError) || error.code !== 'MISSING_MARKER') throw error
   }
 
-  console.log('  • Users (5)')
+  console.log('  • Users (6)')
+  const developmentPasswordHash = await hashPassword('DocuCore!2026')
   await prisma.user.createMany({
     data: [
-      { name: 'María Fernández', email: 'maria@docucore.local', role: 'Administradora', initials: 'MF', color: 'brand' },
-      { name: 'J. Ramírez', email: 'jr@docucore.local', role: 'Técnico', initials: 'JR', color: 'emerald' },
-      { name: 'A. Gómez', email: 'agomez@docucore.local', role: 'Técnico', initials: 'AG', color: 'amber' },
-      { name: 'L. Torres', email: 'ltorres@docucore.local', role: 'Laboratorio', initials: 'LT', color: 'brand' },
-      { name: 'P. Martín', email: 'pmartin@docucore.local', role: 'Sistemas', initials: 'PM', color: 'indigo' },
+      { name: 'María Fernández', email: 'maria@docucore.local', passwordHash: developmentPasswordHash, role: 'Administradora', initials: 'MF', color: 'brand' },
+      { name: 'J. Ramírez', email: 'jr@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'JR', color: 'emerald' },
+      { name: 'A. Gómez', email: 'agomez@docucore.local', passwordHash: developmentPasswordHash, role: 'Técnico', initials: 'AG', color: 'amber' },
+      { name: 'L. Torres', email: 'ltorres@docucore.local', passwordHash: developmentPasswordHash, role: 'Laboratorio', initials: 'LT', color: 'brand' },
+      { name: 'P. Martín', email: 'pmartin@docucore.local', passwordHash: developmentPasswordHash, role: 'Sistemas', initials: 'PM', color: 'indigo' },
+      { name: 'I. Pruebas', email: 'inactive@docucore.local', passwordHash: developmentPasswordHash, role: 'Pruebas', initials: 'IP', color: 'slate', isActive: false },
     ],
   })
 
@@ -131,9 +134,10 @@ async function main(): Promise<void> {
       { projectId: 1, userId: 3, role: 'EDITOR' },
       { projectId: 1, userId: 4, role: 'VIEWER' },
       { projectId: 1, userId: 5, role: 'EDITOR' },
-      { projectId: 2, userId: 5, role: 'EDITOR' },
+      { projectId: 2, userId: 5, role: 'ADMIN' },
       { projectId: 2, userId: 1, role: 'OWNER' },
       { projectId: 2, userId: 2, role: 'EDITOR' },
+      { projectId: 3, userId: 2, role: 'VIEWER' },
       { projectId: 3, userId: 1, role: 'OWNER' },
       { projectId: 4, userId: 1, role: 'OWNER' },
       { projectId: 5, userId: 1, role: 'OWNER' },

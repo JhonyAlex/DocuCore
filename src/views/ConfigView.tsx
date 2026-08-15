@@ -75,11 +75,12 @@ export default function ConfigView() {
         </div>
 
         {configCards.map((card) => {
-          const isInteractive = card.title === 'Campos dinámicos' || card.title === 'Tipos de activo' || card.title === 'Estados'
+          const isInteractive = card.title === 'Campos dinámicos' || card.title === 'Tipos de activo' || card.title === 'Estados' || card.title === 'Usuarios y permisos'
           const handleNavigate = () => {
             if (card.title === 'Campos dinámicos') navigate(`/projects/${projectId}/config/dynamic-fields`)
             if (card.title === 'Tipos de activo') navigate(`/projects/${projectId}/config/asset-types`)
             if (card.title === 'Estados') navigate(`/projects/${projectId}/config/statuses`)
+            if (card.title === 'Usuarios y permisos') navigate(`/projects/${projectId}/config/users`)
           }
 
           return (
@@ -106,7 +107,7 @@ export default function ConfigView() {
                     ? `${assetTypeCount} tipos configurados →`
                     : card.title === 'Estados' && statusCount !== null
                       ? `${statusCount} estados configurados →`
-                      : card.footer}
+                      : card.title === 'Usuarios y permisos' ? 'Gestionar accesos →' : card.footer}
               </div>
             </div>
           )

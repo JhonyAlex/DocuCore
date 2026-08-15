@@ -5,10 +5,9 @@ import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/cale
 import { asCalendarDate } from '../lib/calendarDomain'
 import { assetEventClock } from '../lib/assetEvents'
 import { calendarCreateEventSchema, calendarListQuerySchema, calendarUpdateEventSchema, completeCalendarOccurrenceSchema } from '../lib/validate'
-import { requireAssetInProject, scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, requireAssetInProject, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 
 async function assertAssetInProject(assetId: number | null | undefined, projectId: number): Promise<void> {
   if (!assetId) return
@@ -34,7 +33,7 @@ router.post('/events', asyncHandler(async (req, res) => {
   await assertAssetInProject(input.assetId, projectId)
   const event = await prisma.$transaction(async (tx) => {
     const created = await tx.event.create({ data: { title: input.title, date: new Date(`${input.date}T00:00:00.000Z`), type: input.category, projectId, assetId: input.assetId ?? null } })
-    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `event:${created.id}`, detail: `Evento "${created.title}" creado para ${input.date}`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Creación', entityId: `event:${created.id}`, detail: `Evento "${created.title}" creado para ${input.date}`, timestamp: new Date() } })
     return created
   })
   const occurrence = (await listCalendarOccurrences(prisma, { projectId: event.projectId, from: input.date, to: input.date, source: 'event' })).events.find((entry) => entry.sourceId === event.id)
@@ -51,7 +50,7 @@ router.patch('/events/:id', asyncHandler(async (req, res) => {
   await assertAssetInProject(input.assetId, existing.projectId)
   const updated = await prisma.$transaction(async (tx) => {
     const event = await tx.event.update({ where: { id }, data: { ...(input.title !== undefined ? { title: input.title } : {}), ...(input.date !== undefined ? { date: new Date(`${input.date}T00:00:00.000Z`) } : {}), ...(input.category !== undefined ? { type: input.category } : {}), ...(input.assetId !== undefined ? { assetId: input.assetId } : {}) } })
-    await tx.auditLog.create({ data: { projectId: event.projectId, userId: ACTOR_USER_ID, action: 'Actualización', entityId: `event:${id}`, detail: `Evento "${event.title}" actualizado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId: event.projectId, userId: actorIdFromRequest(req), action: 'Actualización', entityId: `event:${id}`, detail: `Evento "${event.title}" actualizado`, timestamp: new Date() } })
     return event
   })
   const date = updated.date.toISOString().slice(0, 10)
@@ -66,7 +65,7 @@ router.delete('/events/:id', asyncHandler(async (req, res) => {
   if (!event) return res.status(404).json({ error: 'Event not found' })
   await prisma.$transaction([
     prisma.event.delete({ where: { id } }),
-    prisma.auditLog.create({ data: { projectId: event.projectId, userId: ACTOR_USER_ID, action: 'Eliminación', entityId: `event:${id}`, detail: `Evento "${event.title}" eliminado`, timestamp: new Date() } }),
+    prisma.auditLog.create({ data: { projectId: event.projectId, userId: actorIdFromRequest(req), action: 'Eliminación', entityId: `event:${id}`, detail: `Evento "${event.title}" eliminado`, timestamp: new Date() } }),
   ])
   res.status(204).end()
 }))
@@ -75,7 +74,7 @@ router.post('/events/complete', asyncHandler(async (req, res) => {
   const input = completeCalendarOccurrenceSchema.parse(req.body)
   const projectId = scopedProjectId(req)
   if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
-  await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { ...input, projectId, actorId: ACTOR_USER_ID }))
+  await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { ...input, projectId, actorId: actorIdFromRequest(req) }))
   res.status(204).end()
 }))
 

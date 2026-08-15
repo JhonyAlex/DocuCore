@@ -9,6 +9,8 @@ DocuCore es una plataforma de gestión documental y activos industriales. La int
 3. Ejecuta `pnpm install`, `pnpm db:migrate`, `pnpm db:seed` y `pnpm dev`.
 4. En otra terminal ejecuta `pnpm server` para la API en `http://localhost:3001`.
 
+Después del seed, inicia sesión con `maria@docucore.local` y `DocuCore!2026` (sólo desarrollo). La arquitectura y el bootstrap de producción se documentan en [AUTH-01.md](./docs/progress/AUTH-01.md).
+
 ## Arquitectura
 
 | Capa | Implementación |
@@ -59,6 +61,7 @@ pnpm test:visual     # Playwright: app vs. HTML protegido, sin baselines mutable
 pnpm db:migrate      # Migraciones de desarrollo
 pnpm db:deploy       # Migraciones pendientes, apto para despliegue
 pnpm db:seed         # Datos canónicos reproducibles
+pnpm db:bootstrap-admin # Crea el primer usuario sólo en una BD sin usuarios
 ```
 
 Los flujos Playwright arrancan la API, Vite y un servidor de solo lectura del HTML de referencia. Exigen Docker para PostgreSQL, aplican `prisma migrate deploy`, siembran antes de ejecutar y vuelven a sembrar al finalizar. Usan el proyecto Compose aislado `docucore-e2e`, el contenedor `docucore-e2e-db`, el puerto `5436` y un volumen propio; no reinician ni siembran la base de desarrollo de `5435`.
@@ -91,6 +94,10 @@ Variables principales:
 | `POSTGRES_PASSWORD` | Contraseña de PostgreSQL |
 | `POSTGRES_DB` | Base de datos PostgreSQL |
 | `DOCUMENT_STORAGE_PATH` | Directorio local de versiones; por defecto `./data/documents` en host y `/app/data/documents` en Docker |
+| `SESSION_COOKIE_NAME` / `SESSION_TTL_DAYS` | Nombre y duración (por defecto 14 días) de la sesión HTTP-only |
+| `TRUST_PROXY` | `true` detrás de Dokploy/Traefik para cookies Secure y IP correcta |
+| `CORS_ORIGIN` | Orígenes UI permitidos, separados por coma, si no se usa el mismo origen |
+| `BOOTSTRAP_ADMIN_*` | Variables de una sola vez para crear el primer administrador en una BD vacía |
 
 El health endpoint es `GET /api/health` y devuelve `{"status":"ok"}`.
 

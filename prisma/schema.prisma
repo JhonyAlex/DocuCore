@@ -1,6 +1,7 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -11,9 +12,8 @@ enum ProjectStatus {
   ARCHIVED
 }
 
-// Roles are persisted as a closed catalog. Authentication is intentionally out
-// of scope for PROJ-01, but every project-scoped request can already resolve
-// the membership and role of the current application user.
+// Roles are persisted per project. Global user fields describe identity only;
+// authorization always comes from ProjectMember.
 enum ProjectRole {
   OWNER
   ADMIN
@@ -32,20 +32,41 @@ enum FieldType {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  role      String
-  initials  String
-  color     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  role         String
+  initials     String
+  color        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   assetsOwned          Asset[]         @relation("AssetResponsible")
   memberships          ProjectMember[]
   auditLogs            AuditLog[]
   locationsResponsible Location[]      @relation("LocationResponsible")
   notifications        Notification[]
+  sessions             AuthSession[]
+
+  @@index([isActive])
+}
+
+// The browser receives an opaque random token. Its SHA-256 digest is the only
+// session identifier persisted here, so a database read never exposes a usable
+// bearer credential.
+model AuthSession {
+  id         String   @id
+  userId     Int
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
 }
 
 model Project {
@@ -77,11 +98,11 @@ model Project {
 }
 
 model ProjectMember {
-  id        Int      @id @default(autoincrement())
+  id        Int         @id @default(autoincrement())
   projectId Int
   userId    Int
   role      ProjectRole
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -204,11 +225,11 @@ model Asset {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  type                  AssetType                  @relation(fields: [typeId], references: [id])
-  status                Status                     @relation(fields: [statusId], references: [id])
-  location              Location                   @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  project               Project                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  responsible           User                       @relation("AssetResponsible", fields: [responsibleId], references: [id])
+  type                  AssetType                   @relation(fields: [typeId], references: [id])
+  status                Status                      @relation(fields: [statusId], references: [id])
+  location              Location                    @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  project               Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  responsible           User                        @relation("AssetResponsible", fields: [responsibleId], references: [id])
   documentAssets        DocumentItem[]
   events                Event[]
   markers               FloorPlanMarker[]
@@ -217,6 +238,8 @@ model Asset {
   preventivePlans       AssetPreventivePlan[]
   eventAcknowledgements AssetEventAcknowledgement[]
 
+  @@unique([projectId, code])
+  @@unique([projectId, serialNumber])
   @@index([typeId])
   @@index([statusId])
   @@index([locationId])
@@ -225,8 +248,6 @@ model Asset {
   @@index([deletedAt])
   @@index([projectId, deletedAt, id])
   @@index([projectId, deletedAt, typeId, statusId])
-  @@unique([projectId, code])
-  @@unique([projectId, serialNumber])
 }
 
 model Status {
@@ -386,9 +407,9 @@ model AssetDateSchedule {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  asset      Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  definition DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-  value      AssetDynamicFieldValue @relation(fields: [assetId, definitionId], references: [assetId, definitionId], onDelete: Cascade)
+  asset       Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  definition  DynamicFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  value       AssetDynamicFieldValue @relation(fields: [assetId, definitionId], references: [assetId, definitionId], onDelete: Cascade)
   occurrences AssetDateOccurrence[]
 
   @@unique([assetId, definitionId])
@@ -421,8 +442,8 @@ model AssetPreventivePlan {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  asset      Asset               @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  plan       PreventivePlan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  asset      Asset                 @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  plan       PreventivePlan?       @relation(fields: [planId], references: [id], onDelete: SetNull)
   executions PreventiveExecution[]
 
   @@index([assetId, isActive])
@@ -437,7 +458,7 @@ model PreventiveExecution {
   completedDate DateTime? @db.Date
   createdAt     DateTime  @default(now())
 
-  plan  AssetPreventivePlan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan  AssetPreventivePlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
   tasks PreventiveExecutionTask[]
 
   @@index([planId, completedAt, scheduledDate])
@@ -485,17 +506,17 @@ model Location {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  parent      Location?  @relation("LocationTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children    Location[] @relation("LocationTree")
-  responsible User       @relation("LocationResponsible", fields: [responsibleId], references: [id])
-  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent      Location?   @relation("LocationTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Location[]  @relation("LocationTree")
+  responsible User        @relation("LocationResponsible", fields: [responsibleId], references: [id])
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assets      Asset[]
   floorPlans  FloorPlan[]
 
+  @@unique([projectId, code])
   @@index([parentId])
   @@index([projectId])
   @@index([projectId, parentId])
-  @@unique([projectId, code])
 }
 
 model FloorPlan {
@@ -506,27 +527,27 @@ model FloorPlan {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  location  Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  versions  FloorPlanVersion[]
-  markers   FloorPlanMarker[]
+  project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  location Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  versions FloorPlanVersion[]
+  markers  FloorPlanMarker[]
 
   @@unique([locationId, name])
   @@index([projectId, locationId])
 }
 
 model FloorPlanVersion {
-  id         Int      @id @default(autoincrement())
-  floorPlanId Int
-  version    Int
+  id           Int      @id @default(autoincrement())
+  floorPlanId  Int
+  version      Int
   originalName String
-  storageKey String   @unique
-  dziKey     String   @unique
-  mimeType   String
-  sizeBytes  Int
-  width      Int
-  height     Int
-  uploadedAt DateTime @default(now())
+  storageKey   String   @unique
+  dziKey       String   @unique
+  mimeType     String
+  sizeBytes    Int
+  width        Int
+  height       Int
+  uploadedAt   DateTime @default(now())
 
   floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
 
@@ -575,9 +596,9 @@ model Notification {
   userId     Int?
   title      String
   message    String
-  category   String    // 'expiry' | 'maintenance' | 'status' | 'system'
-  urgency    String    // 'critical' | 'warning' | 'info'
-  targetType String?   // 'asset' | 'document' | 'calendar' | 'url'
+  category   String // 'expiry' | 'maintenance' | 'status' | 'system'
+  urgency    String // 'critical' | 'warning' | 'info'
+  targetType String? // 'asset' | 'document' | 'calendar' | 'url'
   targetId   String?
   readAt     DateTime?
   sourceKey  String?   @unique

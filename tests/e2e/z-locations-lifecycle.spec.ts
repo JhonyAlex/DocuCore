@@ -299,7 +299,7 @@ test.describe('Locations lifecycle', () => {
     const asset = await page.request.get('/api/assets?search=SIDE-E2E')
     const assetId = ((await asset.json()).data[0].id) as number
     expect((await page.request.delete(`/api/assets/${assetId}`)).status()).toBe(204)
-    const sessionResponse = page.waitForResponse((r) => r.url().includes('/api/session') && r.request().method() === 'GET')
+    const sessionResponse = page.waitForResponse((r) => r.url().includes('/api/auth/session') && r.request().method() === 'GET')
     await page.reload()
     await sessionResponse
     await expect(page.locator('aside').getByText(/activos$/).first()).toHaveText(new RegExp(`· ${expectedCount - 1} activos$`))

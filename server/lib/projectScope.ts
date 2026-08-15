@@ -1,21 +1,10 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { ProjectRole, ProjectStatus } from '@prisma/client'
 import prisma from './prisma'
+import { authenticatedUserId } from './auth'
 
-// Authentication is not part of PROJ-01. This constant represents the real
-// local application actor already used throughout DocuCore; replacing it with
-// authenticated identity later does not change any route-level contract.
-export const CURRENT_ACTOR_USER_ID = 1
-
-/**
- * PROJ-01 intentionally keeps a single local actor until AUTH-01 supplies an
- * authenticated identity. Tests can select a seeded actor per request without
- * adding a production-facing impersonation mechanism.
- */
 export function actorIdFromRequest(req: Request): number {
-  if (process.env.NODE_ENV !== 'test') return CURRENT_ACTOR_USER_ID
-  const candidate = Number(req.get('x-docucore-test-actor-id'))
-  return Number.isInteger(candidate) && candidate > 0 ? candidate : CURRENT_ACTOR_USER_ID
+  return authenticatedUserId(req)
 }
 
 export const projectCapabilities = {
@@ -60,7 +49,7 @@ export function projectIdFromRequest(req: Request): number {
   return parseProjectId(pathValue)
 }
 
-export async function resolveProjectScope(projectId: number, actorId = CURRENT_ACTOR_USER_ID): Promise<ProjectScope> {
+export async function resolveProjectScope(projectId: number, actorId: number): Promise<ProjectScope> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { id: true, code: true, name: true, status: true, themeKey: true },

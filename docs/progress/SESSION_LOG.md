@@ -1,5 +1,12 @@
 # SESSION_LOG — Fase 4
 
+## AUTH-01
+
+- Se reemplazó el actor provisional por identidad obtenida de sesión HTTP-only persistida en PostgreSQL.
+- Se añadieron `User.passwordHash` / `User.isActive` y `AuthSession`, con migración nueva `20260815020000_auth_01_sessions`.
+- Se incorporaron login/logout/session, bootstrap productivo acotado a una BD sin usuarios, cuenta y gestión de usuarios/membresías por proyecto.
+- Validación: Prisma validate, lint, typecheck y build; `pnpm test` **243/243**, `pnpm test:e2e` **81/81** y `pnpm test:visual` **30/30** bajo 0,5 %, sin modificar HTML protegido ni baselines.
+
 ## 2026-08-15 — PROJ-01: ámbito multi-proyecto autoritativo
 
 - Se introdujo `ProjectScope` en backend y `ProjectProvider` en frontend. La URL canónica determina el proyecto de cada recurso (`/projects/:projectId/...` y `/api/projects/:projectId/...`); los redirects antiguos solo aprovechan una selección ya persistida para UX y no son frontera de seguridad.

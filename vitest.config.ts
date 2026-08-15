@@ -13,5 +13,6 @@ export default defineConfig({
     passWithNoTests: false,
     pool: 'forks',
     fileParallelism: false,
+    hookTimeout: 30_000,
   },
 })

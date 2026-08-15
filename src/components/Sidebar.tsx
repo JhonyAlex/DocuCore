@@ -8,7 +8,7 @@ import { fetchProjects, type ApiProjectSummary } from '@/lib/api'
 const navGroups = ['Principal', 'Gestión', 'Administración'] as const
 
 export default function Sidebar() {
-  const { session } = useSession()
+  const { session, logout } = useSession()
   const { project, loading: projectLoading } = useProject()
   const location = useLocation()
   const navigate = useNavigate()
@@ -46,6 +46,10 @@ export default function Sidebar() {
   const projectMeta = project ? `${project.code} · ${project.assetCount} activos` : 'Las áreas operativas requieren ámbito'
   const userName = session?.user.name ?? ''
   const userRole = session?.user.role ?? ''
+  const signOut = async () => {
+    await logout()
+    void navigate('/login', { replace: true })
+  }
   return (
     <aside className="w-64 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col">
       <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3">
@@ -112,13 +116,13 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-slate-200 dark:border-slate-800 p-3">
-        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer">
+        <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
           <img src="/avatar.png" className="w-9 h-9 rounded-full" alt="avatar" />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium truncate">{userName}</div>
             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{userRole}</div>
           </div>
-          <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
+          <button type="button" title="Cerrar sesión" onClick={() => void signOut()} className="rounded p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg></button>
         </div>
       </div>
     </aside>

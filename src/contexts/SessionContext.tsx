@@ -3,7 +3,12 @@ import type { ApiSession } from '@/lib/api'
 
 interface SessionContextValue {
   session: ApiSession | null
+  user: ApiSession['user'] | null
+  authenticated: boolean
   loading: boolean
+  login: (email: string, password: string) => Promise<ApiSession>
+  logout: () => Promise<void>
+  refreshSession: () => Promise<void>
   reload: () => void
 }
 

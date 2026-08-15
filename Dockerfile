@@ -31,4 +31,4 @@ COPY public ./public
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "pnpm db:deploy && exec pnpm start"]
+CMD ["sh", "-c", "pnpm db:deploy && pnpm db:bootstrap-admin && exec pnpm start"]

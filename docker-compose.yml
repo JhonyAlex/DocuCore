@@ -28,6 +28,14 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-docucore}:${POSTGRES_PASSWORD:-docucore}@db:5432/${POSTGRES_DB:-docucore}?schema=public
       DOCUMENT_STORAGE_PATH: /app/data/documents
       FLOOR_PLAN_STORAGE_PATH: /app/data/floor-plans
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-docucore_session}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-14}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+      BOOTSTRAP_ADMIN_INITIALS: ${BOOTSTRAP_ADMIN_INITIALS:-}
     ports:
       - "${APP_PORT:-3001}:3001"
     depends_on:

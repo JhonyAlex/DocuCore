@@ -2,10 +2,9 @@ import { Router } from 'express'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { statusCreateSchema, statusUpdateSchema } from '../lib/statuses'
-import { scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 
 const includeUsage = {
   _count: { select: { assets: true } },
@@ -63,7 +62,7 @@ router.post('/', asyncHandler(async (req, res) => {
     await tx.auditLog.create({
       data: {
         projectId,
-        userId: ACTOR_USER_ID,
+        userId: actorIdFromRequest(req),
         action: 'Creación',
         entityId: `status:${status.id}`,
         detail: `Estado "${status.name}" creado`,
@@ -95,7 +94,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     await tx.auditLog.create({
       data: {
         projectId,
-        userId: ACTOR_USER_ID,
+        userId: actorIdFromRequest(req),
         action: input.isActive === true && !before.isActive ? 'Reactivación' : 'Actualización',
         entityId: `status:${id}`,
         detail,
@@ -118,7 +117,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     prisma.auditLog.create({
       data: {
         projectId,
-        userId: ACTOR_USER_ID,
+        userId: actorIdFromRequest(req),
         action: 'Archivo',
         entityId: `status:${id}`,
         detail: `Estado "${status.name}" archivado`,

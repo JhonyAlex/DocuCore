@@ -2,10 +2,9 @@ import { Router } from 'express'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { definitionInclude, dynamicFieldDefinitionSchema, dynamicFieldDefinitionUpdateSchema, fieldKey, serializeDefinition } from '../lib/dynamicFields'
-import { scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 
 async function uniqueKey(projectId: number, name: string, excludeId?: number): Promise<string> {
   const base = fieldKey(name)
@@ -45,7 +44,7 @@ router.post('/', asyncHandler(async (req, res) => {
       },
       include: definitionInclude,
     })
-    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `dynamic-field:${definition.id}`, detail: `Campo dinámico "${definition.fieldName}" creado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Creación', entityId: `dynamic-field:${definition.id}`, detail: `Campo dinámico "${definition.fieldName}" creado`, timestamp: new Date() } })
     return definition
   })
   res.status(201).json(serializeDefinition(created))
@@ -87,7 +86,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       },
       include: definitionInclude,
     })
-    await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Actualización', entityId: `dynamic-field:${id}`, detail: `Campo dinámico "${definition.fieldName}" actualizado`, timestamp: new Date() } })
+    await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Actualización', entityId: `dynamic-field:${id}`, detail: `Campo dinámico "${definition.fieldName}" actualizado`, timestamp: new Date() } })
     return definition
   })
   res.json(serializeDefinition(updated))
@@ -100,7 +99,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   if (!definition) return res.status(404).json({ error: 'Not found' })
   await prisma.$transaction([
     prisma.dynamicFieldDefinition.update({ where: { id }, data: { isActive: false } }),
-    prisma.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Archivo', entityId: `dynamic-field:${id}`, detail: `Campo dinámico "${definition.fieldName}" archivado`, timestamp: new Date() } }),
+    prisma.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Archivo', entityId: `dynamic-field:${id}`, detail: `Campo dinámico "${definition.fieldName}" archivado`, timestamp: new Date() } }),
   ])
   res.status(204).end()
 }))

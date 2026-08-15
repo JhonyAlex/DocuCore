@@ -4,10 +4,9 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { PERIODICITIES, PERIODICITY_MODES } from '../lib/assetSchedules'
-import { scopedProjectId } from '../lib/projectScope'
+import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
 
 const router: Router = Router({ mergeParams: true })
-const ACTOR_USER_ID = 1
 
 const planInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -103,7 +102,7 @@ router.post('/', asyncHandler(async (req, res) => {
       include: planInclude,
     })
     await tx.auditLog.create({
-      data: { projectId, userId: ACTOR_USER_ID, action: 'Creación', entityId: `preventive-plan:${plan.id}`, detail: `Plan preventivo "${plan.name}" creado`, timestamp: new Date() },
+      data: { projectId, userId: actorIdFromRequest(req), action: 'Creación', entityId: `preventive-plan:${plan.id}`, detail: `Plan preventivo "${plan.name}" creado`, timestamp: new Date() },
     })
     return plan
   })
@@ -158,7 +157,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       include: planInclude,
     })
     await tx.auditLog.create({
-      data: { projectId, userId: ACTOR_USER_ID, action: 'Actualización', entityId: `preventive-plan:${id}`, detail: `Plan preventivo "${plan.name}" actualizado`, timestamp: new Date() },
+      data: { projectId, userId: actorIdFromRequest(req), action: 'Actualización', entityId: `preventive-plan:${id}`, detail: `Plan preventivo "${plan.name}" actualizado`, timestamp: new Date() },
     })
     return plan
   })
@@ -192,7 +191,7 @@ router.post('/:id/duplicate', asyncHandler(async (req, res) => {
       include: planInclude,
     })
     await tx.auditLog.create({
-      data: { projectId, userId: ACTOR_USER_ID, action: 'Duplicación', entityId: `preventive-plan:${plan.id}`, detail: `Plan preventivo "${origin.name}" duplicado como "${plan.name}"`, timestamp: new Date() },
+      data: { projectId, userId: actorIdFromRequest(req), action: 'Duplicación', entityId: `preventive-plan:${plan.id}`, detail: `Plan preventivo "${origin.name}" duplicado como "${plan.name}"`, timestamp: new Date() },
     })
     return plan
   })
@@ -211,10 +210,10 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   await prisma.$transaction(async (tx) => {
     if (assignmentCount > 0) {
       await tx.preventivePlan.update({ where: { id }, data: { isActive: false } })
-      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Desactivación', entityId: `preventive-plan:${id}`, detail: `Plan preventivo "${plan.name}" archivado/desactivado (en uso)`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Desactivación', entityId: `preventive-plan:${id}`, detail: `Plan preventivo "${plan.name}" archivado/desactivado (en uso)`, timestamp: new Date() } })
     } else {
       await tx.preventivePlan.delete({ where: { id } })
-      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Eliminación', entityId: `preventive-plan:${id}`, detail: `Plan preventivo "${plan.name}" eliminado`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Eliminación', entityId: `preventive-plan:${id}`, detail: `Plan preventivo "${plan.name}" eliminado`, timestamp: new Date() } })
     }
   })
   res.status(204).end()
@@ -229,7 +228,7 @@ router.post('/bulk', asyncHandler(async (req, res) => {
   await prisma.$transaction(async (tx) => {
     if (input.action === 'deactivate') {
       await tx.preventivePlan.updateMany({ where: { id: { in: plans.map((p) => p.id) } }, data: { isActive: false } })
-      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Desactivación masiva', entityId: `preventive-plans:bulk`, detail: `${plans.length} planes desactivados`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Desactivación masiva', entityId: `preventive-plans:bulk`, detail: `${plans.length} planes desactivados`, timestamp: new Date() } })
     } else {
       for (const plan of plans) {
         const assignmentCount = await tx.assetPreventivePlan.count({ where: { planId: plan.id } })
@@ -239,7 +238,7 @@ router.post('/bulk', asyncHandler(async (req, res) => {
           await tx.preventivePlan.delete({ where: { id: plan.id } })
         }
       }
-      await tx.auditLog.create({ data: { projectId, userId: ACTOR_USER_ID, action: 'Eliminación masiva', entityId: `preventive-plans:bulk`, detail: `${plans.length} planes procesados (eliminados/desactivados)`, timestamp: new Date() } })
+      await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Eliminación masiva', entityId: `preventive-plans:bulk`, detail: `${plans.length} planes procesados (eliminados/desactivados)`, timestamp: new Date() } })
     }
   })
   res.status(200).json({ success: true, count: plans.length })
