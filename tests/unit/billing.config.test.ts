@@ -30,13 +30,15 @@ describe("Billing Fail-Closed Policy", () => {
     process.env.BILLING_PROVIDER = "stripe"
     delete process.env.STRIPE_SECRET_KEY
     delete process.env.STRIPE_WEBHOOK_SECRET
-    delete process.env.STRIPE_PRICE_ID
+    delete process.env.STRIPE_PRICE_STARTER
+    delete process.env.STRIPE_PRICE_PRO
 
     const validation = validateBillingConfiguration()
     expect(validation.valid).toBe(false)
     expect(validation.error).toContain("STRIPE_SECRET_KEY")
     expect(validation.error).toContain("STRIPE_WEBHOOK_SECRET")
-    expect(validation.error).toContain("STRIPE_PRICE_ID")
+    expect(validation.error).toContain("STRIPE_PRICE_STARTER")
+    expect(validation.error).toContain("STRIPE_PRICE_PRO")
 
     expect(() => getBillingProvider()).toThrow(/Incomplete Stripe configuration/)
   })
@@ -46,7 +48,8 @@ describe("Billing Fail-Closed Policy", () => {
     process.env.BILLING_PROVIDER = "stripe"
     process.env.STRIPE_SECRET_KEY = "sk_test_mock_secret_key_12345"
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_mock_webhook_secret_12345"
-    process.env.STRIPE_PRICE_ID = "price_mock_12345"
+    process.env.STRIPE_PRICE_STARTER = "price_starter_mock_12345"
+    process.env.STRIPE_PRICE_PRO = "price_pro_mock_12345"
 
     const validation = validateBillingConfiguration()
     expect(validation.valid).toBe(true)

@@ -1,5 +1,6 @@
 import Stripe from "stripe"
 import prisma from "../prisma"
+import { getPlanKeyFromPriceId, getStripePriceIdForPlan } from "../plans"
 import type { BillingProvider, CheckoutSessionParams, CustomerPortalParams, ReconcileResult, WebhookEventResult } from "./types"
 
 export class StripeBillingProvider implements BillingProvider {
@@ -12,9 +13,9 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async createCheckoutSession(params: CheckoutSessionParams): Promise<{ checkoutUrl: string; sessionId: string }> {
-    const priceId = params.priceId || process.env.STRIPE_PRICE_ID
+    const priceId = params.priceId || (params.planKey ? getStripePriceIdForPlan(params.planKey) : null) || process.env.STRIPE_PRICE_STARTER
     if (!priceId) {
-      throw Object.assign(new Error("STRIPE_PRICE_ID is not configured"), { status: 500 })
+      throw Object.assign(new Error("Stripe price ID is not configured for the requested plan"), { status: 500 })
     }
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
@@ -29,10 +30,14 @@ export class StripeBillingProvider implements BillingProvider {
       client_reference_id: String(params.workspaceId),
       metadata: {
         workspaceId: String(params.workspaceId),
+        planKey: params.planKey ?? "",
+        projectLimit: String(params.projectLimit ?? ""),
       },
       subscription_data: {
         metadata: {
           workspaceId: String(params.workspaceId),
+          planKey: params.planKey ?? "",
+          projectLimit: String(params.projectLimit ?? ""),
         },
         ...(params.trialEndTimestamp && params.trialEndTimestamp > Math.floor(Date.now() / 1000)
           ? { trial_end: params.trialEndTimestamp }
@@ -97,10 +102,13 @@ export class StripeBillingProvider implements BillingProvider {
           if (wsId && Number.isInteger(wsId)) {
             const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
             const cusId = typeof session.customer === "string" ? session.customer : session.customer?.id
+            const sessionMetadata = (session.metadata as Record<string, string> | undefined) ?? {}
+            const metaPlanKey = sessionMetadata.planKey === "STARTER" || sessionMetadata.planKey === "PRO" ? sessionMetadata.planKey : null
             await tx.workspace.update({
               where: { id: wsId },
               data: {
                 billingStatus: "ACTIVE",
+                ...(metaPlanKey ? { planKey: metaPlanKey } : {}),
                 stripeCustomerId: cusId ?? null,
                 stripeSubscriptionId: subId ?? null,
               },
@@ -127,14 +135,17 @@ export class StripeBillingProvider implements BillingProvider {
             else if (sub.status === "canceled" || sub.status === "unpaid") mappedStatus = "CANCELED"
             else if (sub.status === "trialing") mappedStatus = "TRIAL"
 
+            const priceId = sub.items.data[0]?.price?.id ?? target.stripePriceId
+            const mappedPlanKey = getPlanKeyFromPriceId(priceId)
             const rawSub = sub as unknown as { current_period_end?: number }
             await tx.workspace.update({
               where: { id: target.id },
               data: {
                 billingStatus: mappedStatus,
+                planKey: mappedPlanKey ?? target.planKey,
                 stripeSubscriptionId: sub.id,
                 stripeCustomerId: cusId ?? target.stripeCustomerId,
-                stripePriceId: sub.items.data[0]?.price?.id ?? target.stripePriceId,
+                stripePriceId: priceId,
                 currentPeriodEnd: rawSub.current_period_end ? new Date(rawSub.current_period_end * 1000) : target.currentPeriodEnd,
                 cancelAtPeriodEnd: sub.cancel_at_period_end,
               },
@@ -203,6 +214,7 @@ export class StripeBillingProvider implements BillingProvider {
       return {
         workspaceId: ws.id,
         billingStatus: ws.billingStatus,
+        planKey: ws.planKey,
         currentPeriodEnd: ws.currentPeriodEnd,
         cancelAtPeriodEnd: ws.cancelAtPeriodEnd,
       }
@@ -215,12 +227,15 @@ export class StripeBillingProvider implements BillingProvider {
       else if (sub.status === "canceled" || sub.status === "unpaid") mappedStatus = "CANCELED"
       else if (sub.status === "trialing") mappedStatus = "TRIAL"
 
+      const priceId = sub.items.data[0]?.price?.id ?? ws.stripePriceId
+      const mappedPlanKey = getPlanKeyFromPriceId(priceId)
       const rawSub = sub as unknown as { current_period_end?: number }
       const updated = await prisma.workspace.update({
         where: { id: ws.id },
         data: {
           billingStatus: mappedStatus,
-          stripePriceId: sub.items.data[0]?.price?.id ?? ws.stripePriceId,
+          planKey: mappedPlanKey ?? ws.planKey,
+          stripePriceId: priceId,
           currentPeriodEnd: rawSub.current_period_end ? new Date(rawSub.current_period_end * 1000) : ws.currentPeriodEnd,
           cancelAtPeriodEnd: sub.cancel_at_period_end,
         },
@@ -228,6 +243,7 @@ export class StripeBillingProvider implements BillingProvider {
       return {
         workspaceId: updated.id,
         billingStatus: updated.billingStatus,
+        planKey: updated.planKey,
         currentPeriodEnd: updated.currentPeriodEnd,
         cancelAtPeriodEnd: updated.cancelAtPeriodEnd,
         stripeCustomerId: updated.stripeCustomerId,
@@ -239,6 +255,7 @@ export class StripeBillingProvider implements BillingProvider {
     return {
       workspaceId: ws.id,
       billingStatus: ws.billingStatus,
+      planKey: ws.planKey,
       currentPeriodEnd: ws.currentPeriodEnd,
       cancelAtPeriodEnd: ws.cancelAtPeriodEnd,
       stripeCustomerId: ws.stripeCustomerId,

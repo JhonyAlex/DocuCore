@@ -45,14 +45,14 @@ describe("SAAS-09 Database Upgrade & Backfill Verification (from 02b1203 to SAAS
     try {
       // 2. Read and apply all migrations up to 20260815120000_auth_persistent_sessions
       const migrationsDir = path.join(process.cwd(), "prisma/migrations")
-      const migrationFolders = fs.readdirSync(migrationsDir).filter((f) => {
-        return fs.statSync(path.join(migrationsDir, f)).isDirectory() && f !== "20260816000000_saas_workspace_billing"
+      const preSaasFolders = fs.readdirSync(migrationsDir).filter((f) => {
+        return fs.statSync(path.join(migrationsDir, f)).isDirectory() && f < "20260816000000_saas_workspace_billing"
       }).sort()
 
       // Set search_path to isolated schema + public (for pg_trgm extension)
       await prisma.$executeRawUnsafe(`SET search_path TO "${testSchema}", public;`)
 
-      for (const folder of migrationFolders) {
+      for (const folder of preSaasFolders) {
         const sqlPath = path.join(migrationsDir, folder, "migration.sql")
         if (fs.existsSync(sqlPath)) {
           const sql = fs.readFileSync(sqlPath, "utf8")
@@ -126,11 +126,20 @@ describe("SAAS-09 Database Upgrade & Backfill Verification (from 02b1203 to SAAS
         VALUES (${projectId}, ${userId}, 'Alta de activo legado', 'CMP-01', 'Compresor creado', '2026-08-01 11:35:00', '2026-08-01 11:35:00');
       `)
 
-      // 4. Run SAAS-PROD-01 migration
-      const saasMigrationSql = fs.readFileSync(path.join(migrationsDir, "20260816000000_saas_workspace_billing/migration.sql"), "utf8")
-      const saasStatements = splitSqlStatements(saasMigrationSql)
-      for (const stmt of saasStatements) {
-        await prisma.$executeRawUnsafe(stmt)
+      // 4. Run SAAS-PROD-01 and subsequent migrations
+      const postSaasFolders = fs.readdirSync(migrationsDir).filter((f) => {
+        return fs.statSync(path.join(migrationsDir, f)).isDirectory() && f >= "20260816000000_saas_workspace_billing"
+      }).sort()
+
+      for (const folder of postSaasFolders) {
+        const sqlPath = path.join(migrationsDir, folder, "migration.sql")
+        if (fs.existsSync(sqlPath)) {
+          const sql = fs.readFileSync(sqlPath, "utf8")
+          const statements = splitSqlStatements(sql)
+          for (const stmt of statements) {
+            await prisma.$executeRawUnsafe(stmt)
+          }
+        }
       }
 
       // 5. Verify data preservation & automated backfill
@@ -171,6 +180,7 @@ describe("SAAS-09 Database Upgrade & Backfill Verification (from 02b1203 to SAAS
     } finally {
       await prisma.$executeRawUnsafe(`SET search_path TO public;`)
       await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${testSchema}" CASCADE;`)
+      await prisma.$executeRawUnsafe(`DISCARD ALL;`)
     }
   })
 })

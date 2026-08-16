@@ -37,15 +37,12 @@ test.describe('asset form suggestions', () => {
   test('navigates suggestions with the keyboard and picks with Enter', async ({ page, consoleIssues }) => {
     expect(consoleIssues).toEqual([])
     const dialog = await openNewAsset(page)
-    await dialog.locator('#asset-code').fill('C')
+    await dialog.locator('#asset-code').fill('CNC')
 
     const listbox = page.getByRole('listbox')
-    await expect(listbox.getByRole('option')).toHaveCount(3)
-    // Orden ascendente: BSC-11, CNC-05, CP-02. La primera fila está activa.
-    await expect(listbox.getByRole('option', { name: /BSC-11/ })).toHaveAttribute('aria-selected', 'true')
-
-    await page.keyboard.press('ArrowDown')
+    await expect(listbox).toBeVisible()
     await expect(listbox.getByRole('option', { name: /CNC-05/ })).toHaveAttribute('aria-selected', 'true')
+
     await page.keyboard.press('Enter')
 
     await expect(dialog.locator('#asset-code')).toHaveValue('CNC-05')

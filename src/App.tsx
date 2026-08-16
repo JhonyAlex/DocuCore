@@ -24,7 +24,6 @@ const PreventivesConfigView = lazy(() => import('@/views/PreventivesConfigView')
 const LoginView = lazy(() => import('@/views/LoginView'))
 const AccountView = lazy(() => import('@/views/AccountView'))
 const UsersConfigView = lazy(() => import('@/views/UsersConfigView'))
-const LandingView = lazy(() => import('@/views/LandingView'))
 const RegisterView = lazy(() => import('@/views/RegisterView'))
 const VerifyEmailView = lazy(() => import('@/views/VerifyEmailView'))
 const ForgotPasswordView = lazy(() => import('@/views/ForgotPasswordView'))
@@ -78,11 +77,18 @@ function ProjectTasksRedirect() {
   return <Navigate to={`/projects/${projectId}/config/preventives`} replace />
 }
 
+function RootRoute() {
+  const { authenticated, loading } = useSession()
+  if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">Comprobando sesión…</div>
+  if (authenticated) return <Navigate to="/projects" replace />
+  return <Navigate to="/login" replace />
+}
+
 export default function App() {
   return (
     <SessionProvider>
       <Routes>
-        <Route path="/" element={<DeferredRoute><LandingView /></DeferredRoute>} />
+        <Route path="/" element={<RootRoute />} />
         <Route path="/login" element={<LoginRoute />} />
         <Route path="/register" element={<DeferredRoute><RegisterView /></DeferredRoute>} />
         <Route path="/verify-email" element={<DeferredRoute><VerifyEmailView /></DeferredRoute>} />

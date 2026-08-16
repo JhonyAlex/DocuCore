@@ -72,7 +72,7 @@ export default function TrialBanner() {
           <span>Tu cuenta ha sido suspendida por la administración de la plataforma.</span>
         </div>
         <a
-          href="mailto:support@report-map.online"
+          href="mailto:admin@report-map.online"
           className="rounded bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
         >
           Contactar soporte

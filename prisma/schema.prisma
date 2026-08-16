@@ -56,6 +56,7 @@ model Workspace {
   stripeCustomerId     String?       @unique
   stripeSubscriptionId String?       @unique
   stripePriceId        String?
+  planKey              String?
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean       @default(false)
   createdAt            DateTime      @default(now())

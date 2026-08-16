@@ -5,7 +5,7 @@ import {
   createBillingPortalSession,
   fetchBillingStatus,
 } from "@/lib/api"
-import type { ApiBillingStatus } from "@/types"
+import type { ApiBillingStatus, PlanKey } from "@/types"
 import { useSession } from "@/contexts/SessionContext"
 
 export default function AccountView() {
@@ -14,6 +14,7 @@ export default function AccountView() {
   const [loadingBilling, setLoadingBilling] = useState(true)
   const [billingActionBusy, setBillingActionBusy] = useState(false)
   const [billingError, setBillingError] = useState<string | null>(null)
+  const [downgradeNotice, setDowngradeNotice] = useState<string | null>(null)
 
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -22,29 +23,34 @@ export default function AccountView() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    let isMounted = true
+  const loadBilling = () => {
     fetchBillingStatus()
       .then((data) => {
-        if (isMounted) {
-          setBilling(data)
-          setLoadingBilling(false)
-        }
+        setBilling(data)
+        setLoadingBilling(false)
       })
       .catch(() => {
-        if (isMounted) setLoadingBilling(false)
+        setLoadingBilling(false)
       })
+  }
 
-    return () => {
-      isMounted = false
-    }
+  useEffect(() => {
+    loadBilling()
   }, [])
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (planKey: PlanKey) => {
+    if (planKey === "STARTER" && billing && billing.activeProjectsCount > 1) {
+      setDowngradeNotice(
+        `Tienes actualmente ${billing.activeProjectsCount} proyectos activos. Para cambiar al plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.`,
+      )
+      return
+    }
+
+    setDowngradeNotice(null)
     setBillingActionBusy(true)
     setBillingError(null)
     try {
-      const res = await createBillingCheckoutSession()
+      const res = await createBillingCheckoutSession(planKey)
       if (res.checkoutUrl) {
         window.location.href = res.checkoutUrl
       }
@@ -86,48 +92,59 @@ export default function AccountView() {
     }
   }
 
+  const isStarterActive = billing?.billingStatus === "ACTIVE" && billing?.planKey === "STARTER"
+  const isProActive = billing?.billingStatus === "ACTIVE" && billing?.planKey === "PRO"
+
   return (
-    <div className="max-w-3xl space-y-8 fade-in pb-12">
+    <div className="max-w-4xl space-y-8 fade-in pb-12">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Mi cuenta</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Gestiona los datos de tu espacio de trabajo, suscripción y seguridad de acceso.
+          Gestiona los datos de tu espacio de trabajo, suscripción, planes y seguridad de acceso.
         </p>
       </div>
 
       {/* Subscription & Billing Section */}
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">
               Suscripción y facturación
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Espacio: <span className="font-medium text-slate-700 dark:text-slate-300">{billing?.name ?? "Cargando…"}</span>
+              {billing && (
+                <span className="ml-2 text-slate-400">
+                  · {billing.activeProjectsCount} {billing.activeProjectsCount === 1 ? "proyecto activo" : "proyectos activos"}
+                  {billing.archivedProjectsCount > 0 && ` (${billing.archivedProjectsCount} archivados)`}
+                </span>
+              )}
             </p>
           </div>
           {billing && (
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                billing.billingStatus === "ACTIVE"
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+            <div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  billing.billingStatus === "ACTIVE"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                    : billing.billingStatus === "TRIAL"
+                      ? billing.trialDaysLeft > 0
+                        ? "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300"
+                        : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                }`}
+              >
+                {billing.billingStatus === "ACTIVE"
+                  ? `Plan ${billing.planName} Activo`
                   : billing.billingStatus === "TRIAL"
                     ? billing.trialDaysLeft > 0
-                      ? "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300"
-                      : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                    : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-              }`}
-            >
-              {billing.billingStatus === "ACTIVE"
-                ? "Suscripción activa"
-                : billing.billingStatus === "TRIAL"
-                  ? billing.trialDaysLeft > 0
-                    ? `Prueba activa (${billing.trialDaysLeft}d)`
-                    : "Prueba finalizada (Solo lectura)"
-                  : billing.billingStatus === "PAST_DUE"
-                    ? "Pago pendiente"
-                    : billing.billingStatus}
-            </span>
+                      ? `Prueba activa (${billing.trialDaysLeft}d)`
+                      : "Prueba finalizada (Solo lectura)"
+                    : billing.billingStatus === "PAST_DUE"
+                      ? "Pago pendiente"
+                      : billing.billingStatus}
+              </span>
+            </div>
           )}
         </div>
 
@@ -137,70 +154,234 @@ export default function AccountView() {
           </p>
         )}
 
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 text-xs">
-          <div className="rounded-lg bg-slate-50 p-3.5 dark:bg-slate-800/60">
-            <span className="text-slate-500 dark:text-slate-400">Plan contratado</span>
-            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-              Report Map Online — Plan Profesional
-            </p>
-            <p className="mt-0.5 text-slate-500">Proyectos, planos y activos ilimitados</p>
+        {downgradeNotice && (
+          <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            <p className="font-semibold">⚠️ No es posible cambiar al plan Starter todavía</p>
+            <p className="mt-1">{downgradeNotice}</p>
           </div>
+        )}
 
-          <div className="rounded-lg bg-slate-50 p-3.5 dark:bg-slate-800/60">
-            <span className="text-slate-500 dark:text-slate-400">
-              {billing?.billingStatus === "TRIAL" ? "Fin del período de prueba" : "Período actual"}
-            </span>
-            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-              {billing?.trialEndsAt
-                ? new Date(billing.trialEndsAt).toLocaleDateString("es-ES", {
-                    day: "2-digit",
-                    month: "long",
-                    year: "numeric",
-                  })
-                : billing?.currentPeriodEnd
+        {/* Trial Status Info */}
+        {billing?.billingStatus === "TRIAL" && (
+          <div className="mt-4 rounded-lg bg-brand-50/70 p-4 border border-brand-200 text-xs text-brand-900 dark:bg-brand-950/30 dark:border-brand-900/50 dark:text-brand-200">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
+              <strong className="text-sm">Período de prueba gratuito de 14 días activo</strong>
+            </div>
+            <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
+              Dispones de acceso completo con <strong>hasta 15 proyectos activos</strong> durante tu prueba.
+              {billing.trialDaysLeft > 0 ? (
+                <> Te quedan <strong className="text-brand-600 dark:text-brand-400">{billing.trialDaysLeft} {billing.trialDaysLeft === 1 ? "día" : "días"}</strong> para elegir tu plan mensual.</>
+              ) : (
+                <> Tu período de 14 días ha finalizado. La cuenta está en modo solo lectura hasta que actives un plan.</>
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* Active subscription info */}
+        {billing?.billingStatus === "ACTIVE" && (
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 text-xs">
+            <div className="rounded-lg bg-slate-50 p-3.5 dark:bg-slate-800/60">
+              <span className="text-slate-500 dark:text-slate-400">Plan contratado</span>
+              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                Report Map Online — {billing.planName}
+              </p>
+              <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+                Límite: {billing.maxActiveProjects} {billing.maxActiveProjects === 1 ? "proyecto activo" : "proyectos activos"} simultáneos
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-slate-50 p-3.5 dark:bg-slate-800/60">
+              <span className="text-slate-500 dark:text-slate-400">
+                {billing.cancelAtPeriodEnd ? "Cancelación programada para" : "Próxima fecha de facturación"}
+              </span>
+              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                {billing.currentPeriodEnd
                   ? new Date(billing.currentPeriodEnd).toLocaleDateString("es-ES", {
                       day: "2-digit",
                       month: "long",
                       year: "numeric",
                     })
-                  : "Acceso estándar"}
-            </p>
-            {billing?.billingStatus === "TRIAL" && billing.trialDaysLeft > 0 && (
-              <p className="mt-0.5 text-brand-600 dark:text-brand-400 font-medium">
-                Quedan {billing.trialDaysLeft} {billing.trialDaysLeft === 1 ? "día" : "días"} de prueba completa
+                  : "Período en curso"}
               </p>
-            )}
+              {billing.cancelAtPeriodEnd && (
+                <p className="mt-0.5 text-amber-600 dark:text-amber-400 font-medium">
+                  La suscripción no se renovará automáticamente y pasará a modo solo lectura.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Commercial Plans Grid */}
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">
+            Planes comerciales disponibles
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* STARTER PLAN */}
+            <div
+              className={`relative rounded-xl border p-5 transition-all ${
+                isStarterActive
+                  ? "border-brand-500 ring-2 ring-brand-500/20 bg-brand-50/10 dark:border-brand-500 dark:bg-brand-950/20"
+                  : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/50"
+              }`}
+            >
+              {isStarterActive && (
+                <span className="absolute -top-2.5 right-4 rounded-full bg-brand-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm">
+                  Plan Actual
+                </span>
+              )}
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white">Starter</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Para instalaciones o plantas individuales</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-extrabold text-slate-900 dark:text-white">$15</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400"> USD/mes</span>
+                </div>
+              </div>
+
+              <ul className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  <strong>1 proyecto activo</strong>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Proyectos archivados ilimitados (sin pérdida de datos)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Planos interactivos con Deep Zoom
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Gestión documental con control de versiones y periodicidad
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Mantenimiento preventivo, calendario e historial completo
+                </li>
+              </ul>
+
+              <div className="mt-6">
+                {isStarterActive ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full rounded-lg border border-slate-200 bg-slate-100 py-2 text-xs font-semibold text-slate-500 cursor-default dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                  >
+                    Tu plan contratado
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={billingActionBusy || loadingBilling}
+                    onClick={() => void handleCheckout("STARTER")}
+                    className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                  >
+                    {billingActionBusy ? "Conectando…" : isProActive ? "Cambiar a Starter ($15/mes)" : "Elegir Starter ($15/mes)"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* PRO PLAN */}
+            <div
+              className={`relative rounded-xl border p-5 transition-all ${
+                isProActive
+                  ? "border-brand-500 ring-2 ring-brand-500/20 bg-brand-50/10 dark:border-brand-500 dark:bg-brand-950/20"
+                  : "border-brand-200 bg-white shadow-sm hover:border-brand-300 dark:border-brand-900/60 dark:bg-slate-900/50"
+              }`}
+            >
+              {isProActive ? (
+                <span className="absolute -top-2.5 right-4 rounded-full bg-brand-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm">
+                  Plan Actual
+                </span>
+              ) : (
+                <span className="absolute -top-2.5 right-4 rounded-full bg-brand-100 border border-brand-200 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand-800 dark:bg-brand-950 dark:text-brand-300 dark:border-brand-800">
+                  Recomendado
+                </span>
+              )}
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white">Pro</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Para empresas con múltiples proyectos</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-extrabold text-slate-900 dark:text-white">$39</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400"> USD/mes</span>
+                </div>
+              </div>
+
+              <ul className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  <strong>Hasta 15 proyectos activos simultáneos</strong>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Proyectos archivados ilimitados (sin pérdida de datos)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Planos interactivos con Deep Zoom en todos los proyectos
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Gestión documental multi-activo y periodicidad automática
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Planes preventivos, calendarios globales y trazabilidad
+                </li>
+              </ul>
+
+              <div className="mt-6">
+                {isProActive ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full rounded-lg border border-slate-200 bg-slate-100 py-2 text-xs font-semibold text-slate-500 cursor-default dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                  >
+                    Tu plan contratado
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={billingActionBusy || loadingBilling}
+                    onClick={() => void handleCheckout("PRO")}
+                    className="w-full rounded-lg bg-brand-600 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
+                  >
+                    {billingActionBusy ? "Conectando…" : isStarterActive ? "Actualizar a Pro ($39/mes)" : "Elegir Pro ($39/mes)"}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Read-only guarantee note */}
-        <div className="mt-4 rounded-lg border border-slate-200/80 bg-slate-50/50 p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/30 dark:text-slate-300">
-          🔒 <strong>Garantía de preservación de datos:</strong> Si finaliza el período de prueba sin contratar, tus proyectos, documentos, fotos y planos <strong>nunca se borran</strong>; tu cuenta conserva acceso permanente de lectura y descarga.
+        <div className="mt-6 rounded-lg border border-slate-200/80 bg-slate-50/60 p-3.5 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
+          🔒 <strong>Garantía de preservación de datos:</strong> Si finaliza el período de prueba o cancelas tu suscripción, tus proyectos, documentos, fotos y planos <strong>nunca se borran</strong>; tu cuenta conserva acceso permanente de solo lectura y descarga.
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          {(!billing?.hasSubscription || billing.billingStatus === "TRIAL") && (
-            <button
-              type="button"
-              disabled={billingActionBusy || loadingBilling}
-              onClick={() => void handleCheckout()}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-60 dark:bg-brand-500 dark:hover:bg-brand-600"
-            >
-              {billingActionBusy ? "Conectando…" : "Contratar suscripción"}
-            </button>
-          )}
-
-          {billing?.stripeCustomerId && (
+        {/* Customer Portal */}
+        {billing?.stripeCustomerId && (
+          <div className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
             <button
               type="button"
               disabled={billingActionBusy}
               onClick={() => void handlePortal()}
               className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
-              Gestionar método de pago y facturas
+              Gestionar facturas y métodos de pago (Stripe Portal)
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* Security & Password Section */}

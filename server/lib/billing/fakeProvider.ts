@@ -1,10 +1,12 @@
 import prisma from "../prisma"
+import { getPlanKeyFromPriceId } from "../plans"
 import type { BillingProvider, CheckoutSessionParams, CustomerPortalParams, ReconcileResult, WebhookEventResult } from "./types"
 
 export class FakeBillingProvider implements BillingProvider {
   async createCheckoutSession(params: CheckoutSessionParams): Promise<{ checkoutUrl: string; sessionId: string }> {
-    const sessionId = `fake_cs_${params.workspaceId}_${Date.now()}`
-    const checkoutUrl = `https://checkout.stripe.test/c/${sessionId}?return_to=${encodeURIComponent(params.successUrl)}`
+    const plan = params.planKey || "STARTER"
+    const sessionId = `fake_cs_${params.workspaceId}_${plan}_${Date.now()}`
+    const checkoutUrl = `https://checkout.stripe.test/c/${sessionId}?plan=${plan}&return_to=${encodeURIComponent(params.successUrl)}`
     return { checkoutUrl, sessionId }
   }
 
@@ -50,12 +52,17 @@ export class FakeBillingProvider implements BillingProvider {
       if (eventType === "checkout.session.completed") {
         const wsId = workspaceId ?? Number(obj.client_reference_id)
         if (wsId && Number.isInteger(wsId)) {
+          const rawPriceId = (obj.priceId as string) || (obj.price as string)
+          const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
+          const resolvedPlanKey = metaPlanKey ?? getPlanKeyFromPriceId(rawPriceId) ?? "STARTER"
           await tx.workspace.update({
             where: { id: wsId },
             data: {
               billingStatus: "ACTIVE",
+              planKey: resolvedPlanKey,
               stripeCustomerId: (obj.customer as string) || `fake_cus_${wsId}`,
               stripeSubscriptionId: (obj.subscription as string) || `fake_sub_${wsId}`,
+              stripePriceId: rawPriceId ?? null,
               currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             },
           })
@@ -66,6 +73,7 @@ export class FakeBillingProvider implements BillingProvider {
         const status = obj.status as string | undefined
         const currentPeriodEndSec = obj.current_period_end as number | undefined
         const cancelAtPeriodEnd = Boolean(obj.cancel_at_period_end)
+        const rawPriceId = (obj.priceId as string) || (obj.items as { data?: Array<{ price?: { id?: string } }> })?.data?.[0]?.price?.id
 
         const targetWorkspace = workspaceId
           ? await tx.workspace.findUnique({ where: { id: workspaceId } })
@@ -81,12 +89,17 @@ export class FakeBillingProvider implements BillingProvider {
           else if (status === "canceled" || status === "unpaid") mappedStatus = "CANCELED"
           else if (status === "trialing") mappedStatus = "TRIAL"
 
+          const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
+          const resolvedPlanKey = metaPlanKey ?? getPlanKeyFromPriceId(rawPriceId) ?? targetWorkspace.planKey
+
           await tx.workspace.update({
             where: { id: targetWorkspace.id },
             data: {
               billingStatus: mappedStatus,
+              planKey: resolvedPlanKey,
               stripeSubscriptionId: subId ?? targetWorkspace.stripeSubscriptionId,
               stripeCustomerId: customerId ?? targetWorkspace.stripeCustomerId,
+              stripePriceId: rawPriceId ?? targetWorkspace.stripePriceId,
               currentPeriodEnd: currentPeriodEndSec ? new Date(currentPeriodEndSec * 1000) : targetWorkspace.currentPeriodEnd,
               cancelAtPeriodEnd,
             },
@@ -137,6 +150,7 @@ export class FakeBillingProvider implements BillingProvider {
     return {
       workspaceId: ws.id,
       billingStatus: ws.billingStatus,
+      planKey: ws.planKey,
       currentPeriodEnd: ws.currentPeriodEnd,
       cancelAtPeriodEnd: ws.cancelAtPeriodEnd,
       stripeCustomerId: ws.stripeCustomerId,

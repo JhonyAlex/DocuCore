@@ -7,6 +7,8 @@ export interface CheckoutSessionParams {
   successUrl: string
   cancelUrl: string
   priceId?: string
+  planKey?: "STARTER" | "PRO"
+  projectLimit?: number
   trialEndTimestamp?: number | null
 }
 
@@ -27,6 +29,7 @@ export interface WebhookEventResult {
 export interface ReconcileResult {
   workspaceId: number
   billingStatus: BillingStatus
+  planKey?: string | null
   currentPeriodEnd?: Date | null
   cancelAtPeriodEnd?: boolean
   stripeCustomerId?: string | null

@@ -919,8 +919,11 @@ export function fetchBillingStatus(): Promise<import('@/types').ApiBillingStatus
   return request<import('@/types').ApiBillingStatus>('/billing/status')
 }
 
-export function createBillingCheckoutSession(): Promise<{ checkoutUrl: string }> {
-  return request<{ checkoutUrl: string }>('/billing/checkout', { method: 'POST' })
+export function createBillingCheckoutSession(planKey: import('@/types').PlanKey): Promise<{ checkoutUrl: string }> {
+  return request<{ checkoutUrl: string }>('/billing/checkout', {
+    method: 'POST',
+    body: JSON.stringify({ planKey }),
+  })
 }
 
 export function createBillingPortalSession(): Promise<{ portalUrl: string }> {

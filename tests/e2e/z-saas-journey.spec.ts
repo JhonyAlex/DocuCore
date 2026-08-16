@@ -8,13 +8,13 @@ test.describe.serial("SAAS-07 SaaS User Journey", () => {
     const stamp = Date.now()
     const newEmail = `journey.${stamp}@docucore.test`
 
-    // 1. Landing Page
-    await page.goto("/")
+    // 1. App entry
+    await page.goto("/login")
     await expect(page).toHaveTitle(/Report Map Online/)
-    await expect(page.getByText("Ubica, gestiona y mantén tus activos en")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Report Map Online" })).toBeVisible()
 
     // 2. Click Register CTA
-    await page.getByRole("link", { name: "Comenzar prueba gratuita de 14 días" }).click()
+    await page.getByRole("link", { name: "Crear cuenta (14 días gratis)" }).click()
     await expect(page).toHaveURL(/\/register$/)
     await expect(page.getByRole("heading", { name: "Crear cuenta en Report Map Online" })).toBeVisible()
 
@@ -44,7 +44,7 @@ test.describe.serial("SAAS-07 SaaS User Journey", () => {
     await page.goto("/account")
     await expect(page.getByRole("heading", { name: "Mi cuenta" })).toBeVisible()
     await expect(page.getByText("Suscripción y facturación")).toBeVisible()
-    await expect(page.getByText("Report Map Online — Plan Profesional")).toBeVisible()
+    await expect(page.getByText("Plan Pro").first()).toBeVisible()
     await expect(page.getByText("Garantía de preservación de datos")).toBeVisible()
   })
 })

@@ -6,6 +6,7 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProjectConfiguration } from '../lib/projectConfiguration'
 import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
 import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from '../lib/workspaceScope'
+import { requireProjectCapacity } from '../lib/plans'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
 
 const router = Router()
@@ -129,10 +130,17 @@ router.post('/', asyncHandler(async (req, res) => {
       trialEndsAt: wsScope.workspace.trialEndsAt?.toISOString(),
     })
   }
+
+  // Validate active project capacity against workspace plan limit
+  await requireProjectCapacity(wsScope.workspace.id, { actorId })
+
   await ensureUsersExist(input.memberIds)
   if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
   const created = await prisma.$transaction(async (tx) => {
+    // Re-verify capacity inside transaction
+    await requireProjectCapacity(wsScope.workspace.id, { actorId, tx })
+
     const project = await tx.project.create({
       data: { workspaceId: wsScope.workspace.id, code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
       select: { id: true },
@@ -185,8 +193,10 @@ router.post('/:projectId/archive', asyncHandler(async (req, res) => {
 router.post('/:projectId/restore', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
   const actorId = actorIdFromRequest(req)
-  await ensureManagementScope(projectId, actorId)
+  const scope = await ensureManagementScope(projectId, actorId)
+  await requireProjectCapacity(scope.project.workspaceId, { actorId })
   const project = await prisma.$transaction(async (tx) => {
+    await requireProjectCapacity(scope.project.workspaceId, { actorId, tx })
     const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ACTIVE' }, include: projectInclude })
     await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Reactivación', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" reactivado`, timestamp: new Date() } })
     return updated

@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/jhonyalex/docucore:latest
+    image: ghcr.io/jhonyalex/docucore-app:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -11,19 +11,23 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - DATABASE_URL=postgresql://${DB_USER:-docucore}:${DB_PASSWORD:-docucore}@db:5432/${DB_NAME:-docucore}?schema=public
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://report-map.online}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://app.report-map.online}
+      - MARKETING_PUBLIC_URL=${MARKETING_PUBLIC_URL:-https://report-map.online}
       - SESSION_SECRET=${SESSION_SECRET}
+      - COMPANY_DISPLAY_NAME=${COMPANY_DISPLAY_NAME:-Report Map Online}
+      - SUPPORT_EMAIL=${SUPPORT_EMAIL:-admin@report-map.online}
       - BILLING_PROVIDER=${BILLING_PROVIDER:-stripe}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
-      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - STRIPE_PRICE_STARTER=${STRIPE_PRICE_STARTER}
+      - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO}
       - EMAIL_MODE=${EMAIL_MODE:-smtp}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_SECURE=${SMTP_SECURE:-false}
-      - EMAIL_FROM=${EMAIL_FROM:-Report Map Online <soporte@report-map.online>}
+      - EMAIL_FROM=${EMAIL_FROM:-admin@report-map.online}
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-Report Map Online}
       - DOCUMENT_STORAGE_PATH=/app/storage/documents
       - FLOOR_PLAN_STORAGE_PATH=/app/storage/floor-plans
@@ -39,6 +43,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  landing:
+    image: ghcr.io/jhonyalex/docucore-landing:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.landing
+    restart: unless-stopped
+    ports:
+      - "${LANDING_PORT:-8080}:80"
 
   db:
     image: postgres:16-alpine

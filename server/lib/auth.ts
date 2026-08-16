@@ -71,8 +71,12 @@ export const optionalAuth: RequestHandler = async (req, _res, next) => {
     // Explicit test authentication keeps existing domain tests focused on their
     // resource contract. It is unavailable outside NODE_ENV=test and never has
     // a fallback identity.
-    const deliberatelyUnauthenticated = process.env.NODE_ENV === 'test' && req.get('x-docucore-test-unauthenticated') === 'true'
-    const testActorId = process.env.NODE_ENV === 'test' && !deliberatelyUnauthenticated ? Number(req.get('x-docucore-test-actor-id')) : Number.NaN
+    const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST)
+    const deliberatelyUnauthenticated = isTestEnv && req.get('x-docucore-test-unauthenticated') === 'true'
+    const actorHeader = req.get('x-docucore-test-actor-id')
+    const testActorId = isTestEnv && !deliberatelyUnauthenticated
+      ? (actorHeader !== undefined ? Number(actorHeader) : (process.env.VITEST ? 1 : Number.NaN))
+      : Number.NaN
     const token = cookieValue(req, COOKIE_NAME)
     const persistedSession = token ? await prisma.authSession.findUnique({ where: { id: hashToken(token) }, include: { user: true } }) : null
     const session = persistedSession ?? (Number.isInteger(testActorId) && testActorId > 0

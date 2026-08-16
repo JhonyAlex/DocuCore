@@ -87,7 +87,7 @@ function getTransporter(): nodemailer.Transporter {
 }
 
 function resolveFromHeader(): string {
-  const rawFrom = process.env.EMAIL_FROM || "soporte@report-map.online"
+  const rawFrom = process.env.EMAIL_FROM || process.env.SUPPORT_EMAIL || "admin@report-map.online"
   if (rawFrom.includes("<") && rawFrom.includes(">")) {
     return rawFrom
   }
@@ -133,7 +133,7 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
 }
 
 export async function sendVerificationEmail(options: { to: string; name: string; token: string }): Promise<void> {
-  const baseUrl = (process.env.APP_PUBLIC_URL || "https://report-map.online").replace(/\/+$/, "")
+  const baseUrl = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
   const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(options.token)}`
 
   const subject = "Verifica tu cuenta en Report Map Online"
@@ -165,7 +165,7 @@ Si no has creado esta cuenta, puedes ignorar este mensaje.`
 }
 
 export async function sendPasswordResetEmail(options: { to: string; name: string; token: string }): Promise<void> {
-  const baseUrl = (process.env.APP_PUBLIC_URL || "https://report-map.online").replace(/\/+$/, "")
+  const baseUrl = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
   const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(options.token)}`
 
   const subject = "Restablece tu contraseña en Report Map Online"
@@ -198,7 +198,8 @@ Si tú no solicitaste este cambio, puedes ignorar este mensaje.`
 }
 
 export async function sendWelcomeEmail(options: { to: string; name: string; workspaceName: string; trialDays: number }): Promise<void> {
-  const baseUrl = (process.env.APP_PUBLIC_URL || "https://report-map.online").replace(/\/+$/, "")
+  const baseUrl = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
+  const supportEmail = process.env.SUPPORT_EMAIL || "admin@report-map.online"
   const appUrl = `${baseUrl}/projects`
 
   const subject = "¡Bienvenido a Report Map Online! Tu prueba de 14 días está activa"
@@ -211,7 +212,7 @@ Dispones de ${options.trialDays} días de prueba completa para crear tus proyect
 Accede a la plataforma aquí:
 ${appUrl}
 
-Si necesitas ayuda durante tu prueba, estamos a tu disposición en support@report-map.online.`
+Si necesitas ayuda durante tu prueba, estamos a tu disposición en ${supportEmail}.`
 
   const html = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border-radius: 8px;">
   <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px;">
@@ -224,7 +225,7 @@ Si necesitas ayuda durante tu prueba, estamos a tu disposición en support@repor
     <a href="${appUrl}" style="background-color: #3b82f6; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; display: inline-block;">Ir a mis proyectos</a>
   </div>
   <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-  <p style="font-size: 12px; color: #94a3b8;">¿Tienes dudas? Escríbenos en cualquier momento respondiendo a este correo.</p>
+  <p style="font-size: 12px; color: #94a3b8;">¿Tienes dudas? Escríbenos en cualquier momento a <a href="mailto:${supportEmail}" style="color: #3b82f6;">${supportEmail}</a> respondiendo a este correo.</p>
 </div>`
 
   await sendEmail({ to: options.to, subject, text, html })

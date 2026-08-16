@@ -22,12 +22,14 @@ export interface Pagination {
 
 export type BillingStatus = 'PENDING_VERIFICATION' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'SUSPENDED'
 export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER'
+export type PlanKey = 'STARTER' | 'PRO'
 
 export interface ApiWorkspaceSummary {
   id: number
   name: string
   slug: string
   billingStatus: BillingStatus
+  planKey?: PlanKey | null
   trialStartedAt?: string | null
   trialEndsAt?: string | null
   trialDaysLeft?: number
@@ -41,6 +43,12 @@ export interface ApiBillingStatus {
   name: string
   slug: string
   billingStatus: BillingStatus
+  planKey: PlanKey | null
+  planName: string
+  maxActiveProjects: number
+  activeProjectsCount: number
+  archivedProjectsCount: number
+  canDowngradeToStarter: boolean
   trialStartedAt: string | null
   trialEndsAt: string | null
   trialDaysLeft: number
@@ -60,6 +68,7 @@ export interface ApiAdminWorkspace {
   name: string
   slug: string
   billingStatus: BillingStatus
+  planKey?: string | null
   trialStartedAt: string | null
   trialEndsAt: string | null
   stripeCustomerId?: string | null

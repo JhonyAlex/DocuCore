@@ -20,7 +20,8 @@ export function validateBillingConfiguration(): { valid: boolean; error?: string
     const missing: string[] = []
     if (!process.env.STRIPE_SECRET_KEY) missing.push("STRIPE_SECRET_KEY")
     if (!process.env.STRIPE_WEBHOOK_SECRET) missing.push("STRIPE_WEBHOOK_SECRET")
-    if (!process.env.STRIPE_PRICE_ID) missing.push("STRIPE_PRICE_ID")
+    if (!process.env.STRIPE_PRICE_STARTER) missing.push("STRIPE_PRICE_STARTER")
+    if (!process.env.STRIPE_PRICE_PRO) missing.push("STRIPE_PRICE_PRO")
 
     if (missing.length > 0) {
       return {

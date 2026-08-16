@@ -42,7 +42,11 @@ describe("SAAS-04 Billing & Webhook Processing API", () => {
       // 1. Initiate Checkout
       const checkoutRes = await fetch(`${baseUrl}/api/billing/checkout`, {
         method: "POST",
-        headers: { "x-docucore-test-actor-id": String(user.id) },
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(user.id),
+        },
+        body: JSON.stringify({ planKey: "PRO" }),
       })
       expect(checkoutRes.status).toBe(200)
       const checkoutData = await checkoutRes.json()

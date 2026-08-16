@@ -1,4 +1,5 @@
 import { Router } from "express"
+import { z } from "zod"
 import { asyncHandler } from "../lib/asyncHandler"
 import { authenticatedUserId, requireAuth } from "../lib/auth"
 import {
@@ -8,9 +9,14 @@ import {
   reconcileWorkspace,
 } from "../lib/billing"
 import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from "../lib/workspaceScope"
+import { getStripePriceIdForPlan, resolveWorkspacePlan } from "../lib/plans"
 import prisma from "../lib/prisma"
 
 const router = Router()
+
+const checkoutInputSchema = z.object({
+  planKey: z.enum(["STARTER", "PRO"]),
+}).strict()
 
 // Webhook endpoint needs raw body for signature verification
 router.post(
@@ -29,12 +35,24 @@ router.get("/status", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const wsScope = await getUserPrimaryWorkspace(actorId)
   const entitlement = evaluateWorkspaceEntitlement(wsScope.workspace)
+  const planInfo = resolveWorkspacePlan(wsScope.workspace)
+
+  const [activeProjectsCount, archivedProjectsCount] = await Promise.all([
+    prisma.project.count({ where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" } }),
+    prisma.project.count({ where: { workspaceId: wsScope.workspace.id, status: "ARCHIVED" } }),
+  ])
 
   res.json({
     workspaceId: wsScope.workspace.id,
     name: wsScope.workspace.name,
     slug: wsScope.workspace.slug,
     billingStatus: wsScope.workspace.billingStatus,
+    planKey: planInfo.planKey,
+    planName: planInfo.planName,
+    maxActiveProjects: planInfo.maxActiveProjects,
+    activeProjectsCount,
+    archivedProjectsCount,
+    canDowngradeToStarter: activeProjectsCount <= 1,
     trialStartedAt: wsScope.workspace.trialStartedAt?.toISOString() ?? null,
     trialEndsAt: wsScope.workspace.trialEndsAt?.toISOString() ?? null,
     trialDaysLeft: entitlement.trialDaysLeft ?? 0,
@@ -57,8 +75,25 @@ router.post("/checkout", asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar suscripciones." })
   }
 
+  const input = checkoutInputSchema.parse(req.body)
+
+  // Downgrade protection: If selecting STARTER, active projects must be <= 1
+  if (input.planKey === "STARTER") {
+    const activeProjectsCount = await prisma.project.count({
+      where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" },
+    })
+    if (activeProjectsCount > 1) {
+      return res.status(409).json({
+        error: "Para cambiar al plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.",
+        code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
+        activeProjectsCount,
+        maxAllowed: 1,
+      })
+    }
+  }
+
   const user = await prisma.user.findUniqueOrThrow({ where: { id: actorId } })
-  const baseUrl = (process.env.APP_PUBLIC_URL || "https://report-map.online").replace(/\/+$/, "")
+  const baseUrl = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
 
   // Preserve remaining trial period if still active
   let trialEndTimestamp: number | null = null
@@ -69,10 +104,16 @@ router.post("/checkout", asyncHandler(async (req, res) => {
     }
   }
 
+  const priceId = getStripePriceIdForPlan(input.planKey)
+  const projectLimit = input.planKey === "STARTER" ? 1 : 15
+
   const session = await createCheckoutSession({
     workspaceId: wsScope.workspace.id,
     customerEmail: user.email,
     customerName: user.name,
+    planKey: input.planKey,
+    priceId: priceId ?? undefined,
+    projectLimit,
     successUrl: `${baseUrl}/account?checkout=success`,
     cancelUrl: `${baseUrl}/account?checkout=cancel`,
     trialEndTimestamp,
@@ -92,7 +133,7 @@ router.post("/portal", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "La cuenta todavía no dispone de cliente de facturación registrado." })
   }
 
-  const baseUrl = (process.env.APP_PUBLIC_URL || "https://report-map.online").replace(/\/+$/, "")
+  const baseUrl = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
   const session = await createCustomerPortalSession({
     workspaceId: wsScope.workspace.id,
     customerId: wsScope.workspace.stripeCustomerId,

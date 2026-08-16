@@ -114,6 +114,7 @@ async function main(): Promise<void> {
       name: 'Espacio Principal',
       slug: 'espacio-principal',
       billingStatus: 'ACTIVE',
+      planKey: 'PRO',
     },
   })
 
