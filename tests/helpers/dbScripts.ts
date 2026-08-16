@@ -1,5 +1,7 @@
 import { exec } from 'node:child_process'
 
+import path from 'node:path'
+
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 
 export type DbScriptResult = { stdout: string; code: number }
@@ -11,7 +13,12 @@ export async function runDbScript(script: 'db:seed' | 'db:reset:manual-test', en
   return new Promise<DbScriptResult>((resolve) => {
     exec(`${pnpmCommand} ${script}`, {
       cwd: process.cwd(),
-      env: { ...process.env, ...env },
+      env: {
+        ...process.env,
+        DOCUMENT_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-documents'),
+        FLOOR_PLAN_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-floor-plans'),
+        ...env,
+      },
       timeout: 120_000,
     }, (error, stdout) => {
       const code = error ? ((error as { code?: number | string }).code === undefined ? 1 : Number((error as { code?: number | string }).code) || 1) : 0

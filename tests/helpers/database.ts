@@ -1,6 +1,8 @@
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 
+import path from 'node:path'
+
 const execAsync = promisify(exec)
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker'
@@ -31,8 +33,8 @@ async function run(command: string, args: string[]): Promise<void> {
       ...process.env,
       DATABASE_URL: databaseUrl,
       DB_HOST_PORT: testDatabasePort,
-      DOCUMENT_STORAGE_PATH: process.env.DOCUMENT_STORAGE_PATH ?? `${process.cwd()}/test-results/e2e-documents`,
-      FLOOR_PLAN_STORAGE_PATH: process.env.FLOOR_PLAN_STORAGE_PATH ?? `${process.cwd()}/test-results/e2e-floor-plans`,
+      DOCUMENT_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-documents'),
+      FLOOR_PLAN_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-floor-plans'),
     },
     timeout: 120_000,
   }
