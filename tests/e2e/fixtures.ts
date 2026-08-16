@@ -31,7 +31,19 @@ function requestedProjectId(value: string, args: unknown[], method: string): num
 }
 
 function scopedApiUrl(value: string, args: unknown[] = [], method = 'get'): string {
-  if (!value.startsWith('/api/') || value.startsWith('/api/projects/') || value === '/api/health' || value === '/api/session' || value === '/api/projects') return value
+  if (
+    !value.startsWith('/api/') ||
+    value.startsWith('/api/projects/') ||
+    value.startsWith('/api/auth/') ||
+    value.startsWith('/api/account') ||
+    value.startsWith('/api/admin') ||
+    value.startsWith('/api/workspaces') ||
+    value.startsWith('/api/stripe') ||
+    value === '/api/health' ||
+    value === '/api/ready' ||
+    value === '/api/session' ||
+    value === '/api/projects'
+  ) return value
   return value.replace('/api/', `/api/projects/${requestedProjectId(value, args, method)}/`)
 }
 
