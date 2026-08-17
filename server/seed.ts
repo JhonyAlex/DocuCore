@@ -79,6 +79,7 @@ async function main(): Promise<void> {
       "DynamicFieldDefinition",
       "ProjectMember",
       "AssetType",
+      "DocumentType",
       "Status",
       "Project",
       "WorkspaceMember",
@@ -183,6 +184,21 @@ async function main(): Promise<void> {
   ]
   await prisma.assetType.createMany({
     data: [1, 2, 3, 4, 5].flatMap((projectId) => defaultAssetTypes.map(({ name, iconKey }, sortOrder) => ({ projectId, name, iconKey, sortOrder }))),
+  })
+
+  console.log('  • Document types (5 por proyecto)')
+  const defaultDocumentTypes = [
+    { name: 'Certificado', iconKey: 'badge-check' },
+    { name: 'Calibración', iconKey: 'gauge' },
+    { name: 'Manual', iconKey: 'book-open' },
+    { name: 'Acta', iconKey: 'clipboard-list' },
+    { name: 'Contrato', iconKey: 'file-signature' },
+  ]
+  await prisma.documentType.createMany({
+    data: [1, 2, 3, 4, 5].flatMap((projectId) => defaultDocumentTypes.map(({ name, iconKey }, sortOrder) => ({ projectId, name, iconKey, sortOrder }))),
+  })
+  await prisma.documentType.create({
+    data: { projectId: 1, name: 'Archivo', iconKey: 'archive', sortOrder: 5 },
   })
 
   console.log('  • Statuses (5 por proyecto)')
@@ -518,12 +534,17 @@ async function main(): Promise<void> {
     { assetCode: 'EXT-A12', name: 'Acta revisión extintor A12', eventTitle: 'Revisión anual', type: 'Acta', issueDate: '24/07/2025', expiryDate: '24/07/2026', periodicity: 'Anual', periodicityMode: 'Calendario', fileName: 'acta-extintor-a12.pdf', content: 'ACTA EXTINTOR A12', sizeBytes: 840_000 },
     { assetCode: 'CP-02', name: 'Contrato servicio Limpiezas Veloz', type: 'Contrato', issueDate: '12/08/2025', expiryDate: '12/08/2026', periodicity: 'Anual', periodicityMode: 'Subida', fileName: 'contrato-limpiezas.pdf', content: 'CONTRATO LIMPIEZAS', sizeBytes: 620_000 },
   ]
+  const projectOneDocTypes = await prisma.documentType.findMany({ where: { projectId: 1 } })
+  const projectOneDocTypeMap = new Map(projectOneDocTypes.map((dt) => [dt.name, dt.id]))
+
   for (const [index, document] of documentData.entries()) {
+    const typeId = projectOneDocTypeMap.get(document.type) ?? null
     const logicalDocument = await prisma.document.create({
       data: {
         name: document.name,
         eventTitle: document.eventTitle,
         type: document.type,
+        documentType: typeId ? { connect: { id: typeId } } : undefined,
         periodicity: document.periodicity,
         periodicityMode: document.periodicityMode,
         createdAt: new Date(Date.UTC(2026, 6, 14, 11, 2, 10 - index)),
@@ -542,6 +563,7 @@ async function main(): Promise<void> {
     await prisma.documentVersion.create({ data: { documentId: logicalDocument.id, version: document.previous ? 2 : 1, originalName: document.fileName, storageKey, mimeType: 'application/pdf', sizeBytes: content.length, issueDate: isoFromEu(document.issueDate), expiryDate: document.expiryDate ? isoFromEu(document.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })
   }
 
+  const archivoTypeId = projectOneDocTypeMap.get('Archivo')
   const expiryGroups = [
     { count: 183, expiryDate: null },
     { count: 15, expiryDate: '20/07/2026' },
@@ -549,7 +571,7 @@ async function main(): Promise<void> {
   ]
   for (const group of expiryGroups) {
     for (let index = 0; index < group.count; index += 1) {
-      const document = await prisma.document.create({ data: { name: `Documento canónico ${group.expiryDate ?? 'vigente'} ${index + 1}`, type: 'Archivo', createdAt: isoFromEu('01/01/2025'), updatedAt: isoFromEu('01/01/2025'), project: { connect: { code: PROJECT_CODE } } } })
+      const document = await prisma.document.create({ data: { name: `Documento canónico ${group.expiryDate ?? 'vigente'} ${index + 1}`, type: 'Archivo', documentType: archivoTypeId ? { connect: { id: archivoTypeId } } : undefined, createdAt: isoFromEu('01/01/2025'), updatedAt: isoFromEu('01/01/2025'), project: { connect: { code: PROJECT_CODE } } } })
       const content = createSeedPdfBuffer(`CANONICAL-${group.expiryDate ?? 'CURRENT'}-${index + 1}`)
       const storageKey = await storeDocumentBuffer(content, 'application/pdf')
       await prisma.documentVersion.create({ data: { documentId: document.id, version: 1, originalName: `canonico-${document.id}.pdf`, storageKey, mimeType: 'application/pdf', sizeBytes: content.length, issueDate: isoFromEu('01/01/2026'), expiryDate: group.expiryDate ? isoFromEu(group.expiryDate) : null, uploadedAt: isoFromEu('14/07/2026', '11:02') } })

@@ -28,6 +28,7 @@ const documentInclude = {
     include: { asset: { select: { id: true, code: true, name: true } } },
   },
   project: { select: { id: true, code: true, name: true } },
+  documentType: { select: { id: true, name: true, iconKey: true } },
   versions: { orderBy: { version: 'desc' as const }, take: 1 },
 } satisfies Prisma.DocumentInclude
 
@@ -40,11 +41,13 @@ const documentListSelect = {
   name: true,
   eventTitle: true,
   type: true,
+  typeId: true,
   projectId: true,
   createdAt: true,
   updatedAt: true,
   periodicity: true,
   periodicityMode: true,
+  documentType: { select: { id: true, name: true, iconKey: true } },
   assets: {
     where: { asset: { deletedAt: null } },
     orderBy: { asset: { code: 'asc' as const } },
@@ -79,6 +82,8 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
     id: document.id,
     name: document.name,
     type: document.type,
+    typeId: document.typeId ?? null,
+    documentType: document.documentType ?? null,
     assets: document.assets.map((link) => link.asset),
     projectId: document.projectId,
     createdAt: document.createdAt.toISOString(),
@@ -112,6 +117,8 @@ function serializeDocumentList(document: DocumentListRow) {
     name: document.name,
     eventTitle: document.eventTitle,
     type: document.type,
+    typeId: document.typeId ?? null,
+    documentType: document.documentType ?? null,
     projectId: document.projectId,
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
@@ -188,6 +195,26 @@ async function assertDocumentAssets(projectId: number, assetIds: number[]): Prom
     error.status = 400
     throw error
   }
+}
+
+async function resolveDocumentType(projectId: number, inputTypeId?: number, inputTypeName?: string): Promise<{ typeId: number | null; type: string }> {
+  if (inputTypeId) {
+    const docType = await prisma.documentType.findFirst({
+      where: { id: inputTypeId, projectId, isActive: true },
+      select: { id: true, name: true },
+    })
+    if (!docType) throw Object.assign(new Error('Tipo de documento no encontrado o inactivo'), { status: 400 })
+    return { typeId: docType.id, type: docType.name }
+  }
+  if (inputTypeName) {
+    const docType = await prisma.documentType.findFirst({
+      where: { projectId, name: { equals: inputTypeName, mode: 'insensitive' }, isActive: true },
+      select: { id: true, name: true },
+    })
+    if (docType) return { typeId: docType.id, type: docType.name }
+    return { typeId: null, type: inputTypeName }
+  }
+  throw Object.assign(new Error('Tipo de documento requerido'), { status: 400 })
 }
 
 function assetCodes(document: DocumentWithCurrentVersion): string {
@@ -285,6 +312,8 @@ router.post('/', asyncHandler(async (req, res) => {
   if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const assetIds = input.assetIds ?? []
   await assertDocumentAssets(projectId, assetIds)
+  const resolvedType = await resolveDocumentType(projectId, input.typeId, input.type)
+
   // DOC-03: con periodicidad y sin vencimiento explícito, la primera versión
   // nace con el vencimiento calculado desde la emisión (no hay vencimiento previo).
   const periodicity = input.periodicity ?? null
@@ -300,7 +329,8 @@ router.post('/', asyncHandler(async (req, res) => {
       const document = await tx.document.create({
         data: {
           name: input.name,
-          type: input.type,
+          type: resolvedType.type,
+          typeId: resolvedType.typeId,
           projectId,
           periodicity,
           periodicityMode: periodicity ? periodicityMode : null,
@@ -362,6 +392,12 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const before = await assertDocumentExists(id, projectId)
   if (input.assetIds !== undefined) await assertDocumentAssets(projectId, input.assetIds ?? [])
+
+  let resolvedType: { typeId: number | null; type: string } | undefined
+  if (input.typeId !== undefined || input.type !== undefined) {
+    resolvedType = await resolveDocumentType(projectId, input.typeId ?? undefined, input.type ?? undefined)
+  }
+
   // DOC-03: el modo requiere periodicidad (actual o entrante); null quita la regla.
   const periodicity = input.periodicity
   if (input.periodicityMode !== undefined && input.periodicityMode !== null && (periodicity ?? before.periodicity) === null) {
@@ -379,7 +415,8 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       where: { id },
       data: {
         name: input.name,
-        type: input.type,
+        type: resolvedType ? resolvedType.type : undefined,
+        typeId: resolvedType ? resolvedType.typeId : input.typeId === null ? null : undefined,
         projectId: undefined,
         periodicity,
         periodicityMode: periodicity === null ? null : input.periodicityMode,

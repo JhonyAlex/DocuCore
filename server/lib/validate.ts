@@ -122,17 +122,23 @@ const nullableOptionalPeriodicityMode = optionalPeriodicityMode.nullable()
 
 export const createDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160),
-  type: z.string().trim().min(1).max(80),
+  type: z.string().trim().min(1).max(80).optional(),
+  typeId: optionalPositiveId,
   projectId: z.preprocess((value) => Number(value), z.number().int().positive()),
   assetIds: optionalAssetIds,
   issueDate: isoDateSchema,
   expiryDate: optionalDateSchema,
   periodicity: optionalPeriodicity,
   periodicityMode: optionalPeriodicityMode,
-}).strict().refine((value) => !value.periodicityMode || value.periodicity !== undefined, {
-  message: 'periodicityMode requires periodicity',
-  path: ['periodicityMode'],
-})
+}).strict()
+  .refine((value) => value.type !== undefined || value.typeId !== undefined, {
+    message: 'Either type or typeId is required',
+    path: ['type'],
+  })
+  .refine((value) => !value.periodicityMode || value.periodicity !== undefined, {
+    message: 'periodicityMode requires periodicity',
+    path: ['periodicityMode'],
+  })
 
 // Fechas de una versión nueva (POST /documents/:id/versions): el resto de
 // metadatos del documento no se reescribe al subir una versión.
@@ -144,6 +150,7 @@ export const documentVersionMetadataSchema = z.object({
 export const updateDocumentMetadataSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   type: z.string().trim().min(1).max(80).optional(),
+  typeId: nullableOptionalPositiveId,
   projectId: z.preprocess((value) => value === undefined ? undefined : Number(value), z.number().int().positive().optional()),
   assetIds: nullableOptionalAssetIds,
   issueDate: optionalDateSchema,

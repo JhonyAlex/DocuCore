@@ -178,6 +178,7 @@ model Project {
   events           Event[]
   locations        Location[]
   assetTypes       AssetType[]
+  documentTypes    DocumentType[]
   fieldDefinitions DynamicFieldDefinition[]
   statuses         Status[]
   tasks            Task[]
@@ -219,6 +220,23 @@ model AssetType {
   assets           Asset[]
   fieldDefinitions DynamicFieldDefinitionAssetType[]
   preventivePlans  PreventivePlanAssetType[]
+
+  @@unique([projectId, name])
+  @@index([projectId, isActive, sortOrder])
+}
+
+model DocumentType {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  name      String
+  iconKey   String   @default("file-text")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  documents Document[]
 
   @@unique([projectId, name])
   @@index([projectId, isActive, sortOrder])
@@ -367,17 +385,20 @@ model Document {
   name            String
   eventTitle      String?
   type            String
+  typeId          Int?
   periodicity     String?
   periodicityMode String?
   projectId       Int
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  assets   DocumentItem[]
-  project  Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  versions DocumentVersion[]
+  assets       DocumentItem[]
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  documentType DocumentType?     @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  versions     DocumentVersion[]
 
   @@index([projectId])
+  @@index([typeId])
   @@index([projectId, updatedAt, id])
 }
 

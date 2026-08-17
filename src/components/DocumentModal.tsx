@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SearchableOption } from '@/components/SearchablePicker'
 import SearchableMultiPicker, { type SelectedValue } from '@/components/SearchableMultiPicker'
 import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
-import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, fetchDocumentPreview, updateDocument, type ApiDocument, type ApiDocumentDetail, type DocumentMetadataInput } from '@/lib/api'
+import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, fetchDocumentPreview, fetchDocumentTypes, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
 import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
 import { useProject } from '@/contexts/ProjectContext'
 
@@ -13,7 +13,6 @@ type DocumentModalProps = {
   onChanged: () => void | Promise<void>
 }
 
-const documentTypes = ['Certificado', 'Calibración', 'Manual', 'Acta', 'Contrato']
 const periodicityOptions = [{ value: '', label: 'Sin periodicidad' }, ...PERIODICITIES.map((value) => ({ value, label: value }))]
 
 function dateInput(value: string | null | undefined): string {
@@ -28,8 +27,10 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const { projectId } = useProject()
   if (projectId === null) throw new Error('DocumentModal requires a project scope')
   const [detail, setDetail] = useState<ApiDocumentDetail | null>(null)
+  const [documentTypes, setDocumentTypes] = useState<ApiDocumentType[]>([])
   const [name, setName] = useState(document?.name ?? '')
-  const [type, setType] = useState(document?.type ?? documentTypes[0])
+  const [typeId, setTypeId] = useState<number | null>(document?.typeId ?? null)
+  const [type, setType] = useState(document?.type ?? '')
   const [assets, setAssets] = useState<SelectedValue[]>(() => {
     const seeded = [
       ...(document?.assets ?? []).map((asset) => ({ id: asset.id, label: `${asset.code} · ${asset.name}` })),
@@ -177,6 +178,28 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }, [onClose, saving])
 
   useEffect(() => {
+    let active = true
+    fetchDocumentTypes(projectId).then((types) => {
+      if (!active) return
+      setDocumentTypes(types)
+      if (!document && types.length > 0) {
+        setType(types[0].name)
+        setTypeId(types[0].id)
+      } else if (document) {
+        const match = types.find((t) => (document.typeId && t.id === document.typeId) || t.name.toLowerCase() === document.type.toLowerCase())
+        if (match) {
+          setType(match.name)
+          setTypeId(match.id)
+        } else {
+          setType(document.type)
+          setTypeId(document.typeId ?? null)
+        }
+      }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [projectId, document])
+
+  useEffect(() => {
     if (!document) return
     let active = true
     fetchDocument(projectId, document.id).then((next) => active && setDetail(next)).catch(() => active && setError('No se pudo cargar el historial de versiones.'))
@@ -198,6 +221,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const metadata = (): DocumentMetadataInput => ({
     name,
     type,
+    typeId: typeId ?? undefined,
     projectId,
     assetIds: assets.map((asset) => asset.id),
     issueDate,
@@ -217,7 +241,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     setSaving(true)
     try {
       if (isNew && file) await createDocument(projectId, metadata(), file)
-      if (!isNew && document) await updateDocument(projectId, document.id, { name, type, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
+      if (!isNew && document) await updateDocument(projectId, document.id, { name, type, typeId: typeId ?? undefined, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
       await onChanged()
       onClose()
     } catch {
@@ -273,7 +297,16 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-5 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label className="text-sm">Nombre<input ref={initialFocusRef} value={name} onChange={(event) => setName(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
-            <label className="text-sm">Tipo<select value={type} onChange={(event) => setType(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label className="text-sm">Tipo<select id="doc-type" value={typeId !== null ? String(typeId) : type} onChange={(event) => {
+              const selected = documentTypes.find((t) => String(t.id) === event.target.value || t.name === event.target.value)
+              if (selected) {
+                setType(selected.name)
+                setTypeId(selected.id)
+              } else {
+                setType(event.target.value)
+                setTypeId(null)
+              }
+            }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((dt) => <option key={dt.id} value={String(dt.id)}>{dt.name}</option>)}{type && !documentTypes.some((dt) => (typeId !== null && dt.id === typeId) || dt.name.toLowerCase() === type.toLowerCase()) && <option value={type}>{type}</option>}</select></label>
             <label className="text-sm">Activos asociados<SearchableMultiPicker values={assets} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={saving} onSearch={searchAssets} onChange={setAssets} /></label>
             <label className="text-sm">Emisión<input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
             <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => { setExpiryDate(event.target.value); setExpiryTouched(true) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" />{periodicity && !expiryTouched && <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}</span>}</label>

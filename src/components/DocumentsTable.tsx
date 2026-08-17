@@ -102,7 +102,7 @@ export default function DocumentsTable({ documents, selection, onRowClick, onDow
                     </div>
                   </td>
                   <td className="max-w-56 truncate px-4 py-3 text-slate-600 dark:text-slate-300" title={assetList !== '—' ? assetList : undefined}>{assetList}</td>
-                  <td className="px-4 py-3"><span className={`chip ${typeClasses[document.type] ?? typeClasses.Manual}`}>{document.type}</span></td>
+                  <td className="px-4 py-3"><span className={`chip ${typeClasses[document.documentType?.name ?? document.type] ?? typeClasses.Manual}`}>{document.documentType?.name ?? document.type}</span></td>
                   <td className="px-4 py-3 font-mono text-xs">{version ? `v${version.version}` : '—'}</td>
                   <td className="px-4 py-3 text-xs">{version ? formatApiDate(version.issueDate) : '—'}</td>
                   <td className="px-4 py-3 text-xs">{version?.expiryDate ? formatApiDate(version.expiryDate) : <span className="text-slate-400">—</span>}</td>

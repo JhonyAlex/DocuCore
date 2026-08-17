@@ -10,6 +10,7 @@ export async function createMinimalProjectConfiguration(tx: Transaction, project
     ],
   })
   await tx.assetType.create({ data: { projectId, name: 'General', iconKey: 'package', sortOrder: 0 } })
+  await tx.documentType.create({ data: { projectId, name: 'General', iconKey: 'file-text', sortOrder: 0 } })
 }
 
 /** Replaces only configuration in a project already verified as operationally empty. */
@@ -19,13 +20,15 @@ export async function clearProjectConfiguration(tx: Transaction, projectId: numb
   await tx.status.deleteMany({ where: { projectId } })
   await tx.task.deleteMany({ where: { projectId } })
   await tx.assetType.deleteMany({ where: { projectId } })
+  await tx.documentType.deleteMany({ where: { projectId } })
 }
 
 /** Copies catalog configuration only. Operational rows are intentionally absent. */
 export async function copyProjectConfiguration(tx: Transaction, sourceProjectId: number, targetProjectId: number): Promise<void> {
-  const [statuses, assetTypes, definitions, tasks, plans] = await Promise.all([
+  const [statuses, assetTypes, documentTypes, definitions, tasks, plans] = await Promise.all([
     tx.status.findMany({ where: { projectId: sourceProjectId }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] }),
     tx.assetType.findMany({ where: { projectId: sourceProjectId }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] }),
+    tx.documentType.findMany({ where: { projectId: sourceProjectId }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] }),
     tx.dynamicFieldDefinition.findMany({
       where: { projectId: sourceProjectId },
       include: { options: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] }, assetTypes: true },
@@ -41,6 +44,10 @@ export async function copyProjectConfiguration(tx: Transaction, sourceProjectId:
 
   if (statuses.length) {
     await tx.status.createMany({ data: statuses.map(({ id: _id, projectId: _projectId, createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({ ...row, projectId: targetProjectId })) })
+  }
+
+  if (documentTypes.length) {
+    await tx.documentType.createMany({ data: documentTypes.map(({ id: _id, projectId: _projectId, createdAt: _createdAt, updatedAt: _updatedAt, ...row }) => ({ ...row, projectId: targetProjectId })) })
   }
 
   const typeIds = new Map<number, number>()

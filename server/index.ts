@@ -11,6 +11,7 @@ import locationsRouter from './routes/locations'
 import metaRouter from './routes/meta'
 import dynamicFieldsRouter from './routes/dynamicFields'
 import assetTypesRouter from './routes/assetTypes'
+import documentTypesRouter from './routes/documentTypes'
 import statusesRouter from './routes/statuses'
 import tasksRouter from './routes/tasks'
 import preventivePlansRouter from './routes/preventivePlans'
@@ -169,6 +170,7 @@ for (const [path, router] of [
 for (const [path, router] of [
   ['/dynamic-fields', dynamicFieldsRouter],
   ['/asset-types', assetTypesRouter],
+  ['/document-types', documentTypesRouter],
   ['/statuses', statusesRouter],
   ['/tasks', tasksRouter],
   ['/preventive-plans', preventivePlansRouter],

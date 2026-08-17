@@ -19,6 +19,7 @@ const HistoryView = lazy(() => import('@/views/HistoryView'))
 const ConfigView = lazy(() => import('@/views/ConfigView'))
 const DynamicFieldsConfigView = lazy(() => import('@/views/DynamicFieldsConfigView'))
 const AssetTypesConfigView = lazy(() => import('@/views/AssetTypesConfigView'))
+const DocumentTypesConfigView = lazy(() => import('@/views/DocumentTypesConfigView'))
 const StatusesConfigView = lazy(() => import('@/views/StatusesConfigView'))
 const PreventivesConfigView = lazy(() => import('@/views/PreventivesConfigView'))
 const LoginView = lazy(() => import('@/views/LoginView'))
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="config" element={<DeferredRoute><ConfigView /></DeferredRoute>} />
           <Route path="config/dynamic-fields" element={<DeferredRoute><DynamicFieldsConfigView /></DeferredRoute>} />
           <Route path="config/asset-types" element={<DeferredRoute><AssetTypesConfigView /></DeferredRoute>} />
+          <Route path="config/document-types" element={<DeferredRoute><DocumentTypesConfigView /></DeferredRoute>} />
           <Route path="config/statuses" element={<DeferredRoute><StatusesConfigView /></DeferredRoute>} />
           <Route path="config/preventives" element={<DeferredRoute><PreventivesConfigView /></DeferredRoute>} />
           <Route path="config/users" element={<DeferredRoute><UsersConfigView /></DeferredRoute>} />
@@ -126,6 +128,7 @@ export default function App() {
         <Route path="/config" element={<LegacyProjectRedirect section="/config" />} />
         <Route path="/config/dynamic-fields" element={<LegacyProjectRedirect section="/config/dynamic-fields" />} />
         <Route path="/config/asset-types" element={<LegacyProjectRedirect section="/config/asset-types" />} />
+        <Route path="/config/document-types" element={<LegacyProjectRedirect section="/config/document-types" />} />
         <Route path="/config/statuses" element={<LegacyProjectRedirect section="/config/statuses" />} />
         <Route path="/config/preventives" element={<LegacyProjectRedirect section="/config/preventives" />} />
         <Route path="/config/tasks" element={<LegacyProjectRedirect section="/config/preventives" />} />
