@@ -31,6 +31,7 @@ import { requireProjectScope } from './lib/projectScope'
 import { optionalAuth, requireAuth } from './lib/auth'
 import { validateBillingConfiguration } from './lib/billing'
 import { validateEmailConfiguration } from './lib/email'
+import { getVersionInfo } from './lib/version'
 import prisma from './lib/prisma'
 
 const app = express()
@@ -71,6 +72,33 @@ app.use(optionalAuth)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
+})
+
+// Identidad inequívoca del release desplegado (GIT_SHA / APP_VERSION).
+// Público, como /api/health, para que el pipeline de despliegue pueda
+// verificar contra el commit esperado sin autenticación.
+app.get('/api/version', (_req, res) => {
+  res.json(getVersionInfo())
+})
+
+// Estado de migraciones Prisma: permite al pipeline de despliegue confirmar
+// que no quedan migraciones en estado fallido (finished_at nulo y no
+// rolled_back) tras el `prisma migrate deploy` del arranque.
+app.get('/api/migrations', async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ finished_at: Date | null; rolled_back_at: Date | null; migration_name: string }>>(
+      'SELECT "migration_name", "finished_at", "rolled_back_at" FROM "_prisma_migrations" ORDER BY "finished_at" DESC, "started_at" DESC'
+    )
+    const failed = rows.filter((r) => r.finished_at === null && r.rolled_back_at === null)
+    res.json({
+      applied: rows.length,
+      failed: failed.length,
+      latest: rows[0]?.migration_name ?? null,
+      failedNames: failed.map((r) => r.migration_name),
+    })
+  } catch {
+    res.json({ applied: 0, failed: 0, latest: null, failedNames: [] })
+  }
 })
 
 app.get('/api/ready', async (_req, res) => {
@@ -132,6 +160,7 @@ app.get('/api/ready', async (_req, res) => {
     storage: 'ok',
     billing: 'configured',
     email: 'configured',
+    version: getVersionInfo(),
     timestamp: new Date().toISOString(),
   })
 })

@@ -25,6 +25,32 @@ describe("SAAS-06 Health & Readiness API", () => {
     }
   })
 
+  it("serves /api/version and /api/migrations for release identification", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    try {
+      const versionRes = await fetch(`${baseUrl}/api/version`)
+      expect(versionRes.status).toBe(200)
+      const versionData = await versionRes.json()
+      expect(typeof versionData.nodeVersion).toBe("string")
+      expect(versionData).toHaveProperty("appVersion")
+      expect(versionData).toHaveProperty("gitSha")
+      expect(versionData).toHaveProperty("buildTime")
+
+      const migRes = await fetch(`${baseUrl}/api/migrations`)
+      expect(migRes.status).toBe(200)
+      const migData = await migRes.json()
+      expect(typeof migData.applied).toBe("number")
+      expect(migData.failed).toBe(0)
+      expect(Array.isArray(migData.failedNames)).toBe(true)
+    } finally {
+      server.close()
+    }
+  })
+
   it("returns 503 from /api/ready when production configuration is incomplete", async () => {
     const originalEnv = { ...process.env }
     process.env.NODE_ENV = "production"
