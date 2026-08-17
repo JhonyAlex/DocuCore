@@ -462,16 +462,16 @@ export default function LocationsView() {
                     key={asset.id}
                     type="button"
                     onClick={() => ficha.open(asset.id)}
-                    className="w-full flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer text-left"
+                    className="w-full flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 cursor-pointer text-left"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
-                      <div>
-                        <div className="text-sm font-medium">{asset.code} · {asset.name}</div>
-                        <div className="text-xs text-slate-500">Instalado: {asset.installedDate}</div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-8 h-8 shrink-0 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate" title={`${asset.code} · ${asset.name}`}>{asset.code} · {asset.name}</div>
+                        <div className="text-xs text-slate-500 truncate">Instalado: {asset.installedDate}</div>
                       </div>
                     </div>
-                    <span className={`chip ${asset.statusChipClass}`}>{asset.statusLabel}</span>
+                    <span className={`chip shrink-0 ${asset.statusChipClass}`}>{asset.statusLabel}</span>
                   </button>
                 ))}
                 {displayedAssets.length === 0 && (

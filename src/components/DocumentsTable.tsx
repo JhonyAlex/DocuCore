@@ -52,7 +52,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
             <tr>
-              <th className="w-10 px-4 py-3">
+              <th className="w-10 px-4 py-3 whitespace-nowrap">
                 <input
                   type="checkbox"
                   aria-label="Seleccionar todos los documentos"
@@ -63,31 +63,31 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
                   onChange={() => selection.toggleAll(ids)}
                 />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Documento" field="name" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Activos asociados" field="assets" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Tipo" field="type" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Versión" field="version" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Emisión" field="issueDate" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Vencimiento" field="expiryDate" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Periodicidad" field="periodicity" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="px-4 py-3 text-left">
+              <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Estado" field="status" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="w-14 px-4 py-3" />
+              <th className="w-14 px-4 py-3 whitespace-nowrap" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -104,7 +104,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
 
               return (
                 <tr key={document.id} onClick={() => onRowClick(document)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       aria-label={`Seleccionar ${document.name}`}
@@ -112,23 +112,23 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
                       onChange={() => selection.toggle(document.id)}
                     />
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-lg ${documentIconClasses[document.type] ?? documentIconClasses.Manual} flex items-center justify-center text-xs font-bold`}>{format}</div>
-                      <div className="min-w-0">
-                        <button type="button" onClick={(event) => { event.stopPropagation(); onRowClick(document) }} title={document.name} className="block max-w-72 truncate font-medium text-left hover:text-brand-600">{document.name}</button>
-                        <div className="truncate text-xs text-slate-500">{version ? `${formatDocumentSize(version.sizeBytes)} · Subido ${formatApiDate(version.uploadedAt)}` : 'Sin versiones'}</div>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-3 min-w-0 max-w-xs">
+                      <div className={`w-9 h-9 shrink-0 rounded-lg ${documentIconClasses[document.type] ?? documentIconClasses.Manual} flex items-center justify-center text-xs font-bold`}>{format}</div>
+                      <div className="min-w-0 flex-1">
+                        <button type="button" onClick={(event) => { event.stopPropagation(); onRowClick(document) }} title={document.name} className="block w-full truncate font-medium text-left hover:text-brand-600">{document.name}</button>
+                        <div className="truncate text-xs text-slate-500" title={version ? `${formatDocumentSize(version.sizeBytes)} · Subido ${formatApiDate(version.uploadedAt)}` : 'Sin versiones'}>{version ? `${formatDocumentSize(version.sizeBytes)} · Subido ${formatApiDate(version.uploadedAt)}` : 'Sin versiones'}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="max-w-56 truncate px-4 py-3 text-slate-600 dark:text-slate-300" title={assetList !== '—' ? assetList : undefined}>{assetList}</td>
-                  <td className="px-4 py-3"><span className={`chip ${typeClasses[document.documentType?.name ?? document.type] ?? typeClasses.Manual}`}>{document.documentType?.name ?? document.type}</span></td>
-                  <td className="px-4 py-3 font-mono text-xs">{version ? `v${version.version}` : '—'}</td>
-                  <td className="px-4 py-3 text-xs">{version ? formatApiDate(version.issueDate) : '—'}</td>
-                  <td className="px-4 py-3 text-xs">{version?.expiryDate ? formatApiDate(version.expiryDate) : <span className="text-slate-400">—</span>}</td>
-                  <td className="px-4 py-3 text-xs">{document.periodicity ? `${document.periodicity} · ${document.periodicityMode}` : <span className="text-slate-400">—</span>}</td>
-                  <td className="px-4 py-3">{document.status ? <span className={`chip ${statusClasses[document.status]}`}>{document.status}</span> : <span className="text-slate-400">—</span>}</td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="max-w-56 truncate px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap" title={assetList !== '—' ? assetList : undefined}>{assetList}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><span className={`chip ${typeClasses[document.documentType?.name ?? document.type] ?? typeClasses.Manual}`}>{document.documentType?.name ?? document.type}</span></td>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{version ? `v${version.version}` : '—'}</td>
+                  <td className="px-4 py-3 text-xs whitespace-nowrap">{version ? formatApiDate(version.issueDate) : '—'}</td>
+                  <td className="px-4 py-3 text-xs whitespace-nowrap">{version?.expiryDate ? formatApiDate(version.expiryDate) : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-3 text-xs whitespace-nowrap max-w-44 truncate" title={document.periodicity ? `${document.periodicity} · ${document.periodicityMode}` : undefined}>{document.periodicity ? `${document.periodicity} · ${document.periodicityMode}` : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{document.status ? <span className={`chip ${statusClasses[document.status]}`}>{document.status}</span> : <span className="text-slate-400">—</span>}</td>
+                  <td className="w-14 px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <RowActionsMenu items={items} ariaLabel={`Acciones de ${document.name}`} />
                   </td>
                 </tr>

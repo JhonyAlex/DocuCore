@@ -11,7 +11,7 @@ interface SessionContextValue {
   logout: () => Promise<void>
   refreshSession: () => Promise<void>
   reload: () => void
-  setSession: (session: ApiSession | null) => void
+  setSession: (session: ApiSession | null | ((prev: ApiSession | null) => ApiSession | null)) => void
 }
 
 export const SessionContext = createContext<SessionContextValue | null>(null)

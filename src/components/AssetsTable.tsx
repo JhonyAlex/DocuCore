@@ -72,40 +72,40 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
             <tr>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <input type="checkbox" className="rounded" checked={allSelected} ref={(el) => { if (el) el.indeterminate = someSelected }} onChange={() => onToggleSelectPage(assetIds)} aria-label="Seleccionar todos los activos de la página" />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Código" field="code" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Nombre" field="name" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Tipo" field="type" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Ubicación" field="location" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Estado" field="status" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label={trashMode ? 'Eliminación' : 'Próximo evento'} field={trashMode ? 'deletedAt' : 'nextEvent'} currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-left px-4 py-3 font-medium">
+              <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Responsable" field="responsible" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-right px-4 py-3 font-medium">Acciones</th>
+              <th className="text-right px-4 py-3 font-medium whitespace-nowrap">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {loading &&
               Array.from({ length: 6 }).map((_, i) => (
                 <tr key={`sk-${i}`}>
-                  <td className="px-4 py-3"><div className="h-4 w-4 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
-                  <td className="px-4 py-3"><div className="h-3 w-12 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap"><div className="h-4 w-4 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="px-4 py-3 whitespace-nowrap"><div className="h-3 w-12 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 animate-pulse" />
                       <div className="space-y-1">
@@ -114,22 +114,22 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3"><div className="h-5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
-                  <td className="px-4 py-3"><div className="h-3 w-28 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
-                  <td className="px-4 py-3"><div className="h-5 w-20 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap"><div className="h-5 w-16 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="px-4 py-3 whitespace-nowrap"><div className="h-3 w-28 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="px-4 py-3 whitespace-nowrap"><div className="h-5 w-20 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="space-y-1">
                       <div className="h-3 w-24 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
                       <div className="h-2 w-16 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 animate-pulse" />
                       <div className="h-3 w-16 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right"><div className="h-4 w-4 ml-auto rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap"><div className="h-4 w-4 ml-auto rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
                 </tr>
               ))}
             {!loading && error && (
@@ -151,47 +151,47 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
               !error &&
               assets.map((asset) => (
                 <tr key={asset.id} onClick={() => !trashMode && onRowClick(asset)} className={`${trashMode ? '' : 'hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer'}`}>
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="rounded" checked={selectedIds.has(asset.id)} onChange={() => onToggleSelect(asset.id)} aria-label={`Seleccionar ${asset.code}`} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{asset.code}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
-                      <div>
-                        <div className="font-medium">{asset.name}</div>
-                        <div className="text-xs text-slate-500">{asset.serialLabel}</div>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{asset.code}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-3 min-w-0 max-w-xs">
+                      <div className={`w-8 h-8 shrink-0 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate" title={asset.name}>{asset.name}</div>
+                        <div className="text-xs text-slate-500 truncate" title={asset.serialLabel}>{asset.serialLabel}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3"><span className={`chip ${asset.typeChipClass}`}>{asset.type}</span></td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{asset.location}</td>
-                  <td className="px-4 py-3"><StatusChip label={asset.status} chipClass={asset.statusChipClass} pulseDot={asset.pulseDot} /></td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap"><span className={`chip ${asset.typeChipClass}`}>{asset.type}</span></td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap max-w-44 truncate" title={asset.location}>{asset.location}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><StatusChip label={asset.status} chipClass={asset.statusChipClass} pulseDot={asset.pulseDot} /></td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {trashMode ? (
                       asset.deletedLabel ? (
-                        <div className="text-xs text-red-600 dark:text-red-400">{asset.deletedLabel}</div>
+                        <div className="text-xs text-red-600 dark:text-red-400 max-w-36 truncate" title={asset.deletedLabel}>{asset.deletedLabel}</div>
                       ) : (
                         <div className="text-xs text-slate-400">—</div>
                       )
                     ) : (
                       asset.nextEvent ? (
-                        <>
-                          <div className="text-xs">{asset.nextEvent.label}</div>
-                          <div className={`text-xs ${urgencyClass[asset.nextEvent.urgency]}`}>{asset.nextEvent.date}</div>
-                        </>
+                        <div className="min-w-0 max-w-40">
+                          <div className="text-xs truncate" title={asset.nextEvent.label}>{asset.nextEvent.label}</div>
+                          <div className={`text-xs truncate ${urgencyClass[asset.nextEvent.urgency]}`}>{asset.nextEvent.date}</div>
+                        </div>
                       ) : (
                         <div className="text-xs text-slate-400">Sin eventos programados</div>
                       )
                     )}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-6 h-6 rounded-full ${asset.responsibleColor} text-white text-xs font-medium flex items-center justify-center`}>{asset.responsibleInitials}</div>
-                      <span className="text-xs">{asset.responsible}</span>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-2 min-w-0 max-w-36">
+                      <div className={`w-6 h-6 shrink-0 rounded-full ${asset.responsibleColor} text-white text-xs font-medium flex items-center justify-center`}>{asset.responsibleInitials}</div>
+                      <span className="text-xs truncate" title={asset.responsible}>{asset.responsible}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <RowActionsMenu items={menuItemsFor(asset, trashMode, { onDuplicate, onDelete, onRestore, onPurge })} ariaLabel={`Acciones de ${asset.code}`} />
                   </td>
                 </tr>

@@ -114,25 +114,28 @@ export default function DynamicFieldsConfigView() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
-                  <th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Seleccionar todos los campos" checked={selection.allSelected(ids)} ref={(node) => { if (node) node.indeterminate = selection.someSelected(ids) }} onChange={() => selection.toggleAll(ids)} /></th>
-                  <th className="px-4 py-3 text-left">Campo</th>
-                  <th className="px-4 py-3 text-left">Tipo</th>
-                  <th className="px-4 py-3 text-left">Tipos de activo</th>
-                  <th className="px-4 py-3 text-left">Uso</th>
-                  <th className="w-14 px-4 py-3" />
+                  <th className="w-10 px-4 py-3 whitespace-nowrap"><input type="checkbox" aria-label="Seleccionar todos los campos" checked={selection.allSelected(ids)} ref={(node) => { if (node) node.indeterminate = selection.someSelected(ids) }} onChange={() => selection.toggleAll(ids)} /></th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Campo</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Tipo</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Tipos de activo</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Uso</th>
+                  <th className="w-14 px-4 py-3 whitespace-nowrap" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {fields.map((field) => (
-                  <tr key={field.id} className={!field.isActive ? 'opacity-55' : ''}>
-                    <td className="px-4 py-3"><input type="checkbox" aria-label={`Seleccionar ${field.fieldName}`} checked={selection.isSelected(field.id)} onChange={() => selection.toggle(field.id)} /></td>
-                    <td className="px-4 py-3"><div className="font-medium">{field.fieldName}{field.required && <span className="ml-1 text-red-500">*</span>}</div><div className="text-xs text-slate-400">{field.groupName} · {field.key}</div></td>
-                    <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{typeLabels[field.fieldType]}</span></td>
-                    <td className="max-w-xs px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{field.assetTypes.map((type) => type.name).join(', ')}</td>
-                    <td className="px-4 py-3 text-xs">{field.usageCount} activos</td>
-                    <td className="px-4 py-3"><RowActionsMenu ariaLabel={`Acciones de ${field.fieldName}`} items={[{ label: 'Editar', onSelect: () => { setFormError(null); setFormField(field) } }, ...(field.isActive ? [{ label: 'Archivar', variant: 'danger' as const, onSelect: () => setArchiveIds([field.id]) }] : [])]} /></td>
-                  </tr>
-                ))}
+                {fields.map((field) => {
+                  const assetTypesList = field.assetTypes.map((type) => type.name).join(', ')
+                  return (
+                    <tr key={field.id} className={!field.isActive ? 'opacity-55' : ''}>
+                      <td className="px-4 py-3 whitespace-nowrap"><input type="checkbox" aria-label={`Seleccionar ${field.fieldName}`} checked={selection.isSelected(field.id)} onChange={() => selection.toggle(field.id)} /></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><div className="font-medium max-w-xs truncate" title={field.fieldName}>{field.fieldName}{field.required && <span className="ml-1 text-red-500">*</span>}</div><div className="text-xs text-slate-400 truncate">{field.groupName} · {field.key}</div></td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{typeLabels[field.fieldType]}</span></td>
+                      <td className="max-w-xs px-4 py-3 text-xs text-slate-600 dark:text-slate-300 truncate whitespace-nowrap" title={assetTypesList}>{assetTypesList}</td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap">{field.usageCount} activos</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><RowActionsMenu ariaLabel={`Acciones de ${field.fieldName}`} items={[{ label: 'Editar', onSelect: () => { setFormError(null); setFormField(field) } }, ...(field.isActive ? [{ label: 'Archivar', variant: 'danger' as const, onSelect: () => setArchiveIds([field.id]) }] : [])]} /></td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

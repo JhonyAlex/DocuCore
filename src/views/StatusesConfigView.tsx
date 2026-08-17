@@ -175,7 +175,7 @@ export default function StatusesConfigView() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
-                  <th className="w-10 px-4 py-3">
+                  <th className="w-10 px-4 py-3 whitespace-nowrap">
                     <input
                       type="checkbox"
                       aria-label="Seleccionar todos los estados"
@@ -186,17 +186,17 @@ export default function StatusesConfigView() {
                       onChange={() => selection.toggleAll(activeIds)}
                     />
                   </th>
-                  <th className="px-4 py-3 text-left">Estado</th>
-                  <th className="px-4 py-3 text-left">Visualización</th>
-                  <th className="px-4 py-3 text-left">Visibilidad</th>
-                  <th className="px-4 py-3 text-left">Activos</th>
-                  <th className="w-14 px-4 py-3" />
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Visualización</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Visibilidad</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Activos</th>
+                  <th className="w-14 px-4 py-3 whitespace-nowrap" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {statuses.map((statusItem) => (
                   <tr key={statusItem.id} className={statusItem.isActive === false ? 'opacity-55' : ''}>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <input
                         type="checkbox"
                         aria-label={`Seleccionar ${statusItem.name}`}
@@ -205,21 +205,21 @@ export default function StatusesConfigView() {
                         onChange={() => selection.toggle(statusItem.id)}
                       />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900 dark:text-slate-100">{statusItem.name}</div>
-                      <div className="text-xs text-slate-400">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-medium text-slate-900 dark:text-slate-100 max-w-xs truncate" title={statusItem.name}>{statusItem.name}</div>
+                      <div className="text-xs text-slate-400 truncate">
                         Estado {statusItem.id} · {statusItem.color ?? 'emerald'}
                         {statusItem.pulseDot ? ' · Alerta pulsante' : ''}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <StatusChip
                         label={statusItem.name}
                         chipClass={statusColorMap[statusItem.color ?? 'emerald'] ?? statusColorMap.emerald}
                         pulseDot={statusItem.pulseDot as PulseColor | undefined}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`rounded-full px-2 py-1 text-xs ${
                           statusItem.isActive === false
@@ -230,8 +230,8 @@ export default function StatusesConfigView() {
                         {statusItem.isActive === false ? 'Archivado' : 'Activo'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs">{statusItem.assetCount ?? 0}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">{statusItem.assetCount ?? 0}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <RowActionsMenu
                         ariaLabel={`Acciones de ${statusItem.name}`}
                         items={[

@@ -986,6 +986,13 @@ export function changePassword(input: { currentPassword: string; newPassword: st
   return request<void>('/auth/password', { method: 'POST', body: JSON.stringify(input) })
 }
 
+export function updateProfile(input: { name: string; initials?: string }): Promise<{ user: ApiSessionUser }> {
+  return request<{ user: ApiSessionUser }>('/auth/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
 export function fetchBillingStatus(): Promise<import('@/types').ApiBillingStatus> {
   return request<import('@/types').ApiBillingStatus>('/billing/status')
 }

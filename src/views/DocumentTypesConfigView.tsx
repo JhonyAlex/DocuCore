@@ -114,37 +114,37 @@ export default function DocumentTypesConfigView() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
-                  <th className="w-10 px-4 py-3">
+                  <th className="w-10 px-4 py-3 whitespace-nowrap">
                     <input type="checkbox" aria-label="Seleccionar todos los tipos" checked={selection.allSelected(activeIds)} ref={(node) => { if (node) node.indeterminate = selection.someSelected(activeIds) }} onChange={() => selection.toggleAll(activeIds)} />
                   </th>
-                  <th className="px-4 py-3 text-left">Tipo de documento</th>
-                  <th className="px-4 py-3 text-left">Estado</th>
-                  <th className="px-4 py-3 text-left">Documentos</th>
-                  <th className="w-14 px-4 py-3" />
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Tipo de documento</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Documentos</th>
+                  <th className="w-14 px-4 py-3 whitespace-nowrap" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {types.map((type) => (
                   <tr key={type.id} className={type.isActive === false ? 'opacity-55' : ''}>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <input type="checkbox" aria-label={`Seleccionar ${type.name}`} disabled={type.isActive === false} checked={selection.isSelected(type.id)} onChange={() => selection.toggle(type.id)} />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 font-medium">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2 font-medium min-w-0 max-w-xs">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
                           <DocumentIcon iconKey={type.iconKey} size={16} />
                         </span>
-                        {type.name}
+                        <span className="truncate" title={type.name}>{type.name}</span>
                       </div>
-                      <div className="text-xs text-slate-400">Tipo {type.id} · {type.iconKey}</div>
+                      <div className="text-xs text-slate-400 truncate">Tipo {type.id} · {type.iconKey}</div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`rounded-full px-2 py-1 text-xs ${type.isActive === false ? 'bg-slate-100 text-slate-500 dark:bg-slate-800' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
                         {type.isActive === false ? 'Archivado' : 'Activo'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs">{type.documentCount ?? 0}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">{type.documentCount ?? 0}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <RowActionsMenu
                         ariaLabel={`Acciones de ${type.name}`}
                         items={[

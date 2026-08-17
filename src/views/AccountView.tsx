@@ -4,17 +4,25 @@ import {
   createBillingCheckoutSession,
   createBillingPortalSession,
   fetchBillingStatus,
+  updateProfile,
 } from "@/lib/api"
 import type { ApiBillingStatus, PlanKey } from "@/types"
 import { useSession } from "@/contexts/SessionContext"
 
 export default function AccountView() {
-  const { user } = useSession()
+  const { user, setSession } = useSession()
   const [billing, setBilling] = useState<ApiBillingStatus | null>(null)
   const [loadingBilling, setLoadingBilling] = useState(true)
   const [billingActionBusy, setBillingActionBusy] = useState(false)
   const [billingError, setBillingError] = useState<string | null>(null)
   const [downgradeNotice, setDowngradeNotice] = useState<string | null>(null)
+
+  const [name, setName] = useState(user?.name ?? "")
+  const [initials, setInitials] = useState(user?.initials ?? "")
+  const [profileMessage, setProfileMessage] = useState<string | null>(null)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileBusy, setProfileBusy] = useState(false)
+  const [initialsCustomized, setInitialsCustomized] = useState(false)
 
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -22,6 +30,13 @@ export default function AccountView() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name)
+      setInitials(user.initials)
+    }
+  }, [user])
 
   const loadBilling = () => {
     fetchBillingStatus()
@@ -92,17 +107,147 @@ export default function AccountView() {
     }
   }
 
+  const handleNameChange = (val: string) => {
+    setName(val)
+    if (!initialsCustomized) {
+      const autoInitials = val
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join("")
+      setInitials(autoInitials || "")
+    }
+  }
+
+  const handleInitialsChange = (val: string) => {
+    setInitials(val)
+    setInitialsCustomized(true)
+  }
+
+  const submitProfile = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setProfileBusy(true)
+    setProfileError(null)
+    setProfileMessage(null)
+    try {
+      const res = await updateProfile({ name: name.trim(), initials: initials.trim() || undefined })
+      if (user) {
+        setSession((prev) => prev ? { ...prev, user: { ...prev.user, ...res.user } } : null)
+      }
+      setProfileMessage("Nombre de usuario actualizado correctamente.")
+      setInitialsCustomized(false)
+    } catch (reason) {
+      setProfileError(reason instanceof Error ? reason.message : "No se pudo actualizar el perfil.")
+    } finally {
+      setProfileBusy(false)
+    }
+  }
+
   const isStarterActive = billing?.billingStatus === "ACTIVE" && billing?.planKey === "STARTER"
   const isProActive = billing?.billingStatus === "ACTIVE" && billing?.planKey === "PRO"
+
+  const isProfileUnchanged =
+    name.trim() === (user?.name ?? "") &&
+    initials.trim() === (user?.initials ?? "")
 
   return (
     <div className="max-w-4xl space-y-8 fade-in pb-12">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Mi cuenta</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Gestiona los datos de tu espacio de trabajo, suscripción, planes y seguridad de acceso.
+          Gestiona los datos de tu perfil, espacio de trabajo, suscripción, planes y seguridad de acceso.
         </p>
       </div>
+
+      {/* User Profile Section */}
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-100 text-base font-bold text-brand-700 dark:bg-brand-950 dark:text-brand-300 ring-2 ring-brand-500/20">
+            {initials.trim() || user?.initials || "US"}
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Perfil de usuario
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Actualiza tu nombre visible en la plataforma y tus iniciales de identificación.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={(event) => void submitProfile(event)} className="mt-5 space-y-4 max-w-lg">
+          {profileError && (
+            <p role="alert" className="text-xs text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/40 p-2.5 rounded-lg">
+              {profileError}
+            </p>
+          )}
+          {profileMessage && (
+            <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-lg">
+              {profileMessage}
+            </p>
+          )}
+
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Nombre de usuario / Nombre completo
+            <input
+              required
+              id="account-user-name"
+              type="text"
+              minLength={2}
+              maxLength={120}
+              value={name}
+              onChange={(event) => handleNameChange(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900 outline-none focus:border-brand-500"
+            />
+          </label>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Iniciales
+              <input
+                id="account-user-initials"
+                type="text"
+                maxLength={8}
+                value={initials}
+                onChange={(event) => handleInitialsChange(event.target.value)}
+                placeholder="ej. MF"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900 outline-none focus:border-brand-500 uppercase"
+              />
+            </label>
+
+            <div>
+              <span className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                Rol asignado
+              </span>
+              <div className="mt-1 flex h-8 items-center px-3 text-xs font-medium text-slate-600 bg-slate-50 dark:bg-slate-800 dark:text-slate-400 rounded-lg border border-slate-200 dark:border-slate-700">
+                {user?.role ?? "Usuario"}
+              </div>
+            </div>
+          </div>
+
+          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+            Correo electrónico de acceso
+            <input
+              disabled
+              type="email"
+              value={user?.email ?? ""}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
+            />
+            <span className="mt-1 block text-[11px] text-slate-400">
+              El correo electrónico identifica tu cuenta de acceso a DocuCore.
+            </span>
+          </label>
+
+          <button
+            disabled={profileBusy || isProfileUnchanged || name.trim().length < 2}
+            type="submit"
+            className="rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
+          >
+            {profileBusy ? "Guardando…" : "Guardar cambios"}
+          </button>
+        </form>
+      </section>
 
       {/* Subscription & Billing Section */}
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

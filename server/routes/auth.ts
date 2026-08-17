@@ -79,6 +79,11 @@ const resetPasswordSchema = z.object({
   confirmPassword: z.string().min(12).max(256),
 }).strict()
 
+const updateProfileSchema = z.object({
+  name: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres.").max(120, "El nombre no puede superar 120 caracteres."),
+  initials: z.string().trim().min(1, "Las iniciales deben tener al menos 1 carácter.").max(8, "Las iniciales no pueden superar 8 caracteres.").optional(),
+}).strict()
+
 router.post("/register", asyncHandler(async (req, res) => {
   const ip = req.ip || "unknown"
   if (!checkRateLimit(`register|${ip}`, 10, 60 * 60 * 1000)) {
@@ -450,6 +455,48 @@ router.post("/password", requireAuth, asyncHandler(async (req, res) => {
   })
 
   res.status(204).end()
+}))
+
+router.patch("/profile", requireAuth, asyncHandler(async (req, res) => {
+  const input = updateProfileSchema.parse(req.body)
+  const userId = authenticatedUserId(req)
+
+  const initials = input.initials && input.initials.length > 0
+    ? input.initials
+    : (input.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "US")
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.update({
+      where: { id: userId },
+      data: {
+        name: input.name,
+        initials,
+      },
+    })
+
+    const membership = await tx.workspaceMember.findFirst({
+      where: { userId },
+    })
+
+    await tx.auditLog.create({
+      data: {
+        workspaceId: membership?.workspaceId ?? null,
+        userId,
+        action: "Perfil de usuario actualizado",
+        entityId: `user:${userId}`,
+        detail: JSON.stringify({
+          name: user.name,
+          initials: user.initials,
+        }),
+      },
+    })
+
+    return user
+  })
+
+  res.json({
+    user: publicUser(updated),
+  })
 }))
 
 export default router

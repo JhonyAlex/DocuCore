@@ -83,11 +83,11 @@ export default function HistoryView() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
             <tr>
-              <th className="text-left px-4 py-3">Fecha</th>
-              <th className="text-left px-4 py-3">Usuario</th>
-              <th className="text-left px-4 py-3">Acción</th>
-              <th className="text-left px-4 py-3">Entidad</th>
-              <th className="text-left px-4 py-3">Detalle</th>
+              <th className="text-left px-4 py-3 whitespace-nowrap">Fecha</th>
+              <th className="text-left px-4 py-3 whitespace-nowrap">Usuario</th>
+              <th className="text-left px-4 py-3 whitespace-nowrap">Acción</th>
+              <th className="text-left px-4 py-3 whitespace-nowrap">Entidad</th>
+              <th className="text-left px-4 py-3 whitespace-nowrap">Detalle</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -96,15 +96,15 @@ export default function HistoryView() {
             )) : history.map((log) => (
               <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                 <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatApiDateTime(log.timestamp)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-6 h-6 rounded-full ${responsibleColorMap[log.user.color] ?? 'bg-brand-500'} text-white text-xs font-medium flex items-center justify-center`}>{log.user.initials}</div>
-                    <span>{log.user.name}</span>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex items-center gap-2 min-w-0 max-w-44">
+                    <div className={`w-6 h-6 shrink-0 rounded-full ${responsibleColorMap[log.user.color] ?? 'bg-brand-500'} text-white text-xs font-medium flex items-center justify-center`}>{log.user.initials}</div>
+                    <span className="truncate text-xs font-medium" title={log.user.name}>{log.user.name}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3"><span className={`chip ${getHistoryActionChipClass(log.action)}`}>{log.action}</span></td>
-                <td className="px-4 py-3 font-mono text-xs">{log.entityId}</td>
-                <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">{log.detail}</td>
+                <td className="px-4 py-3 whitespace-nowrap"><span className={`chip ${getHistoryActionChipClass(log.action)}`}>{log.action}</span></td>
+                <td className="px-4 py-3 font-mono text-xs whitespace-nowrap max-w-36 truncate" title={log.entityId}>{log.entityId}</td>
+                <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-md truncate whitespace-nowrap" title={log.detail}>{log.detail}</td>
               </tr>
             ))}
             {!loading && history.length === 0 && (

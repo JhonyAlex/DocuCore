@@ -83,4 +83,67 @@ describe('AUTH-01 authentication', () => {
     const editor = await raw('/api/users?projectId=1', { headers: { 'x-docucore-test-actor-id': '2' } })
     expect(editor.status).toBe(403)
   })
+
+  it('updates the authenticated user name and initials, validating inputs and persisting across sessions', async () => {
+    const login = await raw('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'maria@docucore.local', password: 'DocuCore!2026' }),
+    })
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]
+
+    // 1. Rejects unauthenticated request
+    const unauth = await raw('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-docucore-test-unauthenticated': 'true' },
+      body: JSON.stringify({ name: 'Nombre Inválido' }),
+    })
+    expect(unauth.status).toBe(401)
+
+    // 2. Rejects invalid input (< 2 characters)
+    const invalid = await raw('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'A' }),
+    })
+    expect(invalid.status).toBe(400)
+
+    // 3. Successfully updates name and custom initials
+    const updatedWithCustomInitials = await raw('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'María F. Actualizada', initials: 'MFA' }),
+    })
+    expect(updatedWithCustomInitials.status).toBe(200)
+    expect(await updatedWithCustomInitials.json()).toMatchObject({
+      user: {
+        name: 'María F. Actualizada',
+        initials: 'MFA',
+      },
+    })
+
+    // 4. GET /api/auth/session reflects the new name and initials
+    const sessionRes = await raw('/api/auth/session', { headers: { cookie } })
+    expect(sessionRes.status).toBe(200)
+    expect(await sessionRes.json()).toMatchObject({
+      user: {
+        name: 'María F. Actualizada',
+        initials: 'MFA',
+      },
+    })
+
+    // 5. Automatically generates initials when omitted
+    const autoInitials = await raw('/api/auth/profile', {
+      method: 'PATCH',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'María Fernández' }),
+    })
+    expect(autoInitials.status).toBe(200)
+    expect(await autoInitials.json()).toMatchObject({
+      user: {
+        name: 'María Fernández',
+        initials: 'MF',
+      },
+    })
+  })
 })

@@ -352,7 +352,7 @@ export default function PreventivesConfigView() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                      <th className="w-10 px-4 py-3">
+                      <th className="w-10 px-4 py-3 whitespace-nowrap">
                         <input
                           type="checkbox"
                           aria-label="Seleccionar todos los planes"
@@ -363,68 +363,71 @@ export default function PreventivesConfigView() {
                           onChange={() => planSelection.toggleAll(planIds)}
                         />
                       </th>
-                      <th className="px-4 py-3 text-left">Plan preventivo</th>
-                      <th className="px-4 py-3 text-left">Periodicidad</th>
-                      <th className="px-4 py-3 text-left">Tareas ({tasks.length})</th>
-                      <th className="px-4 py-3 text-left">Tipos de activo</th>
-                      <th className="px-4 py-3 text-left">Estado</th>
-                      <th className="w-14 px-4 py-3" />
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Plan preventivo</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Periodicidad</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Tareas ({tasks.length})</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Tipos de activo</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
+                      <th className="w-14 px-4 py-3 whitespace-nowrap" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {plans.map((plan) => (
-                      <tr key={plan.id} className={!plan.isActive ? 'opacity-55' : ''}>
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            aria-label={`Seleccionar ${plan.name}`}
-                            checked={planSelection.isSelected(plan.id)}
-                            onChange={() => planSelection.toggle(plan.id)}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900 dark:text-slate-100">{plan.name}</div>
-                          {plan.description && <div className="text-xs text-slate-400">{plan.description}</div>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-                            {plan.periodicity} · {plan.periodicityMode}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">{plan.tasks.length} tareas</div>
-                          <div className="max-w-xs truncate text-xs text-slate-400">
-                            {plan.tasks.map((t) => t.code).join(', ')}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
-                          {plan.assetTypes.length > 0 ? plan.assetTypes.map((at) => at.name).join(', ') : 'Todos'}
-                        </td>
-                        <td className="px-4 py-3">
-                          {plan.isActive ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              Activo
+                    {plans.map((plan) => {
+                      const assetTypesList = plan.assetTypes.length > 0 ? plan.assetTypes.map((at) => at.name).join(', ') : 'Todos'
+                      return (
+                        <tr key={plan.id} className={!plan.isActive ? 'opacity-55' : ''}>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              aria-label={`Seleccionar ${plan.name}`}
+                              checked={planSelection.isSelected(plan.id)}
+                              onChange={() => planSelection.toggle(plan.id)}
+                            />
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="font-medium text-slate-900 dark:text-slate-100 max-w-xs truncate" title={plan.name}>{plan.name}</div>
+                            {plan.description && <div className="text-xs text-slate-400 max-w-xs truncate" title={plan.description}>{plan.description}</div>}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+                              {plan.periodicity} · {plan.periodicityMode}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                              Inactivo
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <RowActionsMenu
-                            ariaLabel={`Acciones de ${plan.name}`}
-                            items={[
-                              { label: 'Editar', onSelect: () => openPlanModal(plan) },
-                              { label: 'Duplicar', onSelect: () => void handleDuplicatePlan(plan) },
-                              { label: plan.isActive ? 'Desactivar' : 'Activar', onSelect: () => void handleTogglePlanActive(plan) },
-                              { label: 'Eliminar', variant: 'danger' as const, onSelect: () => setDeletePlanIds([plan.id]) },
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">{plan.tasks.length} tareas</div>
+                            <div className="max-w-xs truncate text-xs text-slate-400" title={plan.tasks.map((t) => t.code).join(', ')}>
+                              {plan.tasks.map((t) => t.code).join(', ')}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap max-w-xs truncate" title={assetTypesList}>
+                            {assetTypesList}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {plan.isActive ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                Activo
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                Inactivo
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <RowActionsMenu
+                              ariaLabel={`Acciones de ${plan.name}`}
+                              items={[
+                                { label: 'Editar', onSelect: () => openPlanModal(plan) },
+                                { label: 'Duplicar', onSelect: () => void handleDuplicatePlan(plan) },
+                                { label: plan.isActive ? 'Desactivar' : 'Activar', onSelect: () => void handleTogglePlanActive(plan) },
+                                { label: 'Eliminar', variant: 'danger' as const, onSelect: () => setDeletePlanIds([plan.id]) },
+                              ]}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -460,7 +463,7 @@ export default function PreventivesConfigView() {
                 <table className="w-full text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
-                      <th className="w-10 px-4 py-3">
+                      <th className="w-10 px-4 py-3 whitespace-nowrap">
                         <input
                           type="checkbox"
                           aria-label="Seleccionar todas las tareas"
@@ -471,16 +474,16 @@ export default function PreventivesConfigView() {
                           onChange={() => taskSelection.toggleAll(taskIds)}
                         />
                       </th>
-                      <th className="px-4 py-3 text-left">Código</th>
-                      <th className="px-4 py-3 text-left">Nombre de la tarea</th>
-                      <th className="px-4 py-3 text-left">Estado</th>
-                      <th className="w-14 px-4 py-3" />
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Código</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Nombre de la tarea</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
+                      <th className="w-14 px-4 py-3 whitespace-nowrap" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {tasks.map((task) => (
                       <tr key={task.id} className={!task.isActive ? 'opacity-55' : ''}>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <input
                             type="checkbox"
                             aria-label={`Seleccionar ${task.name}`}
@@ -488,9 +491,9 @@ export default function PreventivesConfigView() {
                             onChange={() => taskSelection.toggle(task.id)}
                           />
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">{task.code}</td>
-                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{task.name}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">{task.code}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100 max-w-md truncate whitespace-nowrap" title={task.name}>{task.name}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
                           {task.isActive ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -502,7 +505,7 @@ export default function PreventivesConfigView() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <RowActionsMenu
                             ariaLabel={`Acciones de ${task.name}`}
                             items={[

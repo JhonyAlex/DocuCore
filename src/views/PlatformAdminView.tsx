@@ -166,45 +166,45 @@ export default function PlatformAdminView() {
           <table className="w-full text-left text-xs">
             <thead className="border-b border-slate-100 bg-slate-50/75 text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-3 font-semibold">Espacio / Empresa</th>
-                <th className="px-4 py-3 font-semibold">Propietario</th>
-                <th className="px-4 py-3 font-semibold">Estado</th>
-                <th className="px-4 py-3 font-semibold">Prueba / Período</th>
-                <th className="px-4 py-3 font-semibold">Proyectos</th>
-                <th className="px-4 py-3 font-semibold text-right">Acciones</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Espacio / Empresa</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Propietario</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Estado</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Prueba / Período</th>
+                <th className="px-4 py-3 font-semibold whitespace-nowrap">Proyectos</th>
+                <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500 whitespace-nowrap">
                     Cargando espacios de trabajo…
                   </td>
                 </tr>
               ) : workspaces.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500 whitespace-nowrap">
                     No se han encontrado espacios de trabajo con los filtros actuales.
                   </td>
                 </tr>
               ) : (
                 workspaces.map((ws) => (
                   <tr key={ws.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-900 dark:text-white">{ws.name}</div>
-                      <div className="text-[11px] text-slate-400">slug: {ws.slug}</div>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-semibold text-slate-900 dark:text-white max-w-44 truncate" title={ws.name}>{ws.name}</div>
+                      <div className="text-[11px] text-slate-400 truncate">slug: {ws.slug}</div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {ws.owner ? (
-                        <div>
-                          <div className="font-medium">{ws.owner.name}</div>
-                          <div className="text-[11px] text-slate-400">{ws.owner.email}</div>
+                        <div className="max-w-44">
+                          <div className="font-medium truncate" title={ws.owner.name}>{ws.owner.name}</div>
+                          <div className="text-[11px] text-slate-400 truncate" title={ws.owner.email}>{ws.owner.email}</div>
                         </div>
                       ) : (
                         <span className="text-slate-400">Sin propietario</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <span
                         className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           ws.billingStatus === "ACTIVE"
@@ -219,17 +219,17 @@ export default function PlatformAdminView() {
                         {ws.billingStatus}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                       {ws.trialEndsAt
                         ? `Prueba: ${new Date(ws.trialEndsAt).toLocaleDateString("es-ES")}`
                         : ws.currentPeriodEnd
                           ? `Hasta: ${new Date(ws.currentPeriodEnd).toLocaleDateString("es-ES")}`
                           : "—"}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                       {ws.projectCount} {ws.projectCount === 1 ? "proyecto" : "proyectos"}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
