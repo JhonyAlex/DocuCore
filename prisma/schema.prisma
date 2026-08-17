@@ -211,6 +211,7 @@ model AssetType {
   projectId Int
   name      String
   iconKey   String   @default("package")
+  color     String   @default("cyan")
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())

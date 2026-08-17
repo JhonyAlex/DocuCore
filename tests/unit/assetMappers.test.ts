@@ -64,7 +64,21 @@ describe('mapApiAssetToDisplay', () => {
     expect(mapApiAssetToDisplay(apiAsset({ type: { id: 3, name: 'Vehículo' }, serialNumber: '1234 ABC' })).serialLabel).toBe('Mat: 1234 ABC')
   })
 
-  it('uses the status color for initials and pulse rendering when an asset is under review', () => {
+  it('takes the initials and type chip color from the persisted asset type', () => {
+    const display = mapApiAssetToDisplay(apiAsset({
+      type: { id: 9, name: 'Robot colaborativo', color: 'cyan' },
+      status: { id: 3, name: 'Fuera de servicio', pulseDot: 'red' },
+    }))
+
+    expect(display).toMatchObject({
+      typeColorKey: 'cyan',
+      typeChipClass: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+      initialsBgClass: 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600',
+      statusChipClass: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    })
+  })
+
+  it('uses the persistent type color for initials even when an asset is under review', () => {
     const display = mapApiAssetToDisplay(apiAsset({
       type: { id: 5, name: 'Instrumento' },
       status: { id: 2, name: 'En revisión', pulseDot: null },
@@ -74,13 +88,13 @@ describe('mapApiAssetToDisplay', () => {
     expect(display).toMatchObject({
       typeChipClass: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
       statusChipClass: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-      initialsBgClass: 'bg-amber-50 dark:bg-amber-900/30 text-amber-600',
+      initialsBgClass: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600',
       responsibleColor: 'bg-brand-500',
       pulseDot: undefined,
     })
   })
 
-  it('preserves red status chips and pulse dots for decommissioned and expired assets', () => {
+  it('preserves status chips and pulse dots without replacing the type color', () => {
     const decommissioned = mapApiAssetToDisplay(apiAsset({
       status: { id: 3, name: 'Fuera de servicio', pulseDot: 'red' },
       responsible: { id: 3, name: 'A. Gómez', initials: 'AG', color: 'amber' },
@@ -92,7 +106,7 @@ describe('mapApiAssetToDisplay', () => {
 
     expect(decommissioned).toMatchObject({
       statusChipClass: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-      initialsBgClass: 'bg-red-50 dark:bg-red-900/30 text-red-600',
+      initialsBgClass: 'bg-brand-50 dark:bg-brand-900/30 text-brand-600',
       responsibleColor: 'bg-amber-500',
       pulseDot: 'red',
     })

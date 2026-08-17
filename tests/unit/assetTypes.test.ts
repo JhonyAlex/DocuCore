@@ -3,7 +3,7 @@ import { assetTypeCreateSchema, assetTypeUpdateSchema, projectIdOf } from '../..
 
 describe('asset type configuration validation', () => {
   it('trims and validates a new type name', () => {
-    expect(assetTypeCreateSchema.parse({ name: '  Equipo médico  ' })).toEqual({ name: 'Equipo médico' })
+    expect(assetTypeCreateSchema.parse({ name: '  Equipo médico  ', color: 'cyan' })).toEqual({ name: 'Equipo médico', color: 'cyan' })
   })
 
   it('rejects empty updates and invalid project ids', () => {
@@ -13,6 +13,10 @@ describe('asset type configuration validation', () => {
   })
 
   it('accepts rename, order and reactivation updates', () => {
-    expect(assetTypeUpdateSchema.parse({ name: 'Equipo crítico', sortOrder: 8, isActive: true })).toEqual({ name: 'Equipo crítico', sortOrder: 8, isActive: true })
+    expect(assetTypeUpdateSchema.parse({ name: 'Equipo crítico', color: 'purple', sortOrder: 8, isActive: true })).toEqual({ name: 'Equipo crítico', color: 'purple', sortOrder: 8, isActive: true })
+  })
+
+  it('rejects colors outside the controlled palette', () => {
+    expect(() => assetTypeCreateSchema.parse({ name: 'Equipo crítico', color: 'pink' })).toThrow()
   })
 })

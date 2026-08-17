@@ -3,6 +3,7 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { assetTypeCreateSchema, assetTypeUpdateSchema } from '../lib/assetTypes'
 import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
+import { DEFAULT_ASSET_TYPE_COLOR_KEY } from '../../shared/assetTypeColorCatalog'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -49,7 +50,7 @@ router.post('/', asyncHandler(async (req, res) => {
   await assertUniqueName(projectId, input.name)
   const sortOrder = input.sortOrder ?? ((await prisma.assetType.aggregate({ where: { projectId }, _max: { sortOrder: true } }))._max.sortOrder ?? -1) + 1
   const created = await prisma.$transaction(async (tx) => {
-    const type = await tx.assetType.create({ data: { projectId, name: input.name, iconKey: input.iconKey, sortOrder }, include: includeUsage })
+    const type = await tx.assetType.create({ data: { projectId, name: input.name, iconKey: input.iconKey, color: input.color ?? DEFAULT_ASSET_TYPE_COLOR_KEY, sortOrder }, include: includeUsage })
     await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Creación', entityId: `asset-type:${type.id}`, detail: `Tipo de activo "${type.name}" creado`, timestamp: new Date() } })
     return type
   })

@@ -8,6 +8,7 @@ import RowActionsMenu from '@/components/RowActionsMenu'
 import { useProject } from '@/contexts/ProjectContext'
 import { useSelection } from '@/hooks/useSelection'
 import { archiveAssetType, createAssetType, fetchConfiguredAssetTypes, updateAssetType, type ApiAssetType, type AssetTypeInput } from '@/lib/api'
+import { assetTypeColorBgMap } from '../../shared/assetTypeColorCatalog'
 
 export default function AssetTypesConfigView() {
   const navigate = useNavigate()
@@ -118,12 +119,12 @@ export default function AssetTypesConfigView() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2 font-medium min-w-0 max-w-xs">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${assetTypeColorBgMap[type.color]}`}>
                           <AssetIcon iconKey={type.iconKey} size={16} />
                         </span>
                         <span className="truncate" title={type.name}>{type.name}</span>
                       </div>
-                      <div className="text-xs text-slate-400 truncate">Tipo {type.id} · {type.iconKey}</div>
+                      <div className="text-xs text-slate-400 truncate">Tipo {type.id} · {type.iconKey} · {type.color}</div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`rounded-full px-2 py-1 text-xs ${type.isActive === false ? 'bg-slate-100 text-slate-500 dark:bg-slate-800' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>

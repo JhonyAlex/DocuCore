@@ -157,7 +157,7 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
                   <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{asset.code}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-3 min-w-0 max-w-xs">
-                      <div className={`w-8 h-8 shrink-0 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
+                      <div data-asset-type-color={asset.typeColorKey} className={`w-8 h-8 shrink-0 rounded-lg ${asset.initialsBgClass} flex items-center justify-center text-xs font-semibold`}>{asset.initials}</div>
                       <div className="min-w-0 flex-1">
                         <div className="font-medium truncate" title={asset.name}>{asset.name}</div>
                         <div className="text-xs text-slate-500 truncate" title={asset.serialLabel}>{asset.serialLabel}</div>

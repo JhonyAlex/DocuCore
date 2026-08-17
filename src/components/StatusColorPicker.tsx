@@ -4,14 +4,16 @@ interface StatusColorPickerProps {
   value?: string | null
   disabled?: boolean
   onChange: (colorKey: StatusColorKey) => void
+  label?: string
+  paletteAriaLabel?: string
 }
 
-export default function StatusColorPicker({ value, disabled = false, onChange }: StatusColorPickerProps) {
+export default function StatusColorPicker({ value, disabled = false, onChange, label = 'Color del estado', paletteAriaLabel = 'Paleta de colores de estado' }: StatusColorPickerProps) {
   const selected = statusColorDefinitions.find((color) => color.key === value) ?? statusColorDefinitions.find((color) => color.key === DEFAULT_STATUS_COLOR_KEY)!
 
   return (
     <fieldset disabled={disabled} className="min-w-0">
-      <legend className="text-xs font-medium">Color del estado</legend>
+      <legend className="text-xs font-medium">{label}</legend>
       <div className="mt-1 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
         <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${selected.bgClass}`}>
           <span className={`h-3 w-3 rounded-full ${selected.dotClass}`} />
@@ -23,7 +25,7 @@ export default function StatusColorPicker({ value, disabled = false, onChange }:
       </div>
       <div
         role="listbox"
-        aria-label="Paleta de colores de estado"
+        aria-label={paletteAriaLabel}
         className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2"
       >
         {statusColorDefinitions.map((color) => {

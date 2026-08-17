@@ -168,7 +168,7 @@ router.get('/search', asyncHandler(async (req, res) => {
 
 const locationAssetSelect = {
   id: true, code: true, name: true, installDate: true, initials: true,
-  type: { select: { id: true, name: true, iconKey: true } },
+  type: { select: { id: true, name: true, iconKey: true, color: true } },
   status: { select: { id: true, name: true, color: true, pulseDot: true } },
 } satisfies Prisma.AssetSelect
 

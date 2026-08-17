@@ -38,7 +38,7 @@ async function main() {
   const project = await prisma.project.create({ data: { workspaceId: workspace.id, code, name: `Perfil temporal ${stamp}`, description: 'Datos sintéticos eliminados al terminar PERF-01', themeKey: 'slate' } })
   await prisma.projectMember.create({ data: { projectId: project.id, userId: user.id, role: 'OWNER' } })
   const status = await prisma.status.create({ data: { projectId: project.id, name: `Activo PERF ${stamp}`, color: 'emerald', sortOrder: 0 } })
-  const type = await prisma.assetType.create({ data: { projectId: project.id, name: `Tipo PERF ${stamp}`, iconKey: 'box', sortOrder: 0 } })
+  const type = await prisma.assetType.create({ data: { projectId: project.id, name: `Tipo PERF ${stamp}`, iconKey: 'box', color: 'cyan', sortOrder: 0 } })
   const root = await prisma.location.create({ data: { projectId: project.id, name: `Raíz PERF ${stamp}`, label: `Raíz PERF ${stamp}`, code: `LOC-${stamp}`, surface: '1 m²', responsibleId: user.id } })
   let leaf = root
   let planId: number | null = null

@@ -51,7 +51,7 @@ export function fieldKey(value: string): string {
 }
 
 export const definitionInclude = {
-  assetTypes: { include: { assetType: { select: { id: true, name: true, iconKey: true } } }, orderBy: { assetTypeId: 'asc' as const } },
+  assetTypes: { include: { assetType: { select: { id: true, name: true, iconKey: true, color: true } } }, orderBy: { assetTypeId: 'asc' as const } },
   options: { orderBy: { sortOrder: 'asc' as const } },
   _count: { select: { values: true } },
 } satisfies Prisma.DynamicFieldDefinitionInclude

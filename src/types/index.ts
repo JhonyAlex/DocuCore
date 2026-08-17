@@ -130,6 +130,7 @@ export interface Asset {
   serialNumber: string
   installDate: string
   type: AssetType
+  typeColorKey?: string
   typeChipClass: string
   status: AssetStatus
   statusChipClass: string

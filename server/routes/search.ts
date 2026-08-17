@@ -45,7 +45,7 @@ router.get(
           name: true,
           serialNumber: true,
           location: { select: { id: true, name: true, label: true } },
-          type: { select: { id: true, name: true, iconKey: true } },
+          type: { select: { id: true, name: true, iconKey: true, color: true } },
           status: { select: { id: true, name: true, color: true, pulseDot: true } },
         },
         orderBy: [{ id: 'asc' }],
@@ -140,7 +140,7 @@ router.get(
 
       prisma.assetType.findMany({
         where: { projectId, isActive: true, name: { contains: q, mode: 'insensitive' } },
-        select: { id: true, name: true, iconKey: true },
+        select: { id: true, name: true, iconKey: true, color: true },
         orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         take: limit,
       }),
@@ -205,6 +205,7 @@ router.get(
       locationName: a.location?.label ?? a.location?.name ?? null,
       typeName: a.type.name,
       typeIconKey: a.type.iconKey,
+      typeColor: a.type.color,
       statusName: a.status.name,
       statusColor: a.status.color,
       pulseDot: a.status.pulseDot,
@@ -247,7 +248,7 @@ router.get(
         id: `asset-type:${type.id}`,
         kind: 'Tipo de activo',
         title: type.name,
-        subtitle: `Icono: ${type.iconKey}`,
+        subtitle: `Icono: ${type.iconKey} · Color: ${type.color}`,
         path: `/projects/${projectId}/config/asset-types`,
       })),
       ...statuses.map((status) => ({
