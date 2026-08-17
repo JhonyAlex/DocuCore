@@ -36,6 +36,10 @@ const suspendSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 }).strict()
 
+const manualPlanSchema = z.object({
+  planKey: z.enum(["STARTER", "PRO"]),
+}).strict()
+
 router.get("/workspaces", asyncHandler(async (req, res) => {
   const query = listWorkspacesSchema.parse(req.query)
 
@@ -100,6 +104,7 @@ router.get("/workspaces", asyncHandler(async (req, res) => {
     name: ws.name,
     slug: ws.slug,
     billingStatus: ws.billingStatus,
+    billingSource: ws.billingSource,
     planKey: ws.planKey,
     trialStartedAt: ws.trialStartedAt?.toISOString() ?? null,
     trialEndsAt: ws.trialEndsAt?.toISOString() ?? null,
@@ -162,6 +167,7 @@ router.get("/workspaces/:workspaceId", asyncHandler(async (req, res) => {
     name: ws.name,
     slug: ws.slug,
     billingStatus: ws.billingStatus,
+    billingSource: ws.billingSource,
     planKey: ws.planKey,
     trialStartedAt: ws.trialStartedAt?.toISOString() ?? null,
     trialEndsAt: ws.trialEndsAt?.toISOString() ?? null,
@@ -190,6 +196,9 @@ router.post("/workspaces/:workspaceId/extend-trial", asyncHandler(async (req, re
   const input = extendTrialSchema.parse(req.body)
   const ws = await prisma.workspace.findUnique({ where: { id: workspaceId } })
   if (!ws) return res.status(404).json({ error: "Workspace no encontrado." })
+  if (ws.billingSource === "MANUAL") {
+    return res.status(409).json({ error: "Este espacio tiene una licencia manual activa. Selecciona su plan manual o suspéndelo desde administración." })
+  }
 
   let nextTrialEndsAt: Date
   if (input.untilDate) {
@@ -267,6 +276,74 @@ router.post("/workspaces/:workspaceId/suspend", asyncHandler(async (req, res) =>
   })
 }))
 
+router.post("/workspaces/:workspaceId/manual-plan", asyncHandler(async (req, res) => {
+  const actorId = authenticatedUserId(req)
+  const workspaceId = Number(req.params.workspaceId)
+  if (!Number.isInteger(workspaceId) || workspaceId <= 0) {
+    return res.status(400).json({ error: "Identificador de workspace inválido." })
+  }
+
+  const input = manualPlanSchema.parse(req.body)
+  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId } })
+  if (!ws) return res.status(404).json({ error: "Workspace no encontrado." })
+
+  // The billing status is also the entitlement gate for a newly registered
+  // workspace. Activating a manual plan must not bypass email verification.
+  if (ws.billingStatus === "PENDING_VERIFICATION") {
+    return res.status(409).json({
+      error: "La persona propietaria debe verificar su correo antes de poder activar una licencia manual.",
+      code: "EMAIL_VERIFICATION_REQUIRED",
+    })
+  }
+
+  // Keep manual Starter assignments subject to the same downgrade protection
+  // used by the Stripe checkout flow. Existing data is preserved; the admin
+  // can archive projects first and then assign Starter.
+  if (input.planKey === "STARTER") {
+    const activeProjectsCount = await prisma.project.count({
+      where: { workspaceId, status: "ACTIVE" },
+    })
+    if (activeProjectsCount > 1) {
+      return res.status(409).json({
+        error: "Para activar el plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.",
+        code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
+        activeProjectsCount,
+        maxAllowed: 1,
+      })
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const res = await tx.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        billingStatus: "ACTIVE",
+        billingSource: "MANUAL",
+        planKey: input.planKey,
+      },
+    })
+
+    await tx.auditLog.create({
+      data: {
+        workspaceId,
+        userId: actorId,
+        action: "Licencia manual activada",
+        entityId: `workspace:${workspaceId}`,
+        detail: `Plan ${input.planKey} activado manualmente sin Stripe (antes: ${ws.billingStatus}/${ws.planKey ?? "sin plan"} · origen ${ws.billingSource}). Las referencias de Stripe existentes se conservan.`,
+      },
+    })
+
+    return res
+  })
+
+  res.json({
+    workspaceId: updated.id,
+    billingStatus: updated.billingStatus,
+    billingSource: updated.billingSource,
+    planKey: updated.planKey,
+  })
+}))
+
 router.post("/workspaces/:workspaceId/reactivate", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const workspaceId = Number(req.params.workspaceId)
@@ -278,7 +355,9 @@ router.post("/workspaces/:workspaceId/reactivate", asyncHandler(async (req, res)
   if (!ws) return res.status(404).json({ error: "Workspace no encontrado." })
 
   let nextStatus: BillingStatus = "ACTIVE"
-  if (ws.stripeSubscriptionId) {
+  if (ws.billingSource === "MANUAL") {
+    nextStatus = "ACTIVE"
+  } else if (ws.stripeSubscriptionId) {
     nextStatus = "ACTIVE"
   } else if (ws.trialEndsAt && ws.trialEndsAt.getTime() > Date.now()) {
     nextStatus = "TRIAL"

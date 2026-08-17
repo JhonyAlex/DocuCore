@@ -21,6 +21,7 @@ export interface Pagination {
 }
 
 export type BillingStatus = 'PENDING_VERIFICATION' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'SUSPENDED'
+export type BillingSource = 'STRIPE' | 'MANUAL'
 export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER'
 export type PlanKey = 'STARTER' | 'PRO'
 
@@ -29,6 +30,7 @@ export interface ApiWorkspaceSummary {
   name: string
   slug: string
   billingStatus: BillingStatus
+  billingSource?: BillingSource
   planKey?: PlanKey | null
   trialStartedAt?: string | null
   trialEndsAt?: string | null
@@ -43,6 +45,7 @@ export interface ApiBillingStatus {
   name: string
   slug: string
   billingStatus: BillingStatus
+  billingSource: BillingSource
   planKey: PlanKey | null
   planName: string
   maxActiveProjects: number
@@ -68,6 +71,7 @@ export interface ApiAdminWorkspace {
   name: string
   slug: string
   billingStatus: BillingStatus
+  billingSource: BillingSource
   planKey?: string | null
   trialStartedAt: string | null
   trialEndsAt: string | null

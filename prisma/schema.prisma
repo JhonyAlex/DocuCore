@@ -16,6 +16,11 @@ enum BillingStatus {
   SUSPENDED
 }
 
+enum BillingSource {
+  STRIPE
+  MANUAL
+}
+
 enum WorkspaceRole {
   OWNER
   ADMIN
@@ -51,6 +56,7 @@ model Workspace {
   name                 String
   slug                 String        @unique
   billingStatus        BillingStatus @default(PENDING_VERIFICATION)
+  billingSource        BillingSource @default(STRIPE)
   trialStartedAt       DateTime?
   trialEndsAt          DateTime?
   stripeCustomerId     String?       @unique

@@ -349,8 +349,11 @@ test.describe('DocuCore application', () => {
     // estado por defecto de un activo nuevo (Activo), no heredar el ciclo de vida.
     expect(activeStatusId).not.toBe(source.statusId)
     await goToAssets(page)
+    const searchResponse = page.waitForResponse((response) => response.url().includes('/api/assets?') && response.url().includes('search=CP-02') && response.request().method() === 'GET')
     await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('CP-02')
+    await searchResponse
     const sourceRow = page.locator('tbody tr').filter({ hasText: 'CP-02' })
+    await expect(sourceRow).toHaveCount(1)
     const actionsButton = sourceRow.getByRole('button', { name: 'Acciones de CP-02' })
     const tableScroller = sourceRow.locator('xpath=ancestor::div[contains(@class, "overflow-x-auto")][1]')
     const scrollHeightBefore = await tableScroller.evaluate((element) => element.scrollHeight)

@@ -10,6 +10,13 @@ type WorkerFixtures = {
 
 const E2E_DEFAULT_PROJECT_ID = 1
 
+function isExpectedConsoleMessage(message: string): boolean {
+  // OpenSeadragon warns when a tile response completes after its viewer has
+  // reset. The viewer deliberately ignores that stale tile; it is not an app
+  // error and does not affect the rendered plan.
+  return message.startsWith('Ignoring tile %s loaded before reset:')
+}
+
 function requestedProjectId(value: string, args: unknown[], method: string): number {
   const url = new URL(value, 'http://docucore.test')
   const fromQuery = Number(url.searchParams.get('projectId'))
@@ -101,7 +108,7 @@ export const test = base.extend<ConsoleFixture, WorkerFixtures>({
   consoleIssues: async ({ page }, runFixture, testInfo) => {
     const issues: string[] = []
     page.on('console', (message) => {
-      if (message.type() === 'error' || message.type() === 'warning') issues.push(message.text())
+      if ((message.type() === 'error' || message.type() === 'warning') && !isExpectedConsoleMessage(message.text())) issues.push(message.text())
     })
     page.on('pageerror', (error) => issues.push(error.message))
 

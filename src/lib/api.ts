@@ -87,6 +87,7 @@ export interface ApiSessionWorkspace {
   name: string
   slug: string
   billingStatus: 'PENDING_VERIFICATION' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'SUSPENDED'
+  billingSource?: 'STRIPE' | 'MANUAL'
   trialStartedAt?: string | null
   trialEndsAt?: string | null
   trialDaysLeft?: number
@@ -1035,6 +1036,10 @@ export function fetchAdminWorkspace(workspaceId: number): Promise<import('@/type
 
 export function adminExtendTrial(workspaceId: number, input: { days?: number; untilDate?: string }): Promise<{ workspaceId: number; billingStatus: string; trialEndsAt?: string }> {
   return request(`/admin/workspaces/${workspaceId}/extend-trial`, { method: 'POST', body: JSON.stringify(input) })
+}
+
+export function adminAssignManualPlan(workspaceId: number, planKey: import('@/types').PlanKey): Promise<{ workspaceId: number; billingStatus: import('@/types').BillingStatus; billingSource: import('@/types').BillingSource; planKey: import('@/types').PlanKey }> {
+  return request(`/admin/workspaces/${workspaceId}/manual-plan`, { method: 'POST', body: JSON.stringify({ planKey }) })
 }
 
 export function adminSuspendWorkspace(workspaceId: number, reason?: string): Promise<{ workspaceId: number; billingStatus: string }> {
