@@ -287,6 +287,32 @@ router.post("/workspaces/:workspaceId/manual-plan", asyncHandler(async (req, res
   const ws = await prisma.workspace.findUnique({ where: { id: workspaceId } })
   if (!ws) return res.status(404).json({ error: "Workspace no encontrado." })
 
+  // The billing status is also the entitlement gate for a newly registered
+  // workspace. Activating a manual plan must not bypass email verification.
+  if (ws.billingStatus === "PENDING_VERIFICATION") {
+    return res.status(409).json({
+      error: "La persona propietaria debe verificar su correo antes de poder activar una licencia manual.",
+      code: "EMAIL_VERIFICATION_REQUIRED",
+    })
+  }
+
+  // Keep manual Starter assignments subject to the same downgrade protection
+  // used by the Stripe checkout flow. Existing data is preserved; the admin
+  // can archive projects first and then assign Starter.
+  if (input.planKey === "STARTER") {
+    const activeProjectsCount = await prisma.project.count({
+      where: { workspaceId, status: "ACTIVE" },
+    })
+    if (activeProjectsCount > 1) {
+      return res.status(409).json({
+        error: "Para activar el plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.",
+        code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
+        activeProjectsCount,
+        maxAllowed: 1,
+      })
+    }
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const res = await tx.workspace.update({
       where: { id: workspaceId },

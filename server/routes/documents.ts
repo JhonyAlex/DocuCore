@@ -251,7 +251,9 @@ router.get('/', asyncHandler(async (req, res) => {
   const isAsc = (parsed.sortOrder ?? parsed.sortDir ?? 'asc') === 'asc'
   let orderBy: Prisma.Sql
   if (parsed.sortBy === 'name') {
-    orderBy = isAsc ? Prisma.sql`d."name" ASC, d."id" ASC` : Prisma.sql`d."name" DESC, d."id" DESC`
+    // The UI sorts names case-insensitively. Normalizing in PostgreSQL keeps
+    // the API stable across documents created with different casing.
+    orderBy = isAsc ? Prisma.sql`LOWER(d."name") ASC, d."id" ASC` : Prisma.sql`LOWER(d."name") DESC, d."id" DESC`
   } else if (parsed.sortBy === 'assets') {
     orderBy = isAsc
       ? Prisma.sql`(SELECT COUNT(*) FROM "DocumentItem" di WHERE di."documentId" = d."id") ASC, d."id" ASC`

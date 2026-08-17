@@ -33,7 +33,7 @@ describe('document types API', () => {
   it('keeps the default catalog scoped to its project and creates a new type', async () => {
     const projectOne = await api('/api/projects/1/document-types')
     const defaults = await projectOne.json() as Array<{ name: string }>
-    expect(defaults.map((type) => type.name)).toEqual(['Certificado', 'Calibración', 'Manual', 'Acta', 'Contrato'])
+    expect(defaults.map((type) => type.name)).toEqual(['Certificado', 'Calibración', 'Manual', 'Acta', 'Contrato', 'Archivo'])
 
     const projectTwo = await api('/api/projects/2/document-types')
     expect((await projectTwo.json() as Array<{ name: string }>).map((type) => type.name)).toEqual(['Certificado', 'Calibración', 'Manual', 'Acta', 'Contrato'])

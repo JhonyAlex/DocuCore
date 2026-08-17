@@ -187,7 +187,7 @@ async function main(): Promise<void> {
     data: [1, 2, 3, 4, 5].flatMap((projectId) => defaultAssetTypes.map(({ name, iconKey, color }, sortOrder) => ({ projectId, name, iconKey, color, sortOrder }))),
   })
 
-  console.log('  • Document types (5 por proyecto)')
+  console.log('  • Document types (5 base por proyecto + Archivo en Centro)')
   const defaultDocumentTypes = [
     { name: 'Certificado', iconKey: 'badge-check' },
     { name: 'Calibración', iconKey: 'gauge' },

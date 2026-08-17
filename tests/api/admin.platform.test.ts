@@ -53,6 +53,27 @@ describe("SAAS-05 Platform Admin API", () => {
         data: { workspaceId: ws.id, userId: standardUser.id, role: "OWNER" },
       })
 
+      const unverifiedUser = await prisma.user.create({
+        data: {
+          name: "Cliente sin verificar",
+          email: `unverified.${stamp}@docucore.test`,
+          passwordHash: await hashPassword("UnverifiedSecret2026!"),
+          role: "Propietario",
+          initials: "SV",
+          color: "brand",
+        },
+      })
+      const unverifiedWorkspace = await prisma.workspace.create({
+        data: {
+          name: `Empresa sin verificar ${stamp}`,
+          slug: `empresa-sin-verificar-${stamp}`,
+          billingStatus: "PENDING_VERIFICATION",
+        },
+      })
+      await prisma.workspaceMember.create({
+        data: { workspaceId: unverifiedWorkspace.id, userId: unverifiedUser.id, role: "OWNER" },
+      })
+
       // 1. Non-admin user gets 403 Forbidden
       const nonAdminRes = await fetch(`${baseUrl}/api/admin/workspaces`, {
         headers: { "x-docucore-test-actor-id": String(standardUser.id) },
@@ -68,6 +89,18 @@ describe("SAAS-05 Platform Admin API", () => {
         body: JSON.stringify({ planKey: "PRO" }),
       })
       expect(nonAdminManualRes.status).toBe(403)
+
+      const unverifiedManualRes = await fetch(`${baseUrl}/api/admin/workspaces/${unverifiedWorkspace.id}/manual-plan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(adminUser.id),
+        },
+        body: JSON.stringify({ planKey: "PRO" }),
+      })
+      expect(unverifiedManualRes.status).toBe(409)
+      expect(await unverifiedManualRes.json()).toMatchObject({ code: "EMAIL_VERIFICATION_REQUIRED" })
+      expect((await prisma.workspace.findUniqueOrThrow({ where: { id: unverifiedWorkspace.id } })).billingStatus).toBe("PENDING_VERIFICATION")
 
       // 2. Admin user lists workspaces
       const listRes = await fetch(`${baseUrl}/api/admin/workspaces?search=${ws.slug}`, {
@@ -116,6 +149,28 @@ describe("SAAS-05 Platform Admin API", () => {
           stripePriceId: "price_existing",
         },
       })
+
+      await prisma.project.createMany({
+        data: [
+          { workspaceId: ws.id, code: `STARTER-A-${stamp}`, name: "Proyecto Starter A", description: "Prueba de límite Starter" },
+          { workspaceId: ws.id, code: `STARTER-B-${stamp}`, name: "Proyecto Starter B", description: "Prueba de límite Starter" },
+        ],
+      })
+      const starterManualRes = await fetch(`${baseUrl}/api/admin/workspaces/${ws.id}/manual-plan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(adminUser.id),
+        },
+        body: JSON.stringify({ planKey: "STARTER" }),
+      })
+      expect(starterManualRes.status).toBe(409)
+      expect(await starterManualRes.json()).toMatchObject({
+        code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
+        activeProjectsCount: 2,
+        maxAllowed: 1,
+      })
+
       const manualPlanRes = await fetch(`${baseUrl}/api/admin/workspaces/${ws.id}/manual-plan`, {
         method: "POST",
         headers: {
