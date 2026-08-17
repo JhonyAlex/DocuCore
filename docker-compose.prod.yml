@@ -5,8 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "${PORT:-3000}:3000"
+    expose:
+      - "3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -38,11 +38,13 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - dokploy-network
 
   landing:
     image: ghcr.io/jhonyalex/docucore-landing:latest
@@ -50,8 +52,16 @@ services:
       context: .
       dockerfile: Dockerfile.landing
     restart: unless-stopped
-    ports:
-      - "${LANDING_PORT:-8080}:80"
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - dokploy-network
 
   db:
     image: postgres:16-alpine
@@ -67,8 +77,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - dokploy-network
 
 volumes:
   pgdata:
   documents_data:
   floor_plans_data:
+
+networks:
+  dokploy-network:
+    external: true
