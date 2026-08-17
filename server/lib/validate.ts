@@ -159,6 +159,34 @@ export const updateDocumentMetadataSchema = z.object({
   periodicityMode: nullableOptionalPeriodicityMode,
 }).strict()
 
+export const sortOrderSchema = z.enum(['asc', 'desc'])
+
+export const assetSortBySchema = z.enum([
+  'code',
+  'name',
+  'type',
+  'location',
+  'status',
+  'nextEvent',
+  'deletedAt',
+  'responsible',
+  'installDate',
+  'id',
+])
+
+export const documentSortBySchema = z.enum([
+  'name',
+  'assets',
+  'type',
+  'version',
+  'issueDate',
+  'expiryDate',
+  'periodicity',
+  'status',
+  'updatedAt',
+  'createdAt',
+])
+
 export const documentListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   type: z.string().trim().min(1).optional(),
@@ -167,6 +195,9 @@ export const documentListQuerySchema = z.object({
   assetId: nullableOptionalPositiveId,
   page: z.preprocess((value) => value === undefined ? 1 : Number(value), z.number().int().positive()),
   limit: z.preprocess((value) => value === undefined ? 10 : Number(value), z.number().int().positive().max(100)),
+  sortBy: documentSortBySchema.optional(),
+  sortOrder: sortOrderSchema.optional(),
+  sortDir: sortOrderSchema.optional(),
 }).strict()
 
 const multipartPositiveId = z.preprocess((value) => Number(value), z.number().int().positive())

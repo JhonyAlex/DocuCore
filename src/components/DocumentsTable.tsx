@@ -1,4 +1,5 @@
 import RowActionsMenu, { type RowActionsMenuItem } from '@/components/RowActionsMenu'
+import TableSortHeader from '@/components/TableSortHeader'
 import { formatApiDate, formatDocumentSize } from '@/lib/assetMappers'
 import type { ApiDocument } from '@/lib/api'
 
@@ -34,12 +35,15 @@ interface DocumentsTableProps {
     allSelected: (ids: number[]) => boolean
     someSelected: (ids: number[]) => boolean
   }
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  onSort?: (field: string) => void
   onRowClick: (document: ApiDocument) => void
   onDownload: (document: ApiDocument) => void
   onDelete: (document: ApiDocument) => void
 }
 
-export default function DocumentsTable({ documents, selection, onRowClick, onDownload, onDelete }: DocumentsTableProps) {
+export default function DocumentsTable({ documents, selection, sortBy, sortOrder, onSort, onRowClick, onDownload, onDelete }: DocumentsTableProps) {
   const ids = documents.map((d) => d.id)
 
   return (
@@ -59,14 +63,30 @@ export default function DocumentsTable({ documents, selection, onRowClick, onDow
                   onChange={() => selection.toggleAll(ids)}
                 />
               </th>
-              <th className="px-4 py-3 text-left">Documento</th>
-              <th className="px-4 py-3 text-left">Activos asociados</th>
-              <th className="px-4 py-3 text-left">Tipo</th>
-              <th className="px-4 py-3 text-left">Versión</th>
-              <th className="px-4 py-3 text-left">Emisión</th>
-              <th className="px-4 py-3 text-left">Vencimiento</th>
-              <th className="px-4 py-3 text-left">Periodicidad</th>
-              <th className="px-4 py-3 text-left">Estado</th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Documento" field="name" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Activos asociados" field="assets" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Tipo" field="type" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Versión" field="version" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Emisión" field="issueDate" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Vencimiento" field="expiryDate" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Periodicidad" field="periodicity" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <TableSortHeader label="Estado" field="status" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
               <th className="w-14 px-4 py-3" />
             </tr>
           </thead>

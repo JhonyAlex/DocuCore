@@ -1,6 +1,7 @@
 import type { Asset, Pagination } from '@/types'
 import StatusChip from '@/components/StatusChip'
 import RowActionsMenu, { type RowActionsMenuItem } from '@/components/RowActionsMenu'
+import TableSortHeader from '@/components/TableSortHeader'
 
 const urgencyClass: Record<string, string> = {
   amber: 'text-amber-600',
@@ -15,6 +16,9 @@ interface AssetsTableProps {
   pagination: Pagination
   trashMode?: boolean
   selectedIds: Set<number>
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  onSort?: (field: string) => void
   onToggleSelect: (id: number) => void
   onToggleSelectPage: (ids: number[]) => void
   onRowClick: (asset: Asset) => void
@@ -53,7 +57,7 @@ function menuItemsFor(asset: Asset, trashMode: boolean, handlers: Pick<AssetsTab
   ]
 }
 
-export default function AssetsTable({ assets, loading, error, pagination, trashMode = false, selectedIds, onToggleSelect, onToggleSelectPage, onRowClick, onDuplicate, onDelete, onRestore, onPurge, onPageChange, onRetry }: AssetsTableProps) {
+export default function AssetsTable({ assets, loading, error, pagination, trashMode = false, selectedIds, sortBy, sortOrder, onSort, onToggleSelect, onToggleSelectPage, onRowClick, onDuplicate, onDelete, onRestore, onPurge, onPageChange, onRetry }: AssetsTableProps) {
   const { page, totalPages, total, limit } = pagination
   const start = total === 0 ? 0 : (page - 1) * limit + 1
   const end = Math.min(page * limit, total)
@@ -71,13 +75,27 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
               <th className="text-left px-4 py-3 font-medium">
                 <input type="checkbox" className="rounded" checked={allSelected} ref={(el) => { if (el) el.indeterminate = someSelected }} onChange={() => onToggleSelectPage(assetIds)} aria-label="Seleccionar todos los activos de la página" />
               </th>
-              <th className="text-left px-4 py-3 font-medium">Código</th>
-              <th className="text-left px-4 py-3 font-medium">Nombre</th>
-              <th className="text-left px-4 py-3 font-medium">Tipo</th>
-              <th className="text-left px-4 py-3 font-medium">Ubicación</th>
-              <th className="text-left px-4 py-3 font-medium">Estado</th>
-              <th className="text-left px-4 py-3 font-medium">{trashMode ? 'Eliminación' : 'Próximo evento'}</th>
-              <th className="text-left px-4 py-3 font-medium">Responsable</th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label="Código" field="code" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label="Nombre" field="name" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label="Tipo" field="type" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label="Ubicación" field="location" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label="Estado" field="status" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label={trashMode ? 'Eliminación' : 'Próximo evento'} field={trashMode ? 'deletedAt' : 'nextEvent'} currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
+              <th className="text-left px-4 py-3 font-medium">
+                <TableSortHeader label="Responsable" field="responsible" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
+              </th>
               <th className="text-right px-4 py-3 font-medium">Acciones</th>
             </tr>
           </thead>

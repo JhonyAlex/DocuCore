@@ -5,7 +5,7 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { assetEventClock, deriveAssetEventsExcludingAcknowledged, type DerivedAssetEvent } from '../lib/assetEvents'
-import { createAssetSchema, updateAssetSchema, changeStatusSchema } from '../lib/validate'
+import { createAssetSchema, updateAssetSchema, changeStatusSchema, assetSortBySchema, sortOrderSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
 import { completeDynamicDateSchema, dateScheduleValueSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
 import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setAssetDateSchedule } from '../lib/assetSchedules'
@@ -324,6 +324,12 @@ router.get(
     const projectId = scopedProjectId(req)
     const trashed = q.trashed === 'true'
 
+    const sortByParsed = typeof q.sortBy === 'string' ? assetSortBySchema.safeParse(q.sortBy) : null
+    const sortBy = sortByParsed?.success ? sortByParsed.data : undefined
+    const sortOrderParsed = typeof (q.sortOrder ?? q.sortDir) === 'string' ? sortOrderSchema.safeParse(q.sortOrder ?? q.sortDir) : null
+    const sortDir = sortOrderParsed?.success ? sortOrderParsed.data : 'asc'
+    const isAsc = sortDir === 'asc'
+
     const page = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1
     const limit = Number.isFinite(limitParam) && limitParam >= 1 ? Math.min(100, Math.floor(limitParam)) : 10
 
@@ -345,7 +351,58 @@ router.get(
       )
     `
     if (locationId !== null) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM subtree WHERE subtree.id = asset."locationId")`)
-    const orderBy = trashed ? Prisma.sql`asset."deletedAt" DESC, asset.id ASC` : Prisma.sql`asset.id ASC`
+
+    let orderBy: Prisma.Sql
+    if (sortBy === 'code') {
+      orderBy = isAsc ? Prisma.sql`asset."code" ASC, asset.id ASC` : Prisma.sql`asset."code" DESC, asset.id DESC`
+    } else if (sortBy === 'name') {
+      orderBy = isAsc ? Prisma.sql`asset."name" ASC, asset.id ASC` : Prisma.sql`asset."name" DESC, asset.id DESC`
+    } else if (sortBy === 'type') {
+      orderBy = isAsc
+        ? Prisma.sql`(SELECT at.name FROM "AssetType" at WHERE at.id = asset."typeId") ASC, asset.id ASC`
+        : Prisma.sql`(SELECT at.name FROM "AssetType" at WHERE at.id = asset."typeId") DESC, asset.id DESC`
+    } else if (sortBy === 'location') {
+      orderBy = isAsc
+        ? Prisma.sql`(SELECT loc.name FROM "Location" loc WHERE loc.id = asset."locationId") ASC, asset.id ASC`
+        : Prisma.sql`(SELECT loc.name FROM "Location" loc WHERE loc.id = asset."locationId") DESC, asset.id DESC`
+    } else if (sortBy === 'status') {
+      orderBy = isAsc
+        ? Prisma.sql`(SELECT st.name FROM "Status" st WHERE st.id = asset."statusId") ASC, asset.id ASC`
+        : Prisma.sql`(SELECT st.name FROM "Status" st WHERE st.id = asset."statusId") DESC, asset.id DESC`
+    } else if (sortBy === 'responsible') {
+      orderBy = isAsc
+        ? Prisma.sql`(SELECT u.name FROM "User" u WHERE u.id = asset."responsibleId") ASC, asset.id ASC`
+        : Prisma.sql`(SELECT u.name FROM "User" u WHERE u.id = asset."responsibleId") DESC, asset.id DESC`
+    } else if (sortBy === 'deletedAt') {
+      orderBy = isAsc
+        ? Prisma.sql`asset."deletedAt" ASC NULLS LAST, asset.id ASC`
+        : Prisma.sql`asset."deletedAt" DESC NULLS LAST, asset.id DESC`
+    } else if (sortBy === 'installDate') {
+      orderBy = isAsc
+        ? Prisma.sql`asset."installDate" ASC, asset.id ASC`
+        : Prisma.sql`asset."installDate" DESC, asset.id DESC`
+    } else if (sortBy === 'nextEvent') {
+      const nextEventSubquery = Prisma.sql`
+        (
+          SELECT MIN(event_date) FROM (
+            SELECT e."date" AS event_date FROM "Event" e WHERE e."assetId" = asset.id AND e."completedAt" IS NULL
+            UNION ALL
+            SELECT pe."scheduledDate" AS event_date FROM "PreventiveExecution" pe JOIN "AssetPreventivePlan" app ON app.id = pe."planId" WHERE app."assetId" = asset.id AND pe."completedAt" IS NULL AND app."isActive" = true
+            UNION ALL
+            SELECT ado."scheduledDate" AS event_date FROM "AssetDateOccurrence" ado JOIN "AssetDateSchedule" ads ON ads.id = ado."scheduleId" WHERE ads."assetId" = asset.id AND ado."completedAt" IS NULL AND ads."isActive" = true
+            UNION ALL
+            SELECT dv."expiryDate" AS event_date FROM "DocumentVersion" dv JOIN "DocumentItem" di ON di."documentId" = dv."documentId" WHERE di."assetId" = asset.id AND dv."expiryDate" IS NOT NULL
+          ) sub
+        )
+      `
+      orderBy = isAsc
+        ? Prisma.sql`${nextEventSubquery} ASC NULLS LAST, asset.id ASC`
+        : Prisma.sql`${nextEventSubquery} DESC NULLS LAST, asset.id DESC`
+    } else if (sortBy === 'id') {
+      orderBy = isAsc ? Prisma.sql`asset.id ASC` : Prisma.sql`asset.id DESC`
+    } else {
+      orderBy = trashed ? Prisma.sql`asset."deletedAt" DESC, asset.id ASC` : Prisma.sql`asset.id ASC`
+    }
     const ids = await prisma.$queryRaw<Array<{ id: number; total: bigint }>>(Prisma.sql`
       ${locationCte}
       SELECT asset.id, COUNT(*) OVER()::bigint AS total

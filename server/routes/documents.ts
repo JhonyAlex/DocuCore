@@ -248,19 +248,57 @@ router.get('/', asyncHandler(async (req, res) => {
   if (parsed.status === 'Por vencer') conditions.push(Prisma.sql`current."expiryDate" >= ${today} AND current."expiryDate" <= ${soon}`)
   if (parsed.status === 'Vigente') conditions.push(Prisma.sql`(current."expiryDate" IS NULL OR current."expiryDate" > ${soon})`)
 
+  const isAsc = (parsed.sortOrder ?? parsed.sortDir ?? 'asc') === 'asc'
+  let orderBy: Prisma.Sql
+  if (parsed.sortBy === 'name') {
+    orderBy = isAsc ? Prisma.sql`d."name" ASC, d."id" ASC` : Prisma.sql`d."name" DESC, d."id" DESC`
+  } else if (parsed.sortBy === 'assets') {
+    orderBy = isAsc
+      ? Prisma.sql`(SELECT COUNT(*) FROM "DocumentItem" di WHERE di."documentId" = d."id") ASC, d."id" ASC`
+      : Prisma.sql`(SELECT COUNT(*) FROM "DocumentItem" di WHERE di."documentId" = d."id") DESC, d."id" DESC`
+  } else if (parsed.sortBy === 'type') {
+    orderBy = isAsc ? Prisma.sql`d."type" ASC, d."id" ASC` : Prisma.sql`d."type" DESC, d."id" DESC`
+  } else if (parsed.sortBy === 'version') {
+    orderBy = isAsc
+      ? Prisma.sql`current."version" ASC NULLS LAST, d."id" ASC`
+      : Prisma.sql`current."version" DESC NULLS LAST, d."id" DESC`
+  } else if (parsed.sortBy === 'issueDate') {
+    orderBy = isAsc
+      ? Prisma.sql`current."issueDate" ASC NULLS LAST, d."id" ASC`
+      : Prisma.sql`current."issueDate" DESC NULLS LAST, d."id" DESC`
+  } else if (parsed.sortBy === 'expiryDate') {
+    orderBy = isAsc
+      ? Prisma.sql`current."expiryDate" ASC NULLS LAST, d."id" ASC`
+      : Prisma.sql`current."expiryDate" DESC NULLS LAST, d."id" DESC`
+  } else if (parsed.sortBy === 'periodicity') {
+    orderBy = isAsc
+      ? Prisma.sql`d."periodicity" ASC NULLS LAST, d."id" ASC`
+      : Prisma.sql`d."periodicity" DESC NULLS LAST, d."id" DESC`
+  } else if (parsed.sortBy === 'status') {
+    orderBy = isAsc
+      ? Prisma.sql`current."expiryDate" ASC NULLS LAST, d."id" ASC`
+      : Prisma.sql`current."expiryDate" DESC NULLS LAST, d."id" DESC`
+  } else if (parsed.sortBy === 'createdAt') {
+    orderBy = isAsc ? Prisma.sql`d."createdAt" ASC, d."id" ASC` : Prisma.sql`d."createdAt" DESC, d."id" DESC`
+  } else if (parsed.sortBy === 'updatedAt') {
+    orderBy = isAsc ? Prisma.sql`d."updatedAt" ASC, d."id" ASC` : Prisma.sql`d."updatedAt" DESC, d."id" DESC`
+  } else {
+    orderBy = Prisma.sql`d."updatedAt" DESC, d."id" ASC`
+  }
+
   const offset = (parsed.page - 1) * parsed.limit
   const ids = await prisma.$queryRaw<Array<{ id: number; total: bigint | number }>>(Prisma.sql`
     SELECT d."id" AS id, COUNT(*) OVER() AS total
     FROM "Document" d
     LEFT JOIN LATERAL (
-      SELECT dv."expiryDate"
+      SELECT dv."expiryDate", dv."issueDate", dv."version"
       FROM "DocumentVersion" dv
       WHERE dv."documentId" = d."id"
       ORDER BY dv."version" DESC
       LIMIT 1
     ) current ON TRUE
     WHERE ${Prisma.join(conditions, ' AND ')}
-    ORDER BY d."updatedAt" DESC, d."id" ASC
+    ORDER BY ${orderBy}
     OFFSET ${offset} LIMIT ${parsed.limit}
   `)
   const total = ids.length === 0 ? 0 : Number(ids[0].total)

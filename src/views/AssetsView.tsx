@@ -52,6 +52,8 @@ export default function AssetsView() {
     statusId: null,
     locationId: null,
   })
+  const [sortBy, setSortBy] = useState<string | undefined>(undefined)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   // ITEM-05: modo papelera — lista los activos eliminados (recuperables 30 días)
   // con acciones Restaurar y Eliminar definitivamente.
   const [trashMode, setTrashMode] = useState(false)
@@ -79,6 +81,8 @@ export default function AssetsView() {
         typeId: trashMode ? undefined : (filters.typeId ?? undefined),
         statusId: trashMode ? undefined : (filters.statusId ?? undefined),
         locationId: trashMode ? undefined : (filters.locationId ?? undefined),
+        sortBy,
+        sortOrder,
       }
       const res = await fetchAssets(projectId, params)
       if (requestId !== latestLoadRequest.current) return
@@ -94,7 +98,7 @@ export default function AssetsView() {
     } finally {
       if (requestId === latestLoadRequest.current) setLoading(false)
     }
-  }, [page, projectId, trashMode, trashSearch, filters])
+  }, [page, projectId, trashMode, trashSearch, filters, sortBy, sortOrder])
 
   const refreshTrashCount = useCallback(async () => {
     try {
@@ -347,16 +351,31 @@ export default function AssetsView() {
     }
   }
 
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortOrder('asc')
+    }
+    setPage(1)
+    selection.clear()
+  }
+
   const enterTrash = () => {
     setTrashMode(true)
     setPage(1)
     setTrashSearch('')
+    setSortBy(undefined)
+    setSortOrder('asc')
     selection.clear()
   }
 
   const leaveTrash = () => {
     setTrashMode(false)
     setPage(1)
+    setSortBy(undefined)
+    setSortOrder('asc')
     selection.clear()
   }
 
@@ -421,6 +440,9 @@ export default function AssetsView() {
         pagination={pagination}
         trashMode={trashMode}
         selectedIds={selection.selected}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onSort={handleSort}
         onToggleSelect={selection.toggle}
         onToggleSelectPage={selection.toggleAll}
         onRowClick={(asset) => { if (!trashMode) openAssetDetail(asset.id) }}

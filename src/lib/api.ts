@@ -715,6 +715,9 @@ export interface DocumentListParams {
   assetId?: number | null
   page?: number
   limit?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  sortDir?: 'asc' | 'desc'
 }
 
 export interface ApiDocumentListResponse {
@@ -748,6 +751,9 @@ export interface FetchAssetsParams {
   locationId?: number
   projectId?: number
   trashed?: boolean
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  sortDir?: 'asc' | 'desc'
 }
 
 export type AssetListParams = FetchAssetsParams
@@ -770,6 +776,9 @@ export async function fetchAssets(projectId: number, params: Omit<FetchAssetsPar
   if (params.statusId) q.set('statusId', String(params.statusId))
   if (params.locationId) q.set('locationId', String(params.locationId))
   if (params.trashed) q.set('trashed', 'true')
+  if (params.sortBy) q.set('sortBy', params.sortBy)
+  if (params.sortOrder) q.set('sortOrder', params.sortOrder)
+  if (params.sortDir) q.set('sortDir', params.sortDir)
   const res = await request<FetchAssetsResponse>(`${projectPath(projectId, '/assets')}?${q.toString()}`)
   const rows = res.data ?? res.assets ?? []
   return { ...res, assets: res.assets ?? rows, data: rows }

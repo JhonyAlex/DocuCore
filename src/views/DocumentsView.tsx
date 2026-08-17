@@ -26,6 +26,8 @@ export default function DocumentsView() {
   const [deleting, setDeleting] = useState(false)
   const [filters, setFilters] = useState<DocumentFilters>({})
   const [deferredFilters, setDeferredFilters] = useState<DocumentFilters>({})
+  const [sortBy, setSortBy] = useState<string | undefined>(undefined)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
@@ -40,7 +42,10 @@ export default function DocumentsView() {
   const load = useCallback(async () => {
     setError(null)
     try {
-      const [list, nextKpis] = await Promise.all([fetchDocuments(projectId, { ...deferredFilters, page, limit: LIMIT }), fetchDocumentKpis(projectId)])
+      const [list, nextKpis] = await Promise.all([
+        fetchDocuments(projectId, { ...deferredFilters, page, limit: LIMIT, sortBy, sortOrder }),
+        fetchDocumentKpis(projectId),
+      ])
       setDocuments(list.data)
       setTotal(list.total)
       setTotalPages(list.totalPages)
@@ -49,7 +54,18 @@ export default function DocumentsView() {
       setError('No se pudieron cargar los documentos. Inténtalo de nuevo.')
       setDocuments([])
     }
-  }, [deferredFilters, page, projectId])
+  }, [deferredFilters, page, projectId, sortBy, sortOrder])
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortOrder('asc')
+    }
+    setPage(1)
+    selection.clear()
+  }
 
   useEffect(() => { void load() }, [load])
 
@@ -119,6 +135,9 @@ export default function DocumentsView() {
       <DocumentsTable
         documents={documents}
         selection={selection}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onSort={handleSort}
         onRowClick={(document) => setEditing(document)}
         onDownload={(document) => void downloadDocument(projectId, document.id)}
         onDelete={(document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
