@@ -47,6 +47,7 @@ router.get("/status", asyncHandler(async (req, res) => {
     name: wsScope.workspace.name,
     slug: wsScope.workspace.slug,
     billingStatus: wsScope.workspace.billingStatus,
+    billingSource: wsScope.workspace.billingSource,
     planKey: planInfo.planKey,
     planName: planInfo.planName,
     maxActiveProjects: planInfo.maxActiveProjects,
@@ -76,6 +77,10 @@ router.post("/checkout", asyncHandler(async (req, res) => {
   }
 
   const input = checkoutInputSchema.parse(req.body)
+
+  if (wsScope.workspace.billingSource === "MANUAL") {
+    return res.status(409).json({ error: "Esta licencia está gestionada manualmente por la plataforma. La contratación mediante Stripe no está disponible para esta cuenta." })
+  }
 
   // Downgrade protection: If selecting STARTER, active projects must be <= 1
   if (input.planKey === "STARTER") {
@@ -127,6 +132,10 @@ router.post("/portal", asyncHandler(async (req, res) => {
   const wsScope = await getUserPrimaryWorkspace(actorId)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar facturación." })
+  }
+
+  if (wsScope.workspace.billingSource === "MANUAL") {
+    return res.status(409).json({ error: "Esta licencia está gestionada manualmente por la plataforma. La facturación de Stripe no está disponible para esta cuenta." })
   }
 
   if (!wsScope.workspace.stripeCustomerId) {

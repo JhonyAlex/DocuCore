@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react"
 import { Navigate } from "react-router-dom"
+import ManualPlanActivationDialog from "@/components/ManualPlanActivationDialog"
+import PlatformWorkspaceTable from "@/components/PlatformWorkspaceTable"
 import {
+  adminAssignManualPlan,
   adminExtendTrial,
   adminReactivateWorkspace,
   adminSuspendWorkspace,
   fetchAdminWorkspaces,
 } from "@/lib/api"
-import type { ApiAdminWorkspace } from "@/types"
+import type { ApiAdminWorkspace, PlanKey } from "@/types"
 import { useSession } from "@/contexts/SessionContext"
 
 export default function PlatformAdminView() {
@@ -20,6 +23,8 @@ export default function PlatformAdminView() {
   const [loading, setLoading] = useState(true)
   const [actionBusyId, setActionBusyId] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [manualPlanTarget, setManualPlanTarget] = useState<{ workspace: ApiAdminWorkspace; planKey: PlanKey } | null>(null)
+  const [manualPlanError, setManualPlanError] = useState<string | null>(null)
 
   const loadWorkspaces = useCallback(async () => {
     setLoading(true)
@@ -99,6 +104,24 @@ export default function PlatformAdminView() {
     }
   }
 
+  const handleAssignManualPlan = async () => {
+    if (!manualPlanTarget) return
+    const { workspace, planKey } = manualPlanTarget
+    setActionBusyId(workspace.id)
+    setManualPlanError(null)
+    setFeedback(null)
+    try {
+      await adminAssignManualPlan(workspace.id, planKey)
+      setManualPlanTarget(null)
+      setFeedback({ type: "success", text: `Licencia manual ${planKey === "STARTER" ? "Starter" : "Pro"} activada para ${workspace.name}.` })
+      await loadWorkspaces()
+    } catch (err: unknown) {
+      setManualPlanError(err instanceof Error ? err.message : "Error al activar la licencia manual.")
+    } finally {
+      setActionBusyId(null)
+    }
+  }
+
   return (
     <div className="space-y-6 fade-in pb-12">
       <div>
@@ -160,140 +183,33 @@ export default function PlatformAdminView() {
         </div>
       </div>
 
-      {/* Workspaces Table */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-100 bg-slate-50/75 text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
-              <tr>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Espacio / Empresa</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Propietario</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Estado</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Prueba / Período</th>
-                <th className="px-4 py-3 font-semibold whitespace-nowrap">Proyectos</th>
-                <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500 whitespace-nowrap">
-                    Cargando espacios de trabajo…
-                  </td>
-                </tr>
-              ) : workspaces.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500 whitespace-nowrap">
-                    No se han encontrado espacios de trabajo con los filtros actuales.
-                  </td>
-                </tr>
-              ) : (
-                workspaces.map((ws) => (
-                  <tr key={ws.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="font-semibold text-slate-900 dark:text-white max-w-44 truncate" title={ws.name}>{ws.name}</div>
-                      <div className="text-[11px] text-slate-400 truncate">slug: {ws.slug}</div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {ws.owner ? (
-                        <div className="max-w-44">
-                          <div className="font-medium truncate" title={ws.owner.name}>{ws.owner.name}</div>
-                          <div className="text-[11px] text-slate-400 truncate" title={ws.owner.email}>{ws.owner.email}</div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">Sin propietario</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          ws.billingStatus === "ACTIVE"
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                            : ws.billingStatus === "TRIAL"
-                              ? "bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300"
-                              : ws.billingStatus === "PAST_DUE"
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                                : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-                        }`}
-                      >
-                        {ws.billingStatus}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                      {ws.trialEndsAt
-                        ? `Prueba: ${new Date(ws.trialEndsAt).toLocaleDateString("es-ES")}`
-                        : ws.currentPeriodEnd
-                          ? `Hasta: ${new Date(ws.currentPeriodEnd).toLocaleDateString("es-ES")}`
-                          : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                      {ws.projectCount} {ws.projectCount === 1 ? "proyecto" : "proyectos"}
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          disabled={actionBusyId === ws.id}
-                          onClick={() => void handleExtendTrial(ws.id)}
-                          className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          +14d Prueba
-                        </button>
-                        {ws.billingStatus !== "SUSPENDED" ? (
-                          <button
-                            type="button"
-                            disabled={actionBusyId === ws.id}
-                            onClick={() => void handleSuspend(ws.id)}
-                            className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
-                          >
-                            Suspender
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={actionBusyId === ws.id}
-                            onClick={() => void handleReactivate(ws.id)}
-                            className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
-                          >
-                            Reactivar
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <PlatformWorkspaceTable
+        workspaces={workspaces}
+        loading={loading}
+        page={page}
+        total={total}
+        totalPages={totalPages}
+        actionBusyId={actionBusyId}
+        onPageChange={setPage}
+        onExtendTrial={(workspaceId) => void handleExtendTrial(workspaceId)}
+        onSuspend={(workspaceId) => void handleSuspend(workspaceId)}
+        onReactivate={(workspaceId) => void handleReactivate(workspaceId)}
+        onAssignManualPlan={(workspace, planKey) => {
+          setManualPlanError(null)
+          setManualPlanTarget({ workspace, planKey })
+        }}
+      />
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 dark:border-slate-800">
-            <span className="text-xs text-slate-500">
-              Mostrando página {page} de {totalPages} ({total} espacios)
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="rounded border border-slate-200 px-2.5 py-1 text-xs disabled:opacity-40 dark:border-slate-700"
-              >
-                Anterior
-              </button>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="rounded border border-slate-200 px-2.5 py-1 text-xs disabled:opacity-40 dark:border-slate-700"
-              >
-                Siguiente
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <ManualPlanActivationDialog
+        target={manualPlanTarget}
+        busy={actionBusyId === manualPlanTarget?.workspace.id}
+        error={manualPlanError}
+        onConfirm={() => void handleAssignManualPlan()}
+        onCancel={() => {
+          if (actionBusyId === null) setManualPlanTarget(null)
+        }}
+      />
+
     </div>
   )
 }

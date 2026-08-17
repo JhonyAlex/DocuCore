@@ -100,6 +100,8 @@ export class StripeBillingProvider implements BillingProvider {
           const session = event.data.object as Stripe.Checkout.Session
           const wsId = workspaceId ?? (session.client_reference_id ? Number(session.client_reference_id) : undefined)
           if (wsId && Number.isInteger(wsId)) {
+            const target = await tx.workspace.findUnique({ where: { id: wsId } })
+            if (!target || target.billingSource === "MANUAL") break
             const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id
             const cusId = typeof session.customer === "string" ? session.customer : session.customer?.id
             const sessionMetadata = (session.metadata as Record<string, string> | undefined) ?? {}
@@ -129,7 +131,7 @@ export class StripeBillingProvider implements BillingProvider {
               ? await tx.workspace.findUnique({ where: { stripeCustomerId: cusId } })
               : await tx.workspace.findUnique({ where: { stripeSubscriptionId: sub.id } })
 
-          if (target) {
+          if (target && target.billingSource !== "MANUAL") {
             let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "TRIAL" = "ACTIVE"
             if (sub.status === "past_due") mappedStatus = "PAST_DUE"
             else if (sub.status === "canceled" || sub.status === "unpaid") mappedStatus = "CANCELED"
@@ -156,7 +158,7 @@ export class StripeBillingProvider implements BillingProvider {
 
         case "customer.subscription.deleted": {
           const sub = event.data.object as Stripe.Subscription
-          const target = await tx.workspace.findUnique({ where: { stripeSubscriptionId: sub.id } })
+          const target = await tx.workspace.findFirst({ where: { stripeSubscriptionId: sub.id, billingSource: "STRIPE" } })
           if (target) {
             await tx.workspace.update({
               where: { id: target.id },
@@ -173,7 +175,7 @@ export class StripeBillingProvider implements BillingProvider {
           const invoice = event.data.object as Stripe.Invoice
           const cusId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
           if (cusId) {
-            const target = await tx.workspace.findUnique({ where: { stripeCustomerId: cusId } })
+            const target = await tx.workspace.findFirst({ where: { stripeCustomerId: cusId, billingSource: "STRIPE" } })
             if (target) {
               await tx.workspace.update({
                 where: { id: target.id },
@@ -190,7 +192,7 @@ export class StripeBillingProvider implements BillingProvider {
           const invoice = event.data.object as Stripe.Invoice
           const cusId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
           if (cusId) {
-            const target = await tx.workspace.findUnique({ where: { stripeCustomerId: cusId } })
+            const target = await tx.workspace.findFirst({ where: { stripeCustomerId: cusId, billingSource: "STRIPE" } })
             if (target && target.billingStatus === "PAST_DUE") {
               await tx.workspace.update({
                 where: { id: target.id },
@@ -210,10 +212,24 @@ export class StripeBillingProvider implements BillingProvider {
 
   async reconcileWorkspace(workspaceId: number): Promise<ReconcileResult> {
     const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } })
+    if (ws.billingSource === "MANUAL") {
+      return {
+        workspaceId: ws.id,
+        billingStatus: ws.billingStatus,
+        billingSource: ws.billingSource,
+        planKey: ws.planKey,
+        currentPeriodEnd: ws.currentPeriodEnd,
+        cancelAtPeriodEnd: ws.cancelAtPeriodEnd,
+        stripeCustomerId: ws.stripeCustomerId,
+        stripeSubscriptionId: ws.stripeSubscriptionId,
+        stripePriceId: ws.stripePriceId,
+      }
+    }
     if (!ws.stripeSubscriptionId && !ws.stripeCustomerId) {
       return {
         workspaceId: ws.id,
         billingStatus: ws.billingStatus,
+        billingSource: ws.billingSource,
         planKey: ws.planKey,
         currentPeriodEnd: ws.currentPeriodEnd,
         cancelAtPeriodEnd: ws.cancelAtPeriodEnd,
@@ -243,6 +259,7 @@ export class StripeBillingProvider implements BillingProvider {
       return {
         workspaceId: updated.id,
         billingStatus: updated.billingStatus,
+        billingSource: updated.billingSource,
         planKey: updated.planKey,
         currentPeriodEnd: updated.currentPeriodEnd,
         cancelAtPeriodEnd: updated.cancelAtPeriodEnd,
@@ -255,6 +272,7 @@ export class StripeBillingProvider implements BillingProvider {
     return {
       workspaceId: ws.id,
       billingStatus: ws.billingStatus,
+      billingSource: ws.billingSource,
       planKey: ws.planKey,
       currentPeriodEnd: ws.currentPeriodEnd,
       cancelAtPeriodEnd: ws.cancelAtPeriodEnd,

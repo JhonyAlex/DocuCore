@@ -52,20 +52,23 @@ export class FakeBillingProvider implements BillingProvider {
       if (eventType === "checkout.session.completed") {
         const wsId = workspaceId ?? Number(obj.client_reference_id)
         if (wsId && Number.isInteger(wsId)) {
-          const rawPriceId = (obj.priceId as string) || (obj.price as string)
-          const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
-          const resolvedPlanKey = metaPlanKey ?? getPlanKeyFromPriceId(rawPriceId) ?? "STARTER"
-          await tx.workspace.update({
-            where: { id: wsId },
-            data: {
-              billingStatus: "ACTIVE",
-              planKey: resolvedPlanKey,
-              stripeCustomerId: (obj.customer as string) || `fake_cus_${wsId}`,
-              stripeSubscriptionId: (obj.subscription as string) || `fake_sub_${wsId}`,
-              stripePriceId: rawPriceId ?? null,
-              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-          })
+          const targetWorkspace = await tx.workspace.findUnique({ where: { id: wsId } })
+          if (targetWorkspace && targetWorkspace.billingSource !== "MANUAL") {
+            const rawPriceId = (obj.priceId as string) || (obj.price as string)
+            const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
+            const resolvedPlanKey = metaPlanKey ?? getPlanKeyFromPriceId(rawPriceId) ?? "STARTER"
+            await tx.workspace.update({
+              where: { id: wsId },
+              data: {
+                billingStatus: "ACTIVE",
+                planKey: resolvedPlanKey,
+                stripeCustomerId: (obj.customer as string) || `fake_cus_${wsId}`,
+                stripeSubscriptionId: (obj.subscription as string) || `fake_sub_${wsId}`,
+                stripePriceId: rawPriceId ?? null,
+                currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              },
+            })
+          }
         }
       } else if (eventType === "customer.subscription.updated" || eventType === "customer.subscription.created") {
         const subId = obj.id as string | undefined
@@ -83,7 +86,7 @@ export class FakeBillingProvider implements BillingProvider {
               ? await tx.workspace.findUnique({ where: { stripeSubscriptionId: subId } })
               : null
 
-        if (targetWorkspace) {
+        if (targetWorkspace && targetWorkspace.billingSource !== "MANUAL") {
           let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "TRIAL" = "ACTIVE"
           if (status === "past_due") mappedStatus = "PAST_DUE"
           else if (status === "canceled" || status === "unpaid") mappedStatus = "CANCELED"
@@ -107,7 +110,7 @@ export class FakeBillingProvider implements BillingProvider {
         }
       } else if (eventType === "customer.subscription.deleted") {
         const subId = obj.id as string | undefined
-        const targetWorkspace = subId ? await tx.workspace.findUnique({ where: { stripeSubscriptionId: subId } }) : null
+        const targetWorkspace = subId ? await tx.workspace.findFirst({ where: { stripeSubscriptionId: subId, billingSource: "STRIPE" } }) : null
         if (targetWorkspace) {
           await tx.workspace.update({
             where: { id: targetWorkspace.id },
@@ -119,7 +122,7 @@ export class FakeBillingProvider implements BillingProvider {
         }
       } else if (eventType === "invoice.payment_failed") {
         const customerId = obj.customer as string | undefined
-        const targetWorkspace = customerId ? await tx.workspace.findUnique({ where: { stripeCustomerId: customerId } }) : null
+        const targetWorkspace = customerId ? await tx.workspace.findFirst({ where: { stripeCustomerId: customerId, billingSource: "STRIPE" } }) : null
         if (targetWorkspace) {
           await tx.workspace.update({
             where: { id: targetWorkspace.id },
@@ -130,7 +133,7 @@ export class FakeBillingProvider implements BillingProvider {
         }
       } else if (eventType === "invoice.payment_succeeded") {
         const customerId = obj.customer as string | undefined
-        const targetWorkspace = customerId ? await tx.workspace.findUnique({ where: { stripeCustomerId: customerId } }) : null
+        const targetWorkspace = customerId ? await tx.workspace.findFirst({ where: { stripeCustomerId: customerId, billingSource: "STRIPE" } }) : null
         if (targetWorkspace && targetWorkspace.billingStatus === "PAST_DUE") {
           await tx.workspace.update({
             where: { id: targetWorkspace.id },
@@ -150,6 +153,7 @@ export class FakeBillingProvider implements BillingProvider {
     return {
       workspaceId: ws.id,
       billingStatus: ws.billingStatus,
+      billingSource: ws.billingSource,
       planKey: ws.planKey,
       currentPeriodEnd: ws.currentPeriodEnd,
       cancelAtPeriodEnd: ws.cancelAtPeriodEnd,

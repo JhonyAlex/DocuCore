@@ -1,4 +1,4 @@
-import type { BillingStatus } from "@prisma/client"
+import type { BillingSource, BillingStatus } from "@prisma/client"
 
 export interface CheckoutSessionParams {
   workspaceId: number
@@ -29,6 +29,7 @@ export interface WebhookEventResult {
 export interface ReconcileResult {
   workspaceId: number
   billingStatus: BillingStatus
+  billingSource?: BillingSource
   planKey?: string | null
   currentPeriodEnd?: Date | null
   cancelAtPeriodEnd?: boolean

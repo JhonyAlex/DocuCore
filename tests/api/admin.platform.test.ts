@@ -59,6 +59,16 @@ describe("SAAS-05 Platform Admin API", () => {
       })
       expect(nonAdminRes.status).toBe(403)
 
+      const nonAdminManualRes = await fetch(`${baseUrl}/api/admin/workspaces/${ws.id}/manual-plan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(standardUser.id),
+        },
+        body: JSON.stringify({ planKey: "PRO" }),
+      })
+      expect(nonAdminManualRes.status).toBe(403)
+
       // 2. Admin user lists workspaces
       const listRes = await fetch(`${baseUrl}/api/admin/workspaces?search=${ws.slug}`, {
         headers: { "x-docucore-test-actor-id": String(adminUser.id) },
@@ -97,7 +107,83 @@ describe("SAAS-05 Platform Admin API", () => {
       expect(logs.length).toBe(1)
       expect(logs[0].userId).toBe(adminUser.id)
 
-      // 5. Admin suspends workspace
+      // 5. Admin activates a manual plan without erasing historic Stripe references.
+      await prisma.workspace.update({
+        where: { id: ws.id },
+        data: {
+          stripeCustomerId: `cus_existing_${stamp}`,
+          stripeSubscriptionId: `sub_existing_${stamp}`,
+          stripePriceId: "price_existing",
+        },
+      })
+      const manualPlanRes = await fetch(`${baseUrl}/api/admin/workspaces/${ws.id}/manual-plan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(adminUser.id),
+        },
+        body: JSON.stringify({ planKey: "PRO" }),
+      })
+      expect(manualPlanRes.status).toBe(200)
+      expect(await manualPlanRes.json()).toMatchObject({
+        workspaceId: ws.id,
+        billingStatus: "ACTIVE",
+        billingSource: "MANUAL",
+        planKey: "PRO",
+      })
+
+      const manuallyLicensedWorkspace = await prisma.workspace.findUniqueOrThrow({ where: { id: ws.id } })
+      expect(manuallyLicensedWorkspace.stripeCustomerId).toBe(`cus_existing_${stamp}`)
+      expect(manuallyLicensedWorkspace.stripeSubscriptionId).toBe(`sub_existing_${stamp}`)
+      expect(manuallyLicensedWorkspace.billingSource).toBe("MANUAL")
+
+      const manualLogs = await prisma.auditLog.findMany({
+        where: { workspaceId: ws.id, action: "Licencia manual activada" },
+      })
+      expect(manualLogs).toHaveLength(1)
+      expect(manualLogs[0].userId).toBe(adminUser.id)
+
+      // Customer checkout and Stripe failures cannot replace a manual entitlement.
+      const manualCheckoutRes = await fetch(`${baseUrl}/api/billing/checkout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(standardUser.id),
+        },
+        body: JSON.stringify({ planKey: "STARTER" }),
+      })
+      expect(manualCheckoutRes.status).toBe(409)
+
+      const manualPortalRes = await fetch(`${baseUrl}/api/billing/portal`, {
+        method: "POST",
+        headers: { "x-docucore-test-actor-id": String(standardUser.id) },
+      })
+      expect(manualPortalRes.status).toBe(409)
+
+      const manualStatusRes = await fetch(`${baseUrl}/api/billing/status`, {
+        headers: { "x-docucore-test-actor-id": String(standardUser.id) },
+      })
+      expect(manualStatusRes.status).toBe(200)
+      expect(await manualStatusRes.json()).toMatchObject({
+        workspaceId: ws.id,
+        billingStatus: "ACTIVE",
+        billingSource: "MANUAL",
+        planKey: "PRO",
+      })
+
+      const failedInvoiceRes = await fetch(`${baseUrl}/api/billing/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: `evt_manual_failed_${stamp}`,
+          type: "invoice.payment_failed",
+          data: { object: { customer: `cus_existing_${stamp}` } },
+        }),
+      })
+      expect(failedInvoiceRes.status).toBe(200)
+      expect((await prisma.workspace.findUniqueOrThrow({ where: { id: ws.id } })).billingStatus).toBe("ACTIVE")
+
+      // 6. Admin suspends workspace
       const suspendRes = await fetch(`${baseUrl}/api/admin/workspaces/${ws.id}/suspend`, {
         method: "POST",
         headers: {
@@ -110,7 +196,7 @@ describe("SAAS-05 Platform Admin API", () => {
       const suspendData = await suspendRes.json()
       expect(suspendData.billingStatus).toBe("SUSPENDED")
 
-      // 6. Admin reactivates workspace
+      // 7. Reactivating a manual license returns it to ACTIVE, not back to trial.
       const reactivateRes = await fetch(`${baseUrl}/api/admin/workspaces/${ws.id}/reactivate`, {
         method: "POST",
         headers: {
@@ -120,7 +206,7 @@ describe("SAAS-05 Platform Admin API", () => {
       })
       expect(reactivateRes.status).toBe(200)
       const reactivateData = await reactivateRes.json()
-      expect(reactivateData.billingStatus).toBe("TRIAL")
+      expect(reactivateData.billingStatus).toBe("ACTIVE")
     } finally {
       server.close()
     }
