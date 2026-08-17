@@ -10,7 +10,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import type { AssetFormValues } from '@/components/AssetFormModal'
 import type { LocationFormValues } from '@/components/LocationFormModal'
-import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImage, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
+import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImages, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
@@ -188,9 +188,9 @@ export default function AssetsView() {
     fallback: 'No se pudo eliminar el activo. Inténtalo de nuevo.',
   })
 
-  // IMG-01: la subida de imagen ocurre tras guardar el activo; si falla, el
+  // IMG-01: la subida de imágenes ocurre tras guardar el activo; si falla, el
   // activo queda creado/actualizado y el error lo dice (recuperable desde la ficha).
-  const saveAsset = async (values: AssetFormValues, imageFile: File | null) => {
+  const saveAsset = async (values: AssetFormValues, imageFiles: File[]) => {
     let saved: ApiAsset
     try {
       if (formMode === 'edit') {
@@ -203,13 +203,13 @@ export default function AssetsView() {
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
-    if (imageFile) {
+    if (imageFiles.length > 0) {
       try {
-        saved = await uploadAssetImage(projectId, saved.id, imageFile)
+        saved = await uploadAssetImages(projectId, saved.id, imageFiles)
       } catch {
         throw new Error(formMode === 'edit'
-          ? 'El activo se actualizó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.'
-          : 'El activo se creó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.')
+          ? 'El activo se actualizó, pero no se pudieron subir las imágenes. Puedes subirlas desde la ficha del activo.'
+          : 'El activo se creó, pero no se pudieron subir las imágenes. Puedes subirlas desde la ficha del activo.')
       }
     }
     // Solo en edición/duplicado se refresca la ficha abierta; al crear el

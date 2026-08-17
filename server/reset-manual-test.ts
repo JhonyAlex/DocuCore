@@ -29,6 +29,7 @@ async function main(): Promise<void> {
       "DocumentVersion",
       "Document",
       "Event",
+      "AssetImage",
       "Asset",
       "DynamicFieldDefinition",
       "ProjectMember",

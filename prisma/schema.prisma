@@ -330,13 +330,11 @@ model Asset {
   projectId       Int
   responsibleId   Int
   initials        String
-  deletedAt       DateTime? @db.Timestamptz(6)
-  imageStorageKey String?   @unique
-  imageMimeType   String?
-  imageSizeBytes  Int?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?   @db.Timestamptz(6)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
+  images                AssetImage[]
   type                  AssetType                   @relation(fields: [typeId], references: [id])
   status                Status                      @relation(fields: [statusId], references: [id])
   location              Location                    @relation(fields: [locationId], references: [id], onDelete: Restrict)
@@ -360,6 +358,21 @@ model Asset {
   @@index([deletedAt])
   @@index([projectId, deletedAt, id])
   @@index([projectId, deletedAt, typeId, statusId])
+}
+
+model AssetImage {
+  id         Int      @id @default(autoincrement())
+  assetId    Int
+  storageKey String   @unique
+  mimeType   String
+  sizeBytes  Int
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, sortOrder])
+  @@index([assetId, createdAt])
 }
 
 model Status {

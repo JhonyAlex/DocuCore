@@ -40,8 +40,8 @@ interface AssetFormModalProps {
   onCreateLocation: (values: LocationFormValues) => Promise<ApiLocation>
   optionsError: boolean
   onClose: () => void
-  // IMG-01: la imagen solo se selecciona aquí; el caller la sube al guardar.
-  onSubmit: (values: AssetFormValues, imageFile: File | null) => Promise<void>
+  // IMG-01: las imágenes solo se seleccionan aquí; el caller las sube al guardar.
+  onSubmit: (values: AssetFormValues, imageFiles: File[]) => Promise<void>
 }
 
 function dateForInput(value: string): string {
@@ -94,9 +94,9 @@ export default function AssetFormModal({
   const [saving, setSaving] = useState(false)
   const [showLocationForm, setShowLocationForm] = useState(false)
   const [decommissionRequested, setDecommissionRequested] = useState(false)
-  // IMG-01: fichero elegido (no se sube hasta guardar). El duplicado (ITEM-04)
-  // no hereda la imagen del origen: arranca sin imagen como un activo nuevo.
-  const [imageFile, setImageFile] = useState<File | null>(null)
+  // IMG-01: ficheros elegidos (no se suben hasta guardar). El duplicado (ITEM-04)
+  // no hereda las imágenes del origen: arranca sin imágenes como un activo nuevo.
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const codeInputRef = useRef<HTMLInputElement>(null)
   const onCloseRef = useRef(onClose)
   const savingRef = useRef(saving)
@@ -134,7 +134,7 @@ export default function AssetFormModal({
 
   useEffect(() => {
     setValues(initialValues(asset, mode, types[0]?.id ?? 0, statuses[0]?.id ?? 0, projectId, responsibleId))
-    setImageFile(null)
+    setImageFiles([])
     setError(null)
     setDecommissionRequested(false)
   }, [asset, mode, projectId, responsibleId, statuses, types])
@@ -173,7 +173,7 @@ export default function AssetFormModal({
     setError(null)
     setSaving(true)
     try {
-      await onSubmit(values, imageFile)
+      await onSubmit(values, imageFiles)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'No se pudo guardar el activo. Inténtalo de nuevo.')
     } finally {
@@ -263,7 +263,7 @@ export default function AssetFormModal({
                 <input id="asset-responsible" value={responsibleName} readOnly className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400" />
               </div>
               <div className="md:col-span-2">
-                <AssetImagePicker asset={mode === 'edit' ? asset : null} value={imageFile} onChange={setImageFile} />
+                <AssetImagePicker asset={mode === 'edit' ? asset : null} value={imageFiles} onChange={setImageFiles} />
               </div>
               <DynamicFieldsFormSection key={`${mode}-${asset?.id ?? 'new'}-${values.typeId}`} projectId={values.projectId} assetTypeId={values.typeId} initialFields={asset?.dynamicFields ?? []} duplicate={mode === 'duplicate'} disabled={saving} onChange={(dynamicFields) => updateValue('dynamicFields', dynamicFields)} />
             </div>

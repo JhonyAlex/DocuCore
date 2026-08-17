@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { changeAssetStatus, deleteAsset, fetchAsset, updateAsset, uploadAssetImage, type ApiAsset } from '@/lib/api'
+import { changeAssetStatus, deleteAsset, fetchAsset, updateAsset, uploadAssetImages, type ApiAsset } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import type { AssetFormValues } from '@/components/AssetFormModal'
 
@@ -15,34 +15,40 @@ export function useAssetFicha(options: {
   const { onAssetChanged, projectId } = options
   const [asset, setAsset] = useState<ApiAsset | null>(null)
   const [formMode, setFormMode] = useState<'edit' | null>(null)
-  const latestRequest = useRef(0)
+  const assetIdRef = useRef<number | null>(null)
 
-  const open = useCallback((id: number) => {
-    const requestId = latestRequest.current + 1
-    latestRequest.current = requestId
-    fetchAsset(projectId, id)
-      .then((next) => { if (requestId === latestRequest.current) setAsset(next) })
-      .catch(() => { if (requestId === latestRequest.current) setAsset(null) })
+  const refresh = useCallback(async () => {
+    const id = assetIdRef.current
+    if (!id) return
+    try {
+      const refreshed = await fetchAsset(projectId, id)
+      setAsset(refreshed)
+    } catch {
+      // El activo pudo haberse eliminado; cerramos la ficha.
+      setAsset(null)
+      assetIdRef.current = null
+    }
   }, [projectId])
 
-  // Cierra la ficha invalidando cualquier fetch pendiente, para que un refetch
-  // de documentos no reabra el modal después de cerrarlo.
+  const open = useCallback(async (id: number) => {
+    assetIdRef.current = id
+    const loaded = await fetchAsset(projectId, id)
+    setAsset(loaded)
+  }, [projectId])
+
   const close = useCallback(() => {
-    latestRequest.current += 1
+    assetIdRef.current = null
     setAsset(null)
     setFormMode(null)
   }, [])
 
-  // IMG-01: la ficha entrega el activo ya actualizado tras subir/quitar la
-  // imagen; se aplica directamente (invalidando fetches pendientes).
-  const replaceAsset = useCallback((next: ApiAsset) => {
-    latestRequest.current += 1
-    setAsset(next)
-  }, [])
+  const edit = useCallback(() => {
+    if (asset) setFormMode('edit')
+  }, [asset])
 
-  const refresh = useCallback(() => {
-    if (asset) open(asset.id)
-  }, [asset, open])
+  const closeForm = useCallback(() => {
+    setFormMode(null)
+  }, [])
 
   const toUserError = (writeError: unknown) => toUserWriteError(writeError, {
     conflict: 'Ya existe un activo con ese código o número de serie.',
@@ -57,7 +63,7 @@ export function useAssetFicha(options: {
   })
 
   const changeStatus = useCallback(async (statusId: number) => {
-    if (!asset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
+    if (!asset) return
     try {
       const updated = await changeAssetStatus(projectId, asset.id, statusId)
       setAsset(updated)
@@ -77,7 +83,7 @@ export function useAssetFicha(options: {
     }
   }, [close, onAssetChanged, projectId])
 
-  const save = useCallback(async (values: AssetFormValues, imageFile: File | null) => {
+  const save = useCallback(async (values: AssetFormValues, imageFiles: File[]) => {
     if (!asset) throw new Error('El activo ya no está disponible. Actualiza la lista e inténtalo de nuevo.')
     let saved: ApiAsset
     try {
@@ -85,19 +91,24 @@ export function useAssetFicha(options: {
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
-    // IMG-01: la imagen se sube tras guardar; si falla, el activo ya está
-    // actualizado y el error invita a subirla desde la ficha.
-    if (imageFile) {
+    // IMG-01: las imágenes se suben tras guardar; si falla, el activo ya está
+    // actualizado y el error invita a subirlas desde la ficha.
+    if (imageFiles.length > 0) {
       try {
-        saved = await uploadAssetImage(projectId, saved.id, imageFile)
+        saved = await uploadAssetImages(projectId, saved.id, imageFiles)
       } catch {
-        throw new Error('El activo se actualizó, pero no se pudo subir la imagen. Puedes subirla desde la ficha del activo.')
+        throw new Error('El activo se actualizó, pero no se pudieron subir las imágenes. Puedes subirlas desde la ficha del activo.')
       }
     }
     setAsset(saved)
     setFormMode(null)
     await onAssetChanged()
   }, [asset, onAssetChanged, projectId])
+
+  // IMG-01: la ficha entrega el activo ya actualizado tras subir/quitar imágenes.
+  const replaceAsset = useCallback((next: ApiAsset) => {
+    setAsset(next)
+  }, [])
 
   // Tras vincular o crear un documento la ficha recarga el activo completo
   // (documentos actualizados) y la vista refresca lo que dependa de él.
@@ -111,8 +122,8 @@ export function useAssetFicha(options: {
     formMode,
     open,
     close,
-    closeForm: () => setFormMode(null),
-    onEdit: () => setFormMode('edit'),
+    closeForm,
+    onEdit: edit,
     changeStatus,
     remove,
     save,

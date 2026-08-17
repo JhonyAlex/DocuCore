@@ -75,6 +75,7 @@ async function main(): Promise<void> {
       "PreventivePlanTask",
       "PreventivePlan",
       "Task",
+      "AssetImage",
       "Asset",
       "DynamicFieldDefinition",
       "ProjectMember",

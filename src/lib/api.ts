@@ -258,198 +258,12 @@ export interface ApiLocationRef {
   label: string
 }
 
-export interface ApiAssetDocument {
+export interface ApiAssetImage {
   id: number
-  name: string
-  type: string
-  currentVersion: ApiDocumentVersion | null
-}
-
-export interface ApiAsset {
-  id: number
-  code: string
-  name: string
-  serialNumber: string
-  installDate: string
-  typeId: number
-  statusId: number
-  locationId: number
-  projectId: number
-  responsibleId: number
-  initials: string
-  deletedAt?: string | null
-  imageUrl: string | null
-  imageMimeType?: string | null
-  imageSizeBytes?: number | null
-  nextEvents: ApiAssetEvent[]
-  documentCount: number
-  documents?: ApiAssetDocument[]
-  eventCount: number
-  type?: { id: number; name: string; iconKey?: AssetIconKey }
-  status?: { id: number; name: string; color?: string; pulseDot: string | null }
-  location?: ApiLocationRef
-  responsible?: ApiUserRef
-  dynamicFields?: ApiAssetDynamicField[]
-  preventivePlans?: ApiPreventivePlan[]
-}
-
-export interface ApiTask { id: number; projectId: number; code: string; name: string; isActive: boolean }
-export interface ApiPreventiveExecutionTask { id: number; code: string; name: string; completedAt: string | null }
-export interface ApiPreventiveExecution { id: number; scheduledDate: string; completedAt: string | null; tasks: ApiPreventiveExecutionTask[] }
-export interface ApiPreventivePlan { id: number; planId: number | null; name: string; periodicity: DocumentPeriodicity; periodicityMode: DocumentPeriodicityMode; executions: ApiPreventiveExecution[] }
-
-export interface ApiPreventivePlanTask { taskId: number; code: string; name: string; sortOrder: number; isActive: boolean }
-export interface ApiPreventivePlanAssetType { id: number; name: string }
-export interface ApiPreventivePlanTemplate {
-  id: number
-  projectId: number
-  name: string
-  description: string | null
-  periodicity: DocumentPeriodicity
-  periodicityMode: DocumentPeriodicityMode
-  isActive: boolean
-  createdAt: string
-  updatedAt: string
-  tasks: ApiPreventivePlanTask[]
-  taskIds: number[]
-  assetTypes: ApiPreventivePlanAssetType[]
-  assetTypeIds: number[]
-  assignmentCount: number
-}
-
-export interface PreventivePlanInput {
-  name: string
-  description?: string | null
-  periodicity: DocumentPeriodicity
-  periodicityMode: DocumentPeriodicityMode
-  isActive?: boolean
-  taskIds: number[]
-  assetTypeIds: number[]
-}
-
-export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; status: ApiCalendarEventStatus; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
-export interface ApiAssetHistoryEntry { id: number; action: string; detail: string; timestamp: string; user: { name: string; initials: string } }
-export interface ApiAssetHistoryPage { data: ApiAssetHistoryEntry[]; total: number; page: number; totalPages: number }
-
-export interface ApiLocation {
-  id: number
-  name: string
-  label: string
-  code: string
-  surface: string
-  responsibleId: number
-  parentId: number | null
-  projectId: number
-  responsible: ApiUserRef
-  assetCount: number
-  childCount: number
-  hasFloorPlan: boolean
-}
-
-export interface ApiLocationTreeNode extends ApiLocation {
-  children: ApiLocationTreeNode[]
-}
-
-export interface ApiLocationAsset {
-  id: number
-  code: string
-  name: string
-  installDate: string
-  initials: string
-  type: { id: number; name: string; iconKey?: AssetIconKey }
-  status: { id: number; name: string; color?: string; pulseDot: string | null }
-  typeName?: string
-  statusName?: string
-  responsibleInitials?: string
-  responsibleColor?: string
-  eventCount?: number
-  documentCount?: number
-}
-
-export interface ApiLocationDetail extends ApiLocation {
-  parent: ApiLocationRef | null
-  project: { id: number; name: string; code: string }
-  ancestors: ApiLocationRef[]
-  assets?: ApiLocationAsset[]
-  previewAssets: ApiLocationAsset[]
-  previewAssetCount: number
-}
-
-export interface ApiFloorPlanVersion {
-  id: number
-  version: number
-  originalName: string
-  mimeType: 'image/png' | 'image/jpeg' | 'image/webp'
+  url: string
+  mimeType: string
   sizeBytes: number
-  width: number
-  height: number
-  uploadedAt: string
-}
-
-export interface ApiFloorPlanAsset {
-  id: number
-  code: string
-  name: string
-  locationId: number
-  type: { id: number; name: string; iconKey?: AssetIconKey }
-  status: { id: number; name: string; color?: string; pulseDot: string | null }
-  nextEvents?: ApiAssetEvent[]
-  alert?: 'overdue' | 'soon' | 'normal'
-}
-export interface ApiFloorPlanFacet {
-  typeId: number
-  name: string
-  iconKey: AssetIconKey
-  count: number
-}
-
-export interface ApiFloorPlanMarker {
-  id: number
-  floorPlanId: number
-  assetId: number
-  x: number
-  y: number
-  createdAt: string
-  updatedAt: string
-  asset: ApiFloorPlanAsset
-}
-
-export interface ApiFloorPlan {
-  id: number
-  name: string
-  projectId: number
-  locationId: number
-  createdAt: string
-  updatedAt: string
-  location: ApiLocationRef
-  currentVersion: ApiFloorPlanVersion | null
-  markers: ApiFloorPlanMarker[]
-  markerTotal?: number
-  markersTruncated?: boolean
-}
-
-export interface ApiAssetFloorPlanPlacement {
-  planId: number
-  planName: string
-  location: ApiLocationRef
-  currentVersion: ApiFloorPlanVersion
-  dziUrl: string
-  markerId: number
-  x: number
-  y: number
-}
-
-export interface FloorPlanWriteInput {
-  name: string
-  projectId: number
-  locationId: number
-}
-
-export interface ApiLocationRef {
-  id: number
-  name: string
-  code: string
-  label: string
+  sortOrder: number
 }
 
 export interface ApiAssetDocument {
@@ -472,6 +286,7 @@ export interface ApiAsset {
   responsibleId: number
   initials: string
   deletedAt?: string | null
+  images?: ApiAssetImage[]
   imageUrl: string | null
   imageMimeType?: string | null
   imageSizeBytes?: number | null
@@ -824,12 +639,21 @@ export function updateAsset(projectId: number, id: number, data: Partial<AssetWr
 
 export function uploadAssetImage(projectId: number, id: number, imageFile: File): Promise<ApiAsset> {
   const formData = new FormData()
-  formData.set('image', imageFile)
-  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/image`), { method: 'POST', body: formData })
+  formData.append('image', imageFile)
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/images`), { method: 'POST', body: formData })
 }
 
-export function removeAssetImage(projectId: number, id: number): Promise<ApiAsset> {
-  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/image`), { method: 'DELETE' })
+export function uploadAssetImages(projectId: number, id: number, imageFiles: File[]): Promise<ApiAsset> {
+  const formData = new FormData()
+  for (const file of imageFiles) {
+    formData.append('images', file)
+  }
+  return request<ApiAsset>(projectPath(projectId, `/assets/${id}/images`), { method: 'POST', body: formData })
+}
+
+export function removeAssetImage(projectId: number, id: number, imageId?: number): Promise<ApiAsset> {
+  const path = imageId !== undefined ? `/assets/${id}/images/${imageId}` : `/assets/${id}/image`
+  return request<ApiAsset>(projectPath(projectId, path), { method: 'DELETE' })
 }
 
 export function updateAssetStatus(projectId: number, id: number, statusId: number): Promise<ApiAsset> {

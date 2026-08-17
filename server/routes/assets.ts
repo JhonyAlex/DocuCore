@@ -25,24 +25,25 @@ const completeEventSchema = z.object({ source: z.enum(['event', 'document', 'dyn
 // de su eliminación; pasada esa ventana, la purga lo borra físicamente.
 const TRASH_RETENTION_DAYS = 30
 
-// IMG-01: la imagen del activo viaja como multipart (campo `image`), se guarda
-// en el storage gestionado de DocuCore y en BD solo queda la clave + MIME + tamaño.
+// IMG-01: las imágenes del activo viajan como multipart, se guardan en el storage
+// gestionado de DocuCore y en BD solo quedan la clave + MIME + tamaño en AssetImage.
+// Cada activo puede tener hasta 5 imágenes.
+const MAX_ASSET_IMAGES = 5
 const ASSET_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
 const uploadImage = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: 1 },
+  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: MAX_ASSET_IMAGES },
   fileFilter: (_req, file, callback) => {
     if (!ASSET_IMAGE_MIME_TYPES.has(file.mimetype)) return callback(new Error('Unsupported image type'))
     callback(null, true)
   },
 })
 
-// IMG-01: promisifica `upload.single('image')` y traduce el límite de tamaño a
-// un mensaje de imagen (el global de MulterError habla de documentos).
-function uploadSingleImage(req: Request, res: Response): Promise<void> {
+// IMG-01: promisifica `upload.any()` y traduce el límite de tamaño a un mensaje de imagen.
+function uploadImageFiles(req: Request, res: Response): Promise<void> {
   return new Promise((resolve, reject) => {
-    uploadImage.single('image')(req, res, (error) => {
+    uploadImage.any()(req, res, (error) => {
       if (!error) {
         resolve()
         return
@@ -77,6 +78,10 @@ const assetInclude = {
   status: { select: { id: true, name: true, pulseDot: true } },
   location: { select: { id: true, name: true, code: true, label: true } },
   responsible: { select: { id: true, name: true, initials: true, color: true } },
+  images: {
+    orderBy: { sortOrder: 'asc' },
+    select: { id: true, storageKey: true, mimeType: true, sizeBytes: true, sortOrder: true },
+  },
   events: {
     select: { id: true, title: true, date: true, type: true, completedAt: true },
   },
@@ -114,7 +119,12 @@ const assetInclude = {
 const assetListSelect = {
   id: true, code: true, name: true, serialNumber: true, installDate: true,
   typeId: true, statusId: true, locationId: true, projectId: true, responsibleId: true,
-  initials: true, deletedAt: true, imageStorageKey: true, imageMimeType: true, imageSizeBytes: true,
+  initials: true, deletedAt: true,
+  images: {
+    orderBy: { sortOrder: 'asc' },
+    take: 1,
+    select: { id: true, mimeType: true, sizeBytes: true },
+  },
   type: { select: { id: true, name: true, iconKey: true } },
   status: { select: { id: true, name: true, pulseDot: true } },
   location: { select: { id: true, name: true, code: true, label: true } },
@@ -129,7 +139,7 @@ function withDerivedEvents(asset: AssetWithRelations) {
   const documents = asset.documentAssets.map((link) => link.document).filter((document) => !acknowledged.has(`document:${document.id}`))
   const nextEvents = deriveAssetEventsExcludingAcknowledged({ ...asset, documents }, acknowledged, assetEventClock())
   // IMG-01: la clave interna de storage no se expone (como en documentos); el
-  // frontend recibe una URL servida por el propio API.
+  // frontend recibe URLs servidas por el propio API.
   const definitions = asset.type.fieldDefinitions.map((link) => link.definition).filter((definition) => definition.projectId === asset.projectId)
   const values = new Map(asset.dynamicFieldValues.map((value) => [value.definitionId, value]))
   const dynamicFields = definitions.map((definition) => {
@@ -153,10 +163,20 @@ function withDerivedEvents(asset: AssetWithRelations) {
       dateSchedule: asset.dateSchedules.find((schedule) => schedule.definitionId === definition.id) ? (() => { const schedule = asset.dateSchedules.find((entry) => entry.definitionId === definition.id)!; const occurrence = schedule.occurrences.find((entry) => !entry.completedAt); return { periodicity: schedule.periodicity, periodicityMode: schedule.periodicityMode, occurrenceId: occurrence?.id ?? null, date: occurrence?.scheduledDate.toISOString().slice(0, 10) ?? null } })() : null,
     }
   })
-  const { events: _events, documentAssets: _documentAssets, dynamicFieldValues: _dynamicFieldValues, dateSchedules: _dateSchedules, preventivePlans, eventAcknowledgements: _eventAcknowledgements, type, imageStorageKey: _imageStorageKey, ...base } = asset
+  const { events: _events, documentAssets: _documentAssets, dynamicFieldValues: _dynamicFieldValues, dateSchedules: _dateSchedules, preventivePlans, eventAcknowledgements: _eventAcknowledgements, type, images: _images, ...base } = asset
+  const images = (_images ?? []).map((image) => ({
+    id: image.id,
+    url: `/api/projects/${base.projectId}/assets/${base.id}/images/${image.id}`,
+    mimeType: image.mimeType,
+    sizeBytes: image.sizeBytes,
+    sortOrder: image.sortOrder,
+  }))
   return {
     ...base,
-    imageUrl: _imageStorageKey ? `/api/projects/${base.projectId}/assets/${base.id}/image` : null,
+    images,
+    imageUrl: images[0]?.url ?? null,
+    imageMimeType: images[0]?.mimeType ?? null,
+    imageSizeBytes: images[0]?.sizeBytes ?? null,
     type: { id: type.id, name: type.name, iconKey: type.iconKey },
     dynamicFields,
     documentCount: documents.length,
@@ -254,12 +274,15 @@ async function replaceDynamicValues(
 }
 
 function serializeAssetList(asset: AssetListRow, nextEvent: DerivedAssetEvent | undefined) {
-  const { imageStorageKey, ...base } = asset
+  const { images, ...base } = asset
+  const primaryImage = images?.[0]
   return {
     ...base,
     installDate: asset.installDate.toISOString(),
     deletedAt: asset.deletedAt?.toISOString() ?? null,
-    imageUrl: imageStorageKey ? `/api/projects/${asset.projectId}/assets/${asset.id}/image` : null,
+    imageUrl: primaryImage ? `/api/projects/${asset.projectId}/assets/${asset.id}/images/${primaryImage.id}` : null,
+    imageMimeType: primaryImage?.mimeType ?? null,
+    imageSizeBytes: primaryImage?.sizeBytes ?? null,
     // The list exposes the single event used by its row. Counts and complete
     // histories remain the responsibility of the asset detail/endpoints.
     eventCount: nextEvent ? 1 : 0,
@@ -274,7 +297,7 @@ async function purgeExpiredTrashedAssets(projectId: number, actorId: number, now
   const cutoff = new Date(now.getTime() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000)
   const expired = await prisma.asset.findMany({
     where: { projectId, deletedAt: { not: null, lt: cutoff } },
-    select: { id: true, projectId: true, code: true, name: true, imageStorageKey: true },
+    select: { id: true, projectId: true, code: true, name: true, images: { select: { storageKey: true } } },
     // El purgado perezoso avanza por lotes para no bloquear la lista de
     // Papelera si hay un histórico muy grande que ya ha vencido.
     take: 1_000,
@@ -293,8 +316,8 @@ async function purgeExpiredTrashedAssets(projectId: number, actorId: number, now
       },
     })),
   ])
-  // IMG-01: sin huérfanos — la imagen del activo se borra del storage con él.
-  await Promise.all(expired.filter((asset) => asset.imageStorageKey).map((asset) => removeDocumentFile(asset.imageStorageKey as string)))
+  // IMG-01: sin huérfanos — las imágenes del activo se borran del storage con él.
+  await Promise.all(expired.flatMap((asset) => asset.images.map((image) => removeDocumentFile(image.storageKey))))
 }
 
 async function locationIsDescendantOf(tx: Prisma.TransactionClient, locationId: number, ancestorId: number): Promise<boolean> {
@@ -937,7 +960,7 @@ router.post(
     }
     const asset = await prisma.asset.findFirst({
       where: { id, projectId: scopedProjectId(req), deletedAt: { not: null } },
-      select: { id: true, code: true, name: true, imageStorageKey: true, projectId: true },
+      select: { id: true, code: true, name: true, projectId: true, images: { select: { storageKey: true } } },
     })
     if (!asset) {
       const notTrashed = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req) }, select: { id: true } })
@@ -961,8 +984,10 @@ router.post(
         },
       }),
     ])
-    // IMG-01: la imagen no se queda huérfana al purgar el activo.
-    if (asset.imageStorageKey) await removeDocumentFile(asset.imageStorageKey)
+    // IMG-01: las imágenes no se quedan huérfanas al purgar el activo.
+    for (const image of asset.images) {
+      await removeDocumentFile(image.storageKey).catch(() => undefined)
+    }
     res.status(204).end()
   }),
 )
@@ -1012,11 +1037,10 @@ router.patch(
   }),
 )
 
-// IMG-01: sube o reemplaza la imagen del activo. La nueva se guarda primero en
-// el storage gestionado; si la BD falla se deshace el fichero (patrón de
-// documentos) y la anterior solo se borra tras el éxito.
+// IMG-01: sube hasta 5 imágenes por activo. Las nuevas se guardan primero en
+// el storage gestionado; si la BD falla se deshacen los ficheros guardados.
 router.post(
-  '/:id/image',
+  ['/:id/images', '/:id/image'],
   asyncHandler(async (req, res) => {
     const id = toNumberId(req.params.id)
     if (id === null) {
@@ -1025,36 +1049,53 @@ router.post(
     }
     const existing = await prisma.asset.findFirst({
       where: { id, projectId: scopedProjectId(req), deletedAt: null },
-      select: { id: true, code: true, name: true, imageStorageKey: true, projectId: true },
+      select: { id: true, code: true, name: true, projectId: true, images: { select: { id: true, sortOrder: true } } },
     })
     if (!existing) {
       res.status(404).json({ error: 'Not found' })
       return
     }
-    await uploadSingleImage(req, res)
-    if (!req.file) {
+    await uploadImageFiles(req, res)
+    const files = (req.files as Express.Multer.File[]) ?? (req.file ? [req.file] : [])
+    if (files.length === 0) {
       res.status(400).json({ error: 'Image file is required' })
       return
     }
-    let storageKey: string
+    if (existing.images.length + files.length > MAX_ASSET_IMAGES) {
+      res.status(400).json({ error: `El activo no puede tener más de ${MAX_ASSET_IMAGES} imágenes` })
+      return
+    }
+    const storedKeys: string[] = []
     try {
-      storageKey = await storeDocumentBuffer(req.file.buffer, req.file.mimetype)
+      for (const file of files) {
+        const key = await storeDocumentBuffer(file.buffer, file.mimetype)
+        storedKeys.push(key)
+      }
     } catch (error) {
+      for (const key of storedKeys) await removeDocumentFile(key).catch(() => undefined)
       const message = error instanceof Error ? error.message : ''
       if (message === 'Unsupported document type') throw new Error('Unsupported image type')
       if (message === 'Invalid document size') throw new Error('Invalid image size')
       throw error
     }
+    let maxSortOrder = existing.images.reduce((max, img) => Math.max(max, img.sortOrder), -1)
     let updated: AssetWithRelations
     try {
       ;[updated] = await prisma.$transaction([
+        ...storedKeys.map((storageKey, index) =>
+          prisma.assetImage.create({
+            data: {
+              assetId: id,
+              storageKey,
+              mimeType: files[index].mimetype,
+              sizeBytes: files[index].size,
+              sortOrder: ++maxSortOrder,
+            },
+          })
+        ),
         prisma.asset.update({
           where: { id },
-          data: {
-            imageStorageKey: storageKey,
-            imageMimeType: req.file.mimetype,
-            imageSizeBytes: req.file.size,
-          },
+          data: { updatedAt: new Date() },
           include: assetInclude,
         }),
         prisma.auditLog.create({
@@ -1063,43 +1104,47 @@ router.post(
             userId: actorIdFromRequest(req),
             action: 'Imagen de activo',
             entityId: existing.code,
-            detail: `Imagen subida para "${existing.name}" (${req.file.size} bytes)`,
+            detail: `${files.length} imagen(es) subida(s) para "${existing.name}"`,
             timestamp: new Date(),
           },
         }),
-      ])
+      ]).then((results) => [results[results.length - 2] as AssetWithRelations])
     } catch (error) {
-      await removeDocumentFile(storageKey)
+      for (const key of storedKeys) await removeDocumentFile(key).catch(() => undefined)
       throw error
     }
-    if (existing.imageStorageKey) await removeDocumentFile(existing.imageStorageKey)
     res.json(withDerivedEvents(updated))
   }),
 )
 
-// IMG-01: elimina la imagen del activo (sin confirmación: es recuperable
-// volviendo a subirla).
+// IMG-01: elimina una imagen específica del activo.
 router.delete(
-  '/:id/image',
+  '/:id/images/:imageId',
   asyncHandler(async (req, res) => {
     const id = toNumberId(req.params.id)
-    if (id === null) {
+    const imageId = toNumberId(req.params.imageId)
+    if (id === null || imageId === null) {
       res.status(400).json({ error: 'Invalid id' })
       return
     }
     const existing = await prisma.asset.findFirst({
       where: { id, projectId: scopedProjectId(req), deletedAt: null },
-      select: { id: true, code: true, name: true, imageStorageKey: true, projectId: true },
+      select: { id: true, code: true, name: true, projectId: true },
     })
     if (!existing) {
       res.status(404).json({ error: 'Not found' })
       return
     }
+    const image = await prisma.assetImage.findFirst({
+      where: { id: imageId, assetId: id },
+      select: { id: true, storageKey: true },
+    })
+    if (!image) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
     await prisma.$transaction([
-      prisma.asset.update({
-        where: { id },
-        data: { imageStorageKey: null, imageMimeType: null, imageSizeBytes: null },
-      }),
+      prisma.assetImage.delete({ where: { id: imageId } }),
       prisma.auditLog.create({
         data: {
           projectId: existing.projectId,
@@ -1111,13 +1156,84 @@ router.delete(
         },
       }),
     ])
-    if (existing.imageStorageKey) await removeDocumentFile(existing.imageStorageKey)
+    await removeDocumentFile(image.storageKey).catch(() => undefined)
     res.status(204).end()
   }),
 )
 
-// IMG-01: sirve la imagen del activo inline para `<img>` (con el MIME
-// almacenado; nunca se adivina por extensión).
+// IMG-01: elimina todas las imágenes del activo (compatibilidad con DELETE /image).
+router.delete(
+  '/:id/image',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    if (id === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const existing = await prisma.asset.findFirst({
+      where: { id, projectId: scopedProjectId(req), deletedAt: null },
+      select: { id: true, code: true, name: true, projectId: true, images: { select: { id: true, storageKey: true } } },
+    })
+    if (!existing) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    await prisma.$transaction([
+      prisma.assetImage.deleteMany({ where: { assetId: id } }),
+      prisma.auditLog.create({
+        data: {
+          projectId: existing.projectId,
+          userId: actorIdFromRequest(req),
+          action: 'Imagen de activo eliminada',
+          entityId: existing.code,
+          detail: `Todas las imágenes de "${existing.name}" eliminadas`,
+          timestamp: new Date(),
+        },
+      }),
+    ])
+    for (const image of existing.images) {
+      await removeDocumentFile(image.storageKey).catch(() => undefined)
+    }
+    res.status(204).end()
+  }),
+)
+
+// IMG-01: sirve una imagen específica del activo inline para `<img>`.
+router.get(
+  '/:id/images/:imageId',
+  asyncHandler(async (req, res) => {
+    const id = toNumberId(req.params.id)
+    const imageId = toNumberId(req.params.imageId)
+    if (id === null || imageId === null) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
+    const image = await prisma.assetImage.findFirst({
+      where: { id: imageId, assetId: id, asset: { projectId: scopedProjectId(req), deletedAt: null } },
+      select: { storageKey: true, mimeType: true },
+    })
+    if (!image) {
+      res.status(404).json({ error: 'Not found' })
+      return
+    }
+    let bytes: Buffer
+    try {
+      bytes = await readDocumentFile(image.storageKey)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.status(404).json({ error: 'Not found' })
+        return
+      }
+      throw error
+    }
+    res.setHeader('Content-Type', image.mimeType)
+    res.setHeader('Content-Length', String(bytes.length))
+    res.setHeader('Cache-Control', 'private, max-age=3600')
+    res.send(bytes)
+  }),
+)
+
+// IMG-01: sirve la imagen principal del activo inline para `<img>` (compatibilidad).
 router.get(
   '/:id/image',
   asyncHandler(async (req, res) => {
@@ -1126,26 +1242,26 @@ router.get(
       res.status(400).json({ error: 'Invalid id' })
       return
     }
-    const asset = await prisma.asset.findFirst({
-      where: { id, projectId: scopedProjectId(req), deletedAt: null },
-      select: { imageStorageKey: true, imageMimeType: true },
+    const image = await prisma.assetImage.findFirst({
+      where: { assetId: id, asset: { projectId: scopedProjectId(req), deletedAt: null } },
+      orderBy: { sortOrder: 'asc' },
+      select: { storageKey: true, mimeType: true },
     })
-    if (!asset?.imageStorageKey || !asset.imageMimeType) {
+    if (!image) {
       res.status(404).json({ error: 'Not found' })
       return
     }
     let bytes: Buffer
     try {
-      bytes = await readDocumentFile(asset.imageStorageKey)
+      bytes = await readDocumentFile(image.storageKey)
     } catch (error) {
-      // Fichero referenciado pero ausente del storage: tratado como 404.
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         res.status(404).json({ error: 'Not found' })
         return
       }
       throw error
     }
-    res.setHeader('Content-Type', asset.imageMimeType)
+    res.setHeader('Content-Type', image.mimeType)
     res.setHeader('Content-Length', String(bytes.length))
     res.setHeader('Cache-Control', 'private, max-age=3600')
     res.send(bytes)

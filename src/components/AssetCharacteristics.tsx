@@ -45,7 +45,26 @@ export default function AssetCharacteristics({ asset, onChanged }: AssetCharacte
   }
 
   if (fields.length === 0) {
-    return <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center dark:border-slate-700"><p className="text-sm text-slate-500 dark:text-slate-400">Este tipo de activo no tiene campos dinámicos configurados.</p><p className="mt-1 text-xs text-slate-400">Puedes crearlos desde Configuración · Campos dinámicos.</p></div>
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center dark:border-slate-700 bg-slate-50/30 dark:bg-slate-800/20">
+        <p className="text-sm text-slate-500 dark:text-slate-400">Este tipo de activo no tiene campos dinámicos configurados.</p>
+        <p className="mt-1 text-xs text-slate-400">Puedes crearlos y personalizarlos para este tipo de activo.</p>
+        <div className="mt-4">
+          <a
+            href={`/projects/${asset.projectId}/config/dynamic-fields`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+            Configurar campos dinámicos ↗
+          </a>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
-import AssetImageBox, { AssetImageViewer } from '@/components/AssetImageBox'
+import AssetImageBox from '@/components/AssetImageBox'
+import AssetImageViewer from '@/components/AssetImageViewer'
 import AssetDocuments from '@/components/AssetDocuments'
 import AssetActionConfirmDialog, { type AssetConfirmedAction } from '@/components/AssetActionConfirmDialog'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
@@ -60,9 +61,10 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState<string | null>(null)
-  // Visor de la foto del activo: abierto desde el cuadro de imagen; guardia
+  // Visor de fotos del activo: abierto desde el cuadro de imagen; guardia
   // para que Escape cierre solo el visor sin cerrar la ficha (patrón DOC-03).
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
+  const [imagePreviewIndex, setImagePreviewIndex] = useState(0)
   const [focusedPreventiveExecutionId, setFocusedPreventiveExecutionId] = useState<number | null>(null)
   const imagePreviewOpenRef = useRef(false)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -82,6 +84,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
     setDeleteError(null)
     setConfirmedAction(null)
     setImagePreviewOpen(false)
+    setImagePreviewIndex(0)
     imagePreviewOpenRef.current = false
     setFocusedPreventiveExecutionId(initialPreventiveExecutionId)
   }, [assetId, initialPreventiveExecutionId])
@@ -303,7 +306,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                     <div className="mt-1 text-sm font-medium">{displayAsset.installDate}</div>
                 </div>
               </div>
-              <AssetImageBox asset={asset} onChanged={onImageChanged} onView={() => { imagePreviewOpenRef.current = true; setImagePreviewOpen(true) }} />
+              <AssetImageBox asset={asset} onChanged={onImageChanged} onView={(idx) => { setImagePreviewIndex(idx); imagePreviewOpenRef.current = true; setImagePreviewOpen(true) }} />
             </div>
 
             <h4 className="font-medium mb-3">Próximos eventos</h4>
@@ -426,7 +429,14 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
       )}
       {documentDialog.createOpen && <DocumentModal document={null} initialAssetIds={[{ id: asset.id, label: `${asset.code} · ${asset.name}` }]} onClose={documentDialog.close} onChanged={onDocumentsChanged} />}
       {documentDialog.document && <DocumentModal document={documentDialog.document} onClose={documentDialog.close} onChanged={onDocumentsChanged} />}
-      {imagePreviewOpen && asset.imageUrl && <AssetImageViewer src={asset.imageUrl} name={asset.name} onClose={() => { imagePreviewOpenRef.current = false; setImagePreviewOpen(false) }} />}
+      {imagePreviewOpen && (asset.images?.length || asset.imageUrl) && (
+        <AssetImageViewer
+          images={asset.images && asset.images.length > 0 ? asset.images : (asset.imageUrl ? [{ id: 0, url: asset.imageUrl }] : [])}
+          initialIndex={imagePreviewIndex}
+          name={asset.name}
+          onClose={() => { imagePreviewOpenRef.current = false; setImagePreviewOpen(false) }}
+        />
+      )}
     </div>
   )
 }
