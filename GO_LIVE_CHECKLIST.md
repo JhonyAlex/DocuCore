@@ -6,9 +6,9 @@
 
 ---
 
-## 1. Estado del Código: LISTO PARA PRODUCCIÓN
+## 1. Estado del Código: EN PREPARACIÓN (pendiente contrato visual)
 
-El software ha sido completamente verificado y blindado bajo el estándar de calidad y preservación de datos en producción:
+El software ha sido verificado y blindado bajo el estándar de calidad y preservación de datos en producción. **El contrato visual no está verde** (ver §1.1) y es un GO-NO-GO bloqueante.
 - [x] Fail-closed en facturación: Stripe estrictamente requerido en producción, sin fallback a FakeBillingProvider.
 - [x] Fail-closed en correo: SMTP validado y estandarizado con `SMTP_PASSWORD`.
 - [x] Tenancy y aislamiento estricto por Workspace.
@@ -21,7 +21,33 @@ El software ha sido completamente verificado y blindado bajo el estándar de cal
 - [x] Despliegue limpio probado desde base de datos vacía con bootstrap idempotente.
 - [x] Rendimiento de alta densidad validado con perfil de 10.000 registros (p50 < 120 ms en todas las consultas).
 - [x] Pruebas de humo (`pnpm test:smoke`) 5/5 en verde.
-- [x] Suite completa de tests unitarios, API e integración (263 tests en 48 suites), 82 pruebas E2E funcionales y 30 capturas de regresión visual Playwright al 0,5% 100% en verde.
+- [x] Suite funcional verde en CI: lint, typecheck, unit/API (297 pruebas), build, smoke y 62 E2E no visuales.
+- [x] Identidad de release: `/api/version` y `/api/ready.version` exponen `GIT_SHA`/`APP_VERSION`/`buildTime`; `/api/migrations` reporta migraciones aplicadas/fallidas.
+- [x] CI alineado a Node 22 (igual que el runtime Docker) y verificación de deploy que comprueba `/api/health`, `/api/ready`, SHA desplegado y `prisma migrate status`.
+- [x] `docker-compose.prod.yml` propaga `LEGAL_TERMS_URL` y `LEGAL_PRIVACY_URL`.
+- [ ] **Contrato visual 30/30 al 0,5 %** — BLOQUEANTE: en el runner Linux de CI están **21/30 fuera de umbral** (9/30 OK). Ver §1.1.
+
+### 1.1 Contrato visual (bloqueo conocido)
+
+Las 21 regresiones proceden de **funcionalidad aprobada posterior a la generación
+de los baselines RELEASE-01** (2026-08-12), no de la entrega de facturación:
+
+| Objetivo | Desfase (dark/light) | Clasificación |
+|---|---|---|
+| items (Activos) | 4,51 % / 3,88 % | CAMBIO_INTENCIONAL |
+| documents | 2,62 % / 2,33 % | CAMBIO_INTENCIONAL |
+| config | 2,41 % / 2,05 % | CAMBIO_INTENCIONAL |
+| item-modal | 1,66 % / 1,11 % | CAMBIO_INTENCIONAL |
+| plans | 1,40 % / 1,32 % | CAMBIO_INTENCIONAL |
+| history | 1,11 % / 1,01 % | CAMBIO_INTENCIONAL sobre vista protegida (requiere decisión) |
+| calendar | 0,87 % / 0,78 % | CAMBIO_INTENCIONAL |
+
+Causas (commits posteriores a los baselines): ordenación de columnas, 5 imágenes
+por activo, colores de tipo de activo, tipos documentales por proyecto, truncado
+de filas a una línea y multi-proyecto. La resolución exige **inspección visual de
+cada captura y aprobación explícita del usuario** antes de regenerar baselines
+(regla del contrato: no se modifican HTML protegido, baselines ni el umbral sin
+inspección y aprobación).
 
 ---
 
@@ -36,8 +62,9 @@ Antes de abrir el servicio públicamente a clientes comerciales reales, el opera
 ### Blocker 2: Claves de Producción de Stripe
 - [ ] Obtener las claves en modo Live desde el Dashboard de Stripe:
   - `STRIPE_SECRET_KEY` (`sk_live_...`)
-  - `STRIPE_PRICE_ID` (`price_...` del plan de suscripción)
-- [ ] Configurar el endpoint de Webhook en Stripe: `https://report-map.online/api/billing/webhook` con los eventos de suscripción y facturación.
+  - `STRIPE_PRICE_STARTER` (`price_...` del plan Starter, 15 USD/mes)
+  - `STRIPE_PRICE_PRO` (`price_...` del plan Pro, 39 USD/mes)
+- [ ] Configurar el endpoint de Webhook en Stripe: `https://app.report-map.online/api/billing/webhook` con los eventos de suscripción y facturación.
 - [ ] Obtener el `STRIPE_WEBHOOK_SECRET` (`whsec_...`) y cargarlo en Dokploy.
 
 ### Blocker 3: Proveedor de Correo SMTP Transaccional

@@ -74,6 +74,11 @@ DOCUMENT_STORAGE_PATH=/app/storage/documents
 FLOOR_PLAN_STORAGE_PATH=/app/storage/floor-plans
 ```
 
+> **Identidad de release:** define además `GIT_SHA` (el commit desplegado) y
+> `APP_VERSION` en el entorno. Se inyectan como build args del `app` y quedan
+> expuestos en `GET /api/version` y en `/api/ready` (`version.gitSha`), que el
+> pipeline de despliegue usa para verificar inequívocamente qué commit corre.
+
 ---
 
 ## 3. Configuración de Dominios y Enrutamiento en Dokploy / Traefik
