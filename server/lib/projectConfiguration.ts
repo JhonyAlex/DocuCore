@@ -9,7 +9,7 @@ export async function createMinimalProjectConfiguration(tx: Transaction, project
       { projectId, name: 'Fuera de servicio', color: 'red', pulseDot: 'red', sortOrder: 1 },
     ],
   })
-  await tx.assetType.create({ data: { projectId, name: 'General', iconKey: 'package', sortOrder: 0 } })
+  await tx.assetType.create({ data: { projectId, name: 'General', iconKey: 'package', color: 'cyan', sortOrder: 0 } })
   await tx.documentType.create({ data: { projectId, name: 'General', iconKey: 'file-text', sortOrder: 0 } })
 }
 
@@ -57,6 +57,7 @@ export async function copyProjectConfiguration(tx: Transaction, sourceProjectId:
         projectId: targetProjectId,
         name: source.name,
         iconKey: source.iconKey,
+        color: source.color,
         sortOrder: source.sortOrder,
         isActive: source.isActive,
       },

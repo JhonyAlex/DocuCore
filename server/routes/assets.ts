@@ -65,6 +65,7 @@ const assetInclude = {
       id: true,
       name: true,
       iconKey: true,
+      color: true,
       fieldDefinitions: {
         where: { definition: { isActive: true } },
         include: {
@@ -125,7 +126,7 @@ const assetListSelect = {
     take: 1,
     select: { id: true, mimeType: true, sizeBytes: true },
   },
-  type: { select: { id: true, name: true, iconKey: true } },
+  type: { select: { id: true, name: true, iconKey: true, color: true } },
   status: { select: { id: true, name: true, pulseDot: true } },
   location: { select: { id: true, name: true, code: true, label: true } },
   responsible: { select: { id: true, name: true, initials: true, color: true } },
@@ -177,7 +178,7 @@ function withDerivedEvents(asset: AssetWithRelations) {
     imageUrl: images[0]?.url ?? null,
     imageMimeType: images[0]?.mimeType ?? null,
     imageSizeBytes: images[0]?.sizeBytes ?? null,
-    type: { id: type.id, name: type.name, iconKey: type.iconKey },
+    type: { id: type.id, name: type.name, iconKey: type.iconKey, color: type.color },
     dynamicFields,
     documentCount: documents.length,
     documents: documents.map((document) => ({

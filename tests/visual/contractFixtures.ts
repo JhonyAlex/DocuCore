@@ -18,9 +18,9 @@ const locations = [
 ]
 
 const locationAssets = [
-  { id: 1, code: 'CNC-05', name: 'Torno CNC Haas ST-20', installDate: '2024-02-04T00:00:00.000Z', initials: 'CN', type: { id: 1, name: 'Máquina', iconKey: 'machine' }, status: { id: 1, name: 'Activo', color: 'emerald', pulseDot: null } },
-  { id: 2, code: 'BH-04', name: 'Bomba hidráulica', installDate: '2026-07-15T00:00:00.000Z', initials: 'BH', type: { id: 1, name: 'Máquina', iconKey: 'machine' }, status: { id: 1, name: 'Activo', color: 'emerald', pulseDot: null } },
-  { id: 3, code: 'MG-203', name: 'Manómetro WIKA', installDate: '2025-09-10T00:00:00.000Z', initials: 'MG', type: { id: 3, name: 'Instrumento', iconKey: 'instrument' }, status: { id: 3, name: 'En revisión', color: 'amber', pulseDot: null } },
+  { id: 1, code: 'CNC-05', name: 'Torno CNC Haas ST-20', installDate: '2024-02-04T00:00:00.000Z', initials: 'CN', type: { id: 1, name: 'Máquina', iconKey: 'machine', color: 'brand' }, status: { id: 1, name: 'Activo', color: 'emerald', pulseDot: null } },
+  { id: 2, code: 'BH-04', name: 'Bomba hidráulica', installDate: '2026-07-15T00:00:00.000Z', initials: 'BH', type: { id: 1, name: 'Máquina', iconKey: 'machine', color: 'brand' }, status: { id: 1, name: 'Activo', color: 'emerald', pulseDot: null } },
+  { id: 3, code: 'MG-203', name: 'Manómetro WIKA', installDate: '2025-09-10T00:00:00.000Z', initials: 'MG', type: { id: 3, name: 'Instrumento', iconKey: 'instrument', color: 'indigo' }, status: { id: 3, name: 'En revisión', color: 'amber', pulseDot: null } },
 ]
 
 const dashboardFixture = {

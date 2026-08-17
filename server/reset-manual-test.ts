@@ -91,9 +91,15 @@ async function main(): Promise<void> {
   })
 
   console.log('  • Tipos de activo (5 por proyecto)')
-  const defaultAssetTypeNames = ['Máquina', 'Extintor', 'Vehículo', 'Servidor', 'Instrumento']
+  const defaultAssetTypes = [
+    { name: 'Máquina', iconKey: 'factory', color: 'brand' },
+    { name: 'Extintor', iconKey: 'fire-extinguisher', color: 'red' },
+    { name: 'Vehículo', iconKey: 'truck', color: 'purple' },
+    { name: 'Servidor', iconKey: 'server', color: 'slate' },
+    { name: 'Instrumento', iconKey: 'gauge', color: 'indigo' },
+  ]
   await prisma.assetType.createMany({
-    data: [1, 2].flatMap((projectId) => defaultAssetTypeNames.map((name, sortOrder) => ({ projectId, name, sortOrder }))),
+    data: [1, 2].flatMap((projectId) => defaultAssetTypes.map(({ name, iconKey, color }, sortOrder) => ({ projectId, name, iconKey, color, sortOrder }))),
   })
 
   console.log('  • Estados (5 por proyecto)')

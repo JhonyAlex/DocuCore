@@ -1,6 +1,7 @@
 import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
 import type { DashboardKpi, UpcomingExpiration, AlertItem, ChartBar, ActivityItem } from '@/types'
 import type { AssetIconKey } from '../../shared/assetIconCatalog'
+import type { AssetTypeColorKey } from '../../shared/assetTypeColorCatalog'
 import type { DocumentIconKey } from '../../shared/documentIconCatalog'
 import type { ProjectThemeKey } from '../../shared/projectThemes'
 
@@ -11,6 +12,7 @@ export interface ApiAssetType {
   id: number
   name: string
   iconKey: AssetIconKey
+  color: AssetTypeColorKey
   projectId?: number
   sortOrder?: number
   isActive?: boolean
@@ -20,6 +22,7 @@ export interface ApiAssetType {
 export interface AssetTypeInput {
   name: string
   iconKey?: AssetIconKey
+  color?: AssetTypeColorKey
   sortOrder?: number
   isActive?: boolean
 }
@@ -294,7 +297,7 @@ export interface ApiAsset {
   documentCount: number
   documents?: ApiAssetDocument[]
   eventCount: number
-  type?: { id: number; name: string; iconKey?: AssetIconKey }
+  type?: { id: number; name: string; iconKey?: AssetIconKey; color?: AssetTypeColorKey }
   status?: { id: number; name: string; color?: string; pulseDot: string | null }
   location?: ApiLocationRef
   responsible?: ApiUserRef
@@ -365,7 +368,7 @@ export interface ApiLocationAsset {
   name: string
   installDate: string
   initials: string
-  type: { id: number; name: string; iconKey?: AssetIconKey }
+  type: { id: number; name: string; iconKey?: AssetIconKey; color?: AssetTypeColorKey }
   status: { id: number; name: string; color?: string; pulseDot: string | null }
   typeName?: string
   statusName?: string
@@ -400,7 +403,7 @@ export interface ApiFloorPlanAsset {
   code: string
   name: string
   locationId: number
-  type: { id: number; name: string; iconKey?: AssetIconKey }
+  type: { id: number; name: string; iconKey?: AssetIconKey; color?: AssetTypeColorKey }
   status: { id: number; name: string; color?: string; pulseDot: string | null }
   nextEvents?: ApiAssetEvent[]
   alert?: 'overdue' | 'soon' | 'normal'
