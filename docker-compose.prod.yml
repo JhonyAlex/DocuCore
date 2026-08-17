@@ -10,7 +10,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://${DB_USER:-docucore}:${DB_PASSWORD:-docucore}@db:5432/${DB_NAME:-docucore}?schema=public
+      - DATABASE_URL=postgresql://${DB_USER:-docucore}:${DB_PASSWORD:-docucore}@${DB_HOST:-docucore-db}:5432/${DB_NAME:-docucore}?schema=public
       - APP_PUBLIC_URL=${APP_PUBLIC_URL:-https://app.report-map.online}
       - MARKETING_PUBLIC_URL=${MARKETING_PUBLIC_URL:-https://report-map.online}
       - SESSION_SECRET=${SESSION_SECRET}
@@ -38,13 +38,14 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
     networks:
       - dokploy-network
+      - docucore-internal
 
   landing:
     image: ghcr.io/jhonyalex/docucore-landing:latest
@@ -78,7 +79,9 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - dokploy-network
+      docucore-internal:
+        aliases:
+          - docucore-db
 
 volumes:
   pgdata:
@@ -88,3 +91,5 @@ volumes:
 networks:
   dokploy-network:
     external: true
+  docucore-internal:
+    internal: true

@@ -23,7 +23,7 @@ El stack de producción se compone de tres servicios orquestados mediante Docker
 
 3. **`db` (PostgreSQL Database)**:
    - PostgreSQL 16 Alpine con almacenamiento persistente en el volumen `pgdata`.
-   - Conexión interna segura (`db:5432`).
+   - Conexión interna segura a través de la red privada `docucore-internal` (`internal: true`), alcanzable solo desde `app` mediante el alias DNS inequívoco `docucore-db:5432` — aislada de la red compartida `dokploy-network` para evitar colisiones de hostname `db` con otros stacks.
 
 ---
 
@@ -44,10 +44,11 @@ LEGAL_TERMS_URL=https://report-map.online/terminos-y-condiciones
 LEGAL_PRIVACY_URL=https://report-map.online/politica-de-privacidad
 
 # Base de Datos
-DATABASE_URL=postgresql://docucore:TU_CONTRASENA_PROD@db:5432/docucore?schema=public
+DATABASE_URL=postgresql://docucore:TU_CONTRASENA_PROD@docucore-db:5432/docucore?schema=public
 DB_USER=docucore
 DB_PASSWORD=TU_CONTRASENA_PROD
 DB_NAME=docucore
+DB_HOST=docucore-db
 
 # Facturación y Suscripciones (Stripe)
 BILLING_PROVIDER=stripe

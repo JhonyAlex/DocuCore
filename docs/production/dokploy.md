@@ -40,10 +40,11 @@ APP_PUBLIC_URL=https://report-map.online
 SESSION_SECRET=GENERA_UNA_CADENA_ALEATORIA_DE_64_CARACTERES
 
 # Base de Datos
-DATABASE_URL=postgresql://docucore:TU_PASSWORD_SEGURO@db:5432/docucore?schema=public
+DATABASE_URL=postgresql://docucore:TU_PASSWORD_SEGURO@docucore-db:5432/docucore?schema=public
 DB_USER=docucore
 DB_PASSWORD=TU_PASSWORD_SEGURO
 DB_NAME=docucore
+DB_HOST=docucore-db
 
 # Facturación y Stripe
 BILLING_PROVIDER=stripe
