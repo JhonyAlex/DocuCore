@@ -31,6 +31,12 @@ async function createAsset(page: import('@playwright/test').Page, code: string, 
   return (await response.json()) as { id: number }
 }
 
+async function searchAssets(page: import('@playwright/test').Page, placeholder: string, search: string): Promise<void> {
+  const response = page.waitForResponse((candidate) => candidate.url().includes('/api/assets?') && candidate.url().includes(`search=${encodeURIComponent(search)}`) && candidate.request().method() === 'GET')
+  await page.getByPlaceholder(placeholder).fill(search)
+  await response
+}
+
 test.describe.serial('trash and modal fixes', () => {
   test('moves assets to the trash, restores and purges them through the UI', async ({ page }) => {
     const one = await createAsset(page, 'QA-TR-ONE', 'QA-TR-ONE-SN')
@@ -38,7 +44,7 @@ test.describe.serial('trash and modal fixes', () => {
 
     // Eliminar desde la ficha del activo.
     await page.goto('/assets')
-    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('QA-TR-ONE')
+    await searchAssets(page, 'Buscar por nombre, código, serie…', 'QA-TR-ONE')
     await page.locator('tbody tr', { hasText: 'QA-TR-ONE' }).click()
     const assetDialog = page.getByRole('dialog', { name: 'Activo papelera QA-TR-ONE' })
     await expect(assetDialog).toBeVisible()
@@ -56,7 +62,7 @@ test.describe.serial('trash and modal fixes', () => {
 
     // La papelera lo muestra con la fecha de eliminación.
     await page.getByRole('button', { name: /Papelera/ }).click()
-    await page.getByPlaceholder('Buscar en la papelera por nombre, código o serie…').fill('QA-TR-ONE')
+    await searchAssets(page, 'Buscar en la papelera por nombre, código o serie…', 'QA-TR-ONE')
     const trashedRow = page.locator('tbody tr', { hasText: 'QA-TR-ONE' })
     await expect(trashedRow).toHaveCount(1)
     await expect(trashedRow.getByText(/Eliminado el/)).toBeVisible()
@@ -67,11 +73,11 @@ test.describe.serial('trash and modal fixes', () => {
     await expect(trashedRow).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Volver a activos' }).click()
-    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('QA-TR-ONE')
+    await searchAssets(page, 'Buscar por nombre, código, serie…', 'QA-TR-ONE')
     await expect(page.locator('tbody tr', { hasText: 'QA-TR-ONE' })).toHaveCount(1)
 
     // Eliminar desde el menú de acciones de la fila.
-    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('QA-TR-TWO')
+    await searchAssets(page, 'Buscar por nombre, código, serie…', 'QA-TR-TWO')
     const secondRow = page.locator('tbody tr', { hasText: 'QA-TR-TWO' })
     await expect(secondRow).toHaveCount(1)
     await secondRow.getByLabel('Acciones de QA-TR-TWO').click()
@@ -83,7 +89,7 @@ test.describe.serial('trash and modal fixes', () => {
 
     // Eliminar definitivamente desde la papelera, con confirmación.
     await page.getByRole('button', { name: /Papelera/ }).click()
-    await page.getByPlaceholder('Buscar en la papelera por nombre, código o serie…').fill('QA-TR-TWO')
+    await searchAssets(page, 'Buscar en la papelera por nombre, código o serie…', 'QA-TR-TWO')
     const purgedRow = page.locator('tbody tr', { hasText: 'QA-TR-TWO' })
     await expect(purgedRow).toHaveCount(1)
     await purgedRow.getByLabel('Acciones de QA-TR-TWO').click()
@@ -96,7 +102,7 @@ test.describe.serial('trash and modal fixes', () => {
 
     // El activo purgado no reaparece en la lista normal.
     await page.getByRole('button', { name: 'Volver a activos' }).click()
-    await page.getByPlaceholder('Buscar por nombre, código, serie…').fill('QA-TR-TWO')
+    await searchAssets(page, 'Buscar por nombre, código, serie…', 'QA-TR-TWO')
     await expect(page.locator('tbody tr', { hasText: 'QA-TR-TWO' })).toHaveCount(0)
 
     // Limpieza: devolver el activo restaurado al estado inicial de la BD E2E.

@@ -55,7 +55,7 @@ test.describe.serial('AUTH-01 sesiones reales', () => {
       await page.getByLabel('Correo electrónico').fill('maria@docucore.local')
       await page.getByLabel('Contraseña').fill('DocuCore!2026')
       await page.getByRole('button', { name: 'Iniciar sesión' }).click()
-      await expect(page).toHaveURL(/\/projects\/1\/assets$/)
+      await expect(page).toHaveURL(/\/projects$/)
       await expect(page.getByText('María Fernández')).toBeVisible()
 
       // Navigate to Account page

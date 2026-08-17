@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 export interface RowActionsMenuItem {
@@ -32,26 +32,41 @@ interface MenuState {
  */
 export default function RowActionsMenu({ items, ariaLabel }: RowActionsMenuProps) {
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const ignoreOpeningScrollRef = useRef(false)
 
   useEffect(() => {
     if (!menu) return
     const close = () => setMenu(null)
     const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onScroll = () => {
+      // Playwright and browsers may deliver the scroll caused by bringing the
+      // action button into view after the click handler has opened this portal.
+      // Ignore only that opening scroll; later user scrolling still closes it.
+      if (ignoreOpeningScrollRef.current) return
+      close()
+    }
+    const enableScrollClose = window.setTimeout(() => { ignoreOpeningScrollRef.current = false }, 0)
     document.addEventListener('keydown', onEscape)
     window.addEventListener('resize', close)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('scroll', onScroll, true)
     return () => {
+      window.clearTimeout(enableScrollClose)
       document.removeEventListener('keydown', onEscape)
       window.removeEventListener('resize', close)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('scroll', onScroll, true)
     }
   }, [menu])
 
   const open = (event: MouseEvent<HTMLButtonElement>) => {
-    if (menu) { setMenu(null); return }
+    if (menu) {
+      ignoreOpeningScrollRef.current = false
+      setMenu(null)
+      return
+    }
     const rect = event.currentTarget.getBoundingClientRect()
     const width = 176
     const padding = 8
+    ignoreOpeningScrollRef.current = true
     setMenu({
       top: rect.bottom + 4,
       left: Math.min(window.innerWidth - width - padding, Math.max(padding, rect.right - width)),
