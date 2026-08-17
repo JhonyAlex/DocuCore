@@ -1,5 +1,11 @@
 # CURRENT_STATUS — DocuCore
 
+> **Actualización más reciente — 2026-08-17:** consulta primero
+> [HANDOFF-2026-08-17.md](./HANDOFF-2026-08-17.md). Registra el estado de
+> `main`, la activación manual de planes, la operación pendiente en Dokploy y
+> el bloqueo visual actual. Las métricas históricas de este documento no
+> sustituyen ese relevo.
+
 ## AUTH-01 — Usuarios, autenticación y permisos reales
 
 Implementado: autenticación con sesiones persistentes revocables, pantalla Login, protección de rutas, usuario real en Sidebar, cierre de sesión, cambio de contraseña, gestión básica de usuarios/membresías y eliminación del actor fijo productivo. Validación AUTH-01: Prisma validate, lint, typecheck y build; Vitest **243/243**; E2E **81/81**; visual **30/30** bajo el umbral inmutable del 0,5 %. La documentación operativa está en `AUTH-01.md`.
