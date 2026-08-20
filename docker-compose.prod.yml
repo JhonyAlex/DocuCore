@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        APP_VERSION: ${APP_VERSION:-0.0.0}
     restart: unless-stopped
     expose:
       - "3000"
@@ -16,6 +19,8 @@ services:
       - SESSION_SECRET=${SESSION_SECRET}
       - COMPANY_DISPLAY_NAME=${COMPANY_DISPLAY_NAME:-Report Map Online}
       - SUPPORT_EMAIL=${SUPPORT_EMAIL:-admin@report-map.online}
+      - LEGAL_TERMS_URL=${LEGAL_TERMS_URL:-https://report-map.online/terminos-y-condiciones}
+      - LEGAL_PRIVACY_URL=${LEGAL_PRIVACY_URL:-https://report-map.online/politica-de-privacidad}
       - BILLING_PROVIDER=${BILLING_PROVIDER:-stripe}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}

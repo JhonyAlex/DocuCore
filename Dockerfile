@@ -12,8 +12,14 @@ RUN pnpm install --frozen-lockfile
 
 FROM dependencies AS build
 
+# Identidad del release inyectada en tiempo de build (el contexto Docker no
+# incluye `.git`, por lo que el SHA debe llegar como argumento).
+ARG GIT_SHA=unknown
+ARG APP_VERSION=0.0.0
+ENV GIT_SHA=${GIT_SHA} APP_VERSION=${APP_VERSION}
+
 COPY . .
-RUN pnpm prisma generate && pnpm build
+RUN pnpm prisma generate && pnpm build && node scripts/write-version.mjs
 
 FROM base AS runtime
 

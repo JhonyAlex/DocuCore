@@ -16,6 +16,16 @@ jobs:
     if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
 
     steps:
+      - name: Resolve expected commit SHA
+        id: sha
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Expected SHA: $(cat "$GITHUB_OUTPUT" | grep sha= | cut -d= -f2)"
+
       - name: Check Required Dokploy Secrets
         id: check_secrets
         env:
@@ -43,10 +53,58 @@ jobs:
             -H "Authorization: Bearer ${DOKPLOY_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"composeId\": \"${DOKPLOY_COMPOSE_ID}\"}")
-          
+
           if [ "$RESPONSE_CODE" -ge 200 ] && [ "$RESPONSE_CODE" -lt 300 ]; then
             echo "Dokploy deployment triggered successfully (HTTP $RESPONSE_CODE)."
           else
             echo "Dokploy deployment request returned HTTP $RESPONSE_CODE."
             exit 1
           fi
+
+      - name: Verify deployed release (health, ready, SHA, migrations)
+        if: steps.check_secrets.outputs.configured == 'true'
+        env:
+          APP_PUBLIC_URL: ${{ vars.APP_PUBLIC_URL || 'https://app.report-map.online' }}
+          EXPECTED_SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          URL="${APP_PUBLIC_URL%/}"
+          SHA="${EXPECTED_SHA}"
+          echo "Verifying deployment at ${URL} against commit ${SHA}..."
+
+          # 1. Liveness: /api/health must return 200 within the window.
+          health_ok=false
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}/api/health" || true)
+            if [ "$code" = "200" ]; then health_ok=true; break; fi
+            echo "  health: HTTP ${code:-timeout} (attempt ${i}/60)"
+            sleep 10
+          done
+          [ "$health_ok" = "true" ] || { echo "FAILED: /api/health never returned 200."; exit 1; }
+          echo "OK: /api/health = 200"
+
+          # 2. Release identity: /api/version must report the expected SHA.
+          sha_ok=false
+          for i in $(seq 1 60); do
+            body=$(curl -s --max-time 10 "${URL}/api/version" || true)
+            deployed=$(echo "$body" | grep -o '"gitSha":"[^"]*"' | cut -d'"' -f4 || true)
+            if [ "$deployed" = "$SHA" ]; then sha_ok=true; break; fi
+            echo "  version.gitSha=${deployed:-<none>} (attempt ${i}/60)"
+            sleep 10
+          done
+          [ "$sha_ok" = "true" ] || { echo "FAILED: deployed SHA (${deployed:-none}) never matched expected ${SHA}."; exit 1; }
+          echo "OK: /api/version gitSha matches expected commit."
+
+          # 3. Readiness: DB, storage, billing, email all configured.
+          ready=$(curl -s --max-time 15 "${URL}/api/ready" || true)
+          ready_status=$(echo "$ready" | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || true)
+          [ "$ready_status" = "ready" ] || { echo "FAILED: /api/ready returned status=${ready_status:-<none>}: ${ready}"; exit 1; }
+          echo "OK: /api/ready = ready"
+
+          # 4. Migrations: no failed migration may remain after boot.
+          mig=$(curl -s --max-time 15 "${URL}/api/migrations" || true)
+          failed=$(echo "$mig" | grep -o '"failed":[0-9]*' | cut -d: -f2 || true)
+          [ "${failed:-1}" = "0" ] || { echo "FAILED: /api/migrations reports failed=${failed}: ${mig}"; exit 1; }
+          echo "OK: /api/migrations failed = 0"
+
+          echo "Deployment verification passed for commit ${SHA}."

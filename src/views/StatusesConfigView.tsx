@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useProject } from '@/contexts/ProjectContext'
 import { useSelection } from '@/hooks/useSelection'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import {
   archiveStatus,
   createStatus,
@@ -98,7 +99,10 @@ export default function StatusesConfigView() {
     }
   }
 
-  const activeIds = statuses.filter((statusItem) => statusItem.isActive !== false).map((statusItem) => statusItem.id)
+  const activeIds = statuses
+    .filter((statusItem) => statusItem.isActive !== false)
+    .map((statusItem) => statusItem.id)
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
 
   return (
     <section className="fade-in">
@@ -111,9 +115,9 @@ export default function StatusesConfigView() {
           >
             ← Configuración
           </button>
-          <h1 className="text-2xl font-semibold tracking-tight">Estados</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Estados de activo</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Catálogo de estados del proyecto {project?.name ?? ''}
+            Catálogo de estados operativos del proyecto {project?.name ?? ''}
           </p>
         </div>
         <button
@@ -161,7 +165,7 @@ export default function StatusesConfigView() {
           </div>
         ) : statuses.length === 0 ? (
           <div className="p-8 text-center">
-            <p className="text-sm text-slate-500">No hay estados configurados.</p>
+            <p className="text-sm text-slate-500">No hay estados de activo configurados.</p>
             <button
               type="button"
               onClick={() => setFormStatus(null)}
@@ -171,7 +175,7 @@ export default function StatusesConfigView() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div ref={tableContainerRef} className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
@@ -190,12 +194,12 @@ export default function StatusesConfigView() {
                   <th className="px-4 py-3 text-left whitespace-nowrap">Visualización</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">Visibilidad</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">Activos</th>
-                  <th className="w-14 px-4 py-3 whitespace-nowrap" />
+                  <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 w-14 px-4 py-3 whitespace-nowrap text-right shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {statuses.map((statusItem) => (
-                  <tr key={statusItem.id} className={statusItem.isActive === false ? 'opacity-55' : ''}>
+                  <tr key={statusItem.id} className={`group ${statusItem.isActive === false ? 'opacity-55' : ''}`}>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <input
                         type="checkbox"
@@ -231,7 +235,7 @@ export default function StatusesConfigView() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">{statusItem.assetCount ?? 0}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 w-14 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">
                       <RowActionsMenu
                         ariaLabel={`Acciones de ${statusItem.name}`}
                         items={[

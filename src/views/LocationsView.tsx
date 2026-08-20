@@ -261,9 +261,11 @@ export default function LocationsView() {
     setDeleting(true)
     setDeleteError(null)
     try {
-      await deleteLocation(projectId, selectedId)
+      const targetId = selectedId
+      selectedIdRef.current = null
       setSelectedId(null)
       setConfirmDelete(false)
+      await deleteLocation(projectId, targetId)
       await loadCatalog()
     } catch (writeError) {
       setDeleteError(toUserWriteError(writeError, {

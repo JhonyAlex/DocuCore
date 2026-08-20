@@ -61,8 +61,21 @@ describe('document types API', () => {
   })
 
   it('blocks archiving a referenced type', async () => {
-    // ID 1 corresponds to "Certificado", which has documents associated in project 1
-    const response = await api('/api/projects/1/document-types/1', { method: 'DELETE' })
+    const typeRes = await api('/api/projects/1/document-types', json('POST', { name: `Tipo Bloqueado ${Date.now()}` }))
+    expect(typeRes.status).toBe(201)
+    const type = await typeRes.json() as { id: number }
+
+    const form = new FormData()
+    form.append('name', 'Doc Bloqueo QA')
+    form.append('typeId', String(type.id))
+    form.append('projectId', '1')
+    form.append('issueDate', '2026-08-20')
+    form.append('file', new Blob(['%PDF-1.4 minimal test'], { type: 'application/pdf' }), 'test.pdf')
+
+    const docRes = await api('/api/projects/1/documents', { method: 'POST', body: form })
+    expect(docRes.status).toBe(201)
+
+    const response = await api(`/api/projects/1/document-types/${type.id}`, { method: 'DELETE' })
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ error: expect.stringContaining('No se puede archivar') })
   })

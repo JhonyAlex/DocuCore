@@ -6,6 +6,8 @@ import { useSession } from '@/contexts/SessionContext'
 import { useProject } from '@/contexts/ProjectContext'
 import { ACTIVE_PROJECT_STORAGE_KEY } from '@/contexts/ProjectProvider'
 
+import ProjectsSelectionLayout from '@/layouts/ProjectsSelectionLayout'
+
 // Las vistas se cargan por ruta: mantiene el shell disponible de inmediato y
 // evita descargar visores, catálogos y flujos de gestión que aún no se usan.
 const DashboardView = lazy(() => import('@/views/DashboardView'))
@@ -96,9 +98,11 @@ export default function App() {
         <Route path="/forgot-password" element={<DeferredRoute><ForgotPasswordView /></DeferredRoute>} />
         <Route path="/reset-password" element={<DeferredRoute><ResetPasswordView /></DeferredRoute>} />
         <Route element={<AuthenticatedOutlet />}>
-        <Route element={<AppLayout />}>
-        <Route path="/projects" element={<DeferredRoute><ProjectsView /></DeferredRoute>} />
-        <Route path="/projects/:projectId" element={<ProjectScopedOutlet />}>
+          <Route element={<ProjectsSelectionLayout />}>
+            <Route path="/projects" element={<DeferredRoute><ProjectsView /></DeferredRoute>} />
+          </Route>
+          <Route element={<AppLayout />}>
+            <Route path="/projects/:projectId" element={<ProjectScopedOutlet />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="portfolio" element={<DeferredRoute><ProjectsView /></DeferredRoute>} />
           <Route path="dashboard" element={<DeferredRoute><DashboardView /></DeferredRoute>} />

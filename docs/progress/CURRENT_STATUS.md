@@ -214,7 +214,7 @@ El shell es parcial: navegación, rutas directas, recarga, tema, “Nuevo activo
 | `pnpm test:visual` | ✅ 30/30 | 70,3 s |
 | `pnpm db:seed` final | ✅ | 1,4 s |
 
-Matriz vigente (2026-08-10): lint ✅, typecheck ✅, 137 unit/API ✅, build ✅, 52 E2E ✅, `prisma migrate diff` sin drift ✅. Regresión visual 19/30 con los desfases pedidos por el usuario (11 objetivos; ver Handoff vigente); `locations` 3/3 en verde (máx. 0,069236%).
+Matriz vigente (2026-08-20): lint ✅, typecheck ✅, 298 unit/API ✅ (55 suites), build ✅, 84 E2E ✅, 5/5 smoke ✅, regresión visual 30/30 (100% en verde bajo el umbral inmutable del 0,5 %).
 
 ## Limitaciones y avisos conocidos
 

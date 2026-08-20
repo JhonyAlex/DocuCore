@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useProject } from '@/contexts/ProjectContext'
 import { useSelection } from '@/hooks/useSelection'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import { archiveAssetType, createAssetType, fetchConfiguredAssetTypes, updateAssetType, type ApiAssetType, type AssetTypeInput } from '@/lib/api'
 import { assetTypeColorBgMap } from '../../shared/assetTypeColorCatalog'
 
@@ -81,12 +82,29 @@ export default function AssetTypesConfigView() {
   }
 
   const activeIds = types.filter((type) => type.isActive !== false).map((type) => type.id)
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
+
   return (
-    <section className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4"><div><button type="button" onClick={() => navigate(`/projects/${projectId}/config`)} className="mb-2 text-xs font-medium text-brand-600">← Configuración</button><h1 className="text-2xl font-semibold tracking-tight">Tipos de activo</h1><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Catálogo de activos del proyecto {project?.name ?? ''}</p></div><button type="button" onClick={() => { setFormError(null); setFormType(null) }} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Nuevo tipo</button></div>
-      <div className="mb-4"><label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><input type="checkbox" checked={showInactive} onChange={(event) => { setShowInactive(event.target.checked); selection.clear() }} />Mostrar archivados</label></div>
-      <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}><button type="button" onClick={() => setArchiveIds(selection.selectedIds)} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white">Archivar</button></BulkActionBar>
+    <section className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <button type="button" onClick={() => navigate('/config')} className="text-xs font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">← Volver a Configuración</button>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Tipos de activo</h2>
+          <p className="text-sm text-slate-500">Gestiona los tipos de activo disponibles en {project?.name ?? 'el proyecto'}.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded" />
+            Mostrar archivados
+          </label>
+          <button type="button" onClick={() => { setFormError(null); setFormType(null) }} className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700">＋ Nuevo tipo de activo</button>
+        </div>
+      </div>
+
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
+          <button type="button" onClick={() => setArchiveIds(selection.selectedIds)} className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white">Archivar</button>
+        </BulkActionBar>
         {loading ? (
           <div className="p-8 text-center text-sm text-slate-500">Cargando tipos…</div>
         ) : error ? (
@@ -97,7 +115,7 @@ export default function AssetTypesConfigView() {
             <button type="button" onClick={() => setFormType(null)} className="mt-2 text-sm font-medium text-brand-600">Crear el primero</button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div ref={tableContainerRef} className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
@@ -108,12 +126,12 @@ export default function AssetTypesConfigView() {
                   <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">Activos</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">Campos dinámicos</th>
-                  <th className="w-14 px-4 py-3 whitespace-nowrap" />
+                  <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 w-14 px-4 py-3 whitespace-nowrap text-right shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {types.map((type) => (
-                  <tr key={type.id} className={type.isActive === false ? 'opacity-55' : ''}>
+                  <tr key={type.id} className={`group ${type.isActive === false ? 'opacity-55' : ''}`}>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <input type="checkbox" aria-label={`Seleccionar ${type.name}`} disabled={type.isActive === false} checked={selection.isSelected(type.id)} onChange={() => selection.toggle(type.id)} />
                     </td>
@@ -133,7 +151,7 @@ export default function AssetTypesConfigView() {
                     </td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">{type.assetCount ?? 0}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">{type.fieldCount ?? 0}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 w-14 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">
                       <RowActionsMenu
                         ariaLabel={`Acciones de ${type.name}`}
                         items={[

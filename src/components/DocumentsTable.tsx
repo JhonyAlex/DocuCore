@@ -2,6 +2,7 @@ import RowActionsMenu, { type RowActionsMenuItem } from '@/components/RowActions
 import TableSortHeader from '@/components/TableSortHeader'
 import { formatApiDate, formatDocumentSize } from '@/lib/assetMappers'
 import type { ApiDocument } from '@/lib/api'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 
 const statusClasses: Record<'Vigente' | 'Por vencer' | 'Vencido', string> = {
   Vigente: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -44,11 +45,12 @@ interface DocumentsTableProps {
 }
 
 export default function DocumentsTable({ documents, selection, sortBy, sortOrder, onSort, onRowClick, onDownload, onDelete }: DocumentsTableProps) {
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
   const ids = documents.map((d) => d.id)
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <div className="overflow-x-auto">
+      <div ref={tableContainerRef} className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
             <tr>
@@ -87,7 +89,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
               <th className="px-4 py-3 text-left whitespace-nowrap">
                 <TableSortHeader label="Estado" field="status" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="w-14 px-4 py-3 whitespace-nowrap" />
+              <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 w-14 px-4 py-3 whitespace-nowrap text-right shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -103,7 +105,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
               const assetList = document.assets && document.assets.length > 0 ? `${document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ')}${(document.assetCount ?? document.assets.length) > document.assets.length ? ` +${(document.assetCount ?? 0) - document.assets.length}` : ''}` : '—'
 
               return (
-                <tr key={document.id} onClick={() => onRowClick(document)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <tr key={document.id} onClick={() => onRowClick(document)} className="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -128,7 +130,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
                   <td className="px-4 py-3 text-xs whitespace-nowrap">{version?.expiryDate ? formatApiDate(version.expiryDate) : <span className="text-slate-400">—</span>}</td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap max-w-44 truncate" title={document.periodicity ? `${document.periodicity} · ${document.periodicityMode}` : undefined}>{document.periodicity ? `${document.periodicity} · ${document.periodicityMode}` : <span className="text-slate-400">—</span>}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{document.status ? <span className={`chip ${statusClasses[document.status]}`}>{document.status}</span> : <span className="text-slate-400">—</span>}</td>
-                  <td className="w-14 px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 w-14 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
                     <RowActionsMenu items={items} ariaLabel={`Acciones de ${document.name}`} />
                   </td>
                 </tr>

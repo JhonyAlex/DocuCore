@@ -2,6 +2,7 @@ import type { Asset, Pagination } from '@/types'
 import StatusChip from '@/components/StatusChip'
 import RowActionsMenu, { type RowActionsMenuItem } from '@/components/RowActionsMenu'
 import TableSortHeader from '@/components/TableSortHeader'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 
 const urgencyClass: Record<string, string> = {
   amber: 'text-amber-600',
@@ -58,6 +59,7 @@ function menuItemsFor(asset: Asset, trashMode: boolean, handlers: Pick<AssetsTab
 }
 
 export default function AssetsTable({ assets, loading, error, pagination, trashMode = false, selectedIds, sortBy, sortOrder, onSort, onToggleSelect, onToggleSelectPage, onRowClick, onDuplicate, onDelete, onRestore, onPurge, onPageChange, onRetry }: AssetsTableProps) {
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
   const { page, totalPages, total, limit } = pagination
   const start = total === 0 ? 0 : (page - 1) * limit + 1
   const end = Math.min(page * limit, total)
@@ -68,7 +70,7 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-      <div className="overflow-x-auto">
+      <div ref={tableContainerRef} className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
             <tr>
@@ -96,7 +98,7 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
               <th className="text-left px-4 py-3 font-medium whitespace-nowrap">
                 <TableSortHeader label="Responsable" field="responsible" currentSortBy={sortBy} currentSortOrder={sortOrder} onSort={onSort} />
               </th>
-              <th className="text-right px-4 py-3 font-medium whitespace-nowrap">Acciones</th>
+              <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 text-right px-4 py-3 font-medium whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -129,7 +131,7 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
                       <div className="h-3 w-16 rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap"><div className="h-4 w-4 ml-auto rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
+                  <td className="sticky right-0 bg-white dark:bg-slate-900 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]"><div className="h-4 w-4 ml-auto rounded bg-slate-200 dark:bg-slate-700 animate-pulse" /></td>
                 </tr>
               ))}
             {!loading && error && (
@@ -150,7 +152,7 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
             {!loading &&
               !error &&
               assets.map((asset) => (
-                <tr key={asset.id} onClick={() => !trashMode && onRowClick(asset)} className={`${trashMode ? '' : 'hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer'}`}>
+                <tr key={asset.id} onClick={() => !trashMode && onRowClick(asset)} className={`group ${trashMode ? '' : 'hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer'}`}>
                   <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" className="rounded" checked={selectedIds.has(asset.id)} onChange={() => onToggleSelect(asset.id)} aria-label={`Seleccionar ${asset.code}`} />
                   </td>
@@ -191,7 +193,7 @@ export default function AssetsTable({ assets, loading, error, pagination, trashM
                       <span className="text-xs truncate" title={asset.responsible}>{asset.responsible}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]" onClick={(e) => e.stopPropagation()}>
                     <RowActionsMenu items={menuItemsFor(asset, trashMode, { onDuplicate, onDelete, onRestore, onPurge })} ariaLabel={`Acciones de ${asset.code}`} />
                   </td>
                 </tr>

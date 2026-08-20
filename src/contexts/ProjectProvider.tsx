@@ -25,10 +25,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       return
     }
     let cancelled = false
-    // Refrescar los metadatos del mismo proyecto (por ejemplo, su contador de
-    // activos) no debe desmontar la vista operativa ni perder la ficha,
-    // filtros o selección actuales. Al cambiar realmente de proyecto sí se
-    // entra en carga y el outlet descarta el estado anterior.
     const isCurrentScope = loadedProjectIdRef.current === projectId
     if (!isCurrentScope) setLoading(true)
     setError(null)

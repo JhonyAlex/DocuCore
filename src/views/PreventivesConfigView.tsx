@@ -4,6 +4,7 @@ import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useSelection } from '@/hooks/useSelection'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import { useProject } from '@/contexts/ProjectContext'
 import {
   bulkUpdatePreventivePlans,
@@ -272,6 +273,8 @@ export default function PreventivesConfigView() {
 
   const taskIds = tasks.map((t) => t.id)
   const planIds = plans.map((p) => p.id)
+  const plansTableContainerRef = useTableDragScroll<HTMLDivElement>()
+  const tasksTableContainerRef = useTableDragScroll<HTMLDivElement>()
 
   return (
     <section className="fade-in space-y-6">
@@ -348,7 +351,7 @@ export default function PreventivesConfigView() {
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div ref={plansTableContainerRef} className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
@@ -368,14 +371,14 @@ export default function PreventivesConfigView() {
                       <th className="px-4 py-3 text-left whitespace-nowrap">Tareas ({tasks.length})</th>
                       <th className="px-4 py-3 text-left whitespace-nowrap">Tipos de activo</th>
                       <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
-                      <th className="w-14 px-4 py-3 whitespace-nowrap" />
+                      <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 w-14 px-4 py-3 whitespace-nowrap text-right shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {plans.map((plan) => {
                       const assetTypesList = plan.assetTypes.length > 0 ? plan.assetTypes.map((at) => at.name).join(', ') : 'Todos'
                       return (
-                        <tr key={plan.id} className={!plan.isActive ? 'opacity-55' : ''}>
+                        <tr key={plan.id} className={`group ${!plan.isActive ? 'opacity-55' : ''}`}>
                           <td className="px-4 py-3 whitespace-nowrap">
                             <input
                               type="checkbox"
@@ -414,7 +417,7 @@ export default function PreventivesConfigView() {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 w-14 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">
                             <RowActionsMenu
                               ariaLabel={`Acciones de ${plan.name}`}
                               items={[
@@ -459,7 +462,7 @@ export default function PreventivesConfigView() {
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div ref={tasksTableContainerRef} className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                     <tr>
@@ -477,12 +480,12 @@ export default function PreventivesConfigView() {
                       <th className="px-4 py-3 text-left whitespace-nowrap">Código</th>
                       <th className="px-4 py-3 text-left whitespace-nowrap">Nombre de la tarea</th>
                       <th className="px-4 py-3 text-left whitespace-nowrap">Estado</th>
-                      <th className="w-14 px-4 py-3 whitespace-nowrap" />
+                      <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 w-14 px-4 py-3 whitespace-nowrap text-right shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {tasks.map((task) => (
-                      <tr key={task.id} className={!task.isActive ? 'opacity-55' : ''}>
+                      <tr key={task.id} className={`group ${!task.isActive ? 'opacity-55' : ''}`}>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <input
                             type="checkbox"
@@ -505,7 +508,7 @@ export default function PreventivesConfigView() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 w-14 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">
                           <RowActionsMenu
                             ariaLabel={`Acciones de ${task.name}`}
                             items={[
