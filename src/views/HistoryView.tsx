@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from '@/contexts/ProjectContext'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import { downloadHistoryCsv, fetchHistory, type ApiHistoryEntry } from '@/lib/api'
 import { formatApiDateTime, getHistoryActionChipClass, responsibleColorMap } from '@/lib/assetMappers'
 
@@ -43,30 +44,21 @@ export default function HistoryView() {
     }
   }
 
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
+
   return (
     <section className="fade-in">
-      <div className="flex items-end justify-between mb-6">
+      <div className="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Historial y auditoría</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Trazabilidad completa de cambios en activos, documentos y eventos</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Trazabilidad completa de cambios en ítems, documentos y eventos</p>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            id="history-action-filter"
-            value={selectedAction}
-            onChange={(event) => setSelectedAction(event.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm"
-          >
-            <option value="">Todos los tipos de acción</option>
+        <div className="flex items-center gap-3">
+          <select id="history-action-filter" aria-label="Filtrar por tipo de acción" value={selectedAction} onChange={(event) => setSelectedAction(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+            <option value="">Todas las acciones</option>
             {availableActions.map((action) => <option key={action} value={action}>{action}</option>)}
           </select>
-          <button
-            id="history-export-btn"
-            type="button"
-            onClick={() => void handleExport()}
-            disabled={exporting || history.length === 0}
-            className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <button id="history-export-btn" type="button" onClick={() => void handleExport()} disabled={exporting} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
             {exporting ? 'Exportando…' : 'Exportar'}
           </button>
         </div>
@@ -80,38 +72,40 @@ export default function HistoryView() {
       )}
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
-            <tr>
-              <th className="text-left px-4 py-3 whitespace-nowrap">Fecha</th>
-              <th className="text-left px-4 py-3 whitespace-nowrap">Usuario</th>
-              <th className="text-left px-4 py-3 whitespace-nowrap">Acción</th>
-              <th className="text-left px-4 py-3 whitespace-nowrap">Entidad</th>
-              <th className="text-left px-4 py-3 whitespace-nowrap">Detalle</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {loading ? Array.from({ length: 5 }, (_, index) => (
-              <tr key={index} className="animate-pulse"><td colSpan={5} className="px-4 py-3"><div className="h-4 rounded bg-slate-100 dark:bg-slate-800" /></td></tr>
-            )) : history.map((log) => (
-              <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatApiDateTime(log.timestamp)}</td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="flex items-center gap-2 min-w-0 max-w-44">
-                    <div className={`w-6 h-6 shrink-0 rounded-full ${responsibleColorMap[log.user.color] ?? 'bg-brand-500'} text-white text-xs font-medium flex items-center justify-center`}>{log.user.initials}</div>
-                    <span className="truncate text-xs font-medium" title={log.user.name}>{log.user.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap"><span className={`chip ${getHistoryActionChipClass(log.action)}`}>{log.action}</span></td>
-                <td className="px-4 py-3 font-mono text-xs whitespace-nowrap max-w-36 truncate" title={log.entityId}>{log.entityId}</td>
-                <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-md truncate whitespace-nowrap" title={log.detail}>{log.detail}</td>
+        <div ref={tableContainerRef} className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+              <tr>
+                <th className="text-left px-4 py-3 whitespace-nowrap">Fecha</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">Usuario</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">Acción</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">Entidad</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">Detalle</th>
               </tr>
-            ))}
-            {!loading && history.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">No se encontraron movimientos registrados.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {loading ? Array.from({ length: 5 }, (_, index) => (
+                <tr key={index} className="animate-pulse"><td colSpan={5} className="px-4 py-3"><div className="h-4 rounded bg-slate-100 dark:bg-slate-800" /></td></tr>
+              )) : history.map((log) => (
+                <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatApiDateTime(log.timestamp)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center gap-2 min-w-0 max-w-44">
+                      <div className={`w-6 h-6 shrink-0 rounded-full ${responsibleColorMap[log.user.color] ?? 'bg-brand-500'} text-white text-xs font-medium flex items-center justify-center`}>{log.user.initials}</div>
+                      <span className="truncate text-xs font-medium" title={log.user.name}>{log.user.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap"><span className={`chip ${getHistoryActionChipClass(log.action)}`}>{log.action}</span></td>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap max-w-36 truncate" title={log.entityId}>{log.entityId}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 max-w-md truncate whitespace-nowrap" title={log.detail}>{log.detail}</td>
+                </tr>
+              ))}
+              {!loading && history.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">No se encontraron movimientos registrados.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   )

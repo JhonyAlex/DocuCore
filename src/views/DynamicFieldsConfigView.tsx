@@ -5,6 +5,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import DynamicFieldFormModal from '@/components/DynamicFieldFormModal'
 import RowActionsMenu from '@/components/RowActionsMenu'
 import { useSelection } from '@/hooks/useSelection'
+import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import { useProject } from '@/contexts/ProjectContext'
 import { archiveDynamicFieldDefinition, createDynamicFieldDefinition, fetchAssetTypes, fetchDynamicFieldDefinitions, updateDynamicFieldDefinition, type ApiAssetType, type ApiDynamicFieldDefinition, type DynamicFieldDefinitionInput } from '@/lib/api'
 
@@ -76,6 +77,8 @@ export default function DynamicFieldsConfigView() {
   }
 
   const ids = fields.map((field) => field.id)
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
+
   return (
     <section className="fade-in">
       <div className="mb-6 flex items-end justify-between gap-4">
@@ -110,7 +113,7 @@ export default function DynamicFieldsConfigView() {
             <button type="button" onClick={() => setFormField(null)} className="mt-2 text-sm font-medium text-brand-600">Crear el primero</button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div ref={tableContainerRef} className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-800/50">
                 <tr>
@@ -119,20 +122,20 @@ export default function DynamicFieldsConfigView() {
                   <th className="px-4 py-3 text-left whitespace-nowrap">Tipo</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">Tipos de activo</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">Uso</th>
-                  <th className="w-14 px-4 py-3 whitespace-nowrap" />
+                  <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 w-14 px-4 py-3 whitespace-nowrap text-right shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {fields.map((field) => {
                   const assetTypesList = field.assetTypes.map((type) => type.name).join(', ')
                   return (
-                    <tr key={field.id} className={!field.isActive ? 'opacity-55' : ''}>
+                    <tr key={field.id} className={`group ${!field.isActive ? 'opacity-55' : ''}`}>
                       <td className="px-4 py-3 whitespace-nowrap"><input type="checkbox" aria-label={`Seleccionar ${field.fieldName}`} checked={selection.isSelected(field.id)} onChange={() => selection.toggle(field.id)} /></td>
                       <td className="px-4 py-3 whitespace-nowrap"><div className="font-medium max-w-xs truncate" title={field.fieldName}>{field.fieldName}{field.required && <span className="ml-1 text-red-500">*</span>}</div><div className="text-xs text-slate-400 truncate">{field.groupName} · {field.key}</div></td>
                       <td className="px-4 py-3 whitespace-nowrap"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{typeLabels[field.fieldType]}</span></td>
                       <td className="max-w-xs px-4 py-3 text-xs text-slate-600 dark:text-slate-300 truncate whitespace-nowrap" title={assetTypesList}>{assetTypesList}</td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">{field.usageCount} activos</td>
-                      <td className="px-4 py-3 whitespace-nowrap"><RowActionsMenu ariaLabel={`Acciones de ${field.fieldName}`} items={[{ label: 'Editar', onSelect: () => { setFormError(null); setFormField(field) } }, ...(field.isActive ? [{ label: 'Archivar', variant: 'danger' as const, onSelect: () => setArchiveIds([field.id]) }] : [])]} /></td>
+                      <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 w-14 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]"><RowActionsMenu ariaLabel={`Acciones de ${field.fieldName}`} items={[{ label: 'Editar', onSelect: () => { setFormError(null); setFormField(field) } }, ...(field.isActive ? [{ label: 'Archivar', variant: 'danger' as const, onSelect: () => setArchiveIds([field.id]) }] : [])]} /></td>
                     </tr>
                   )
                 })}

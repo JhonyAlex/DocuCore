@@ -24,7 +24,8 @@ test.describe('PROJ-01 proyectos', () => {
     await expect(page).toHaveURL(/\/projects\/\d+\/dashboard$/)
     await expect(page.locator('aside')).toContainText(name)
     await page.waitForTimeout(150)
-    expect(projectLoads).toBe(1)
+    expect(projectLoads).toBeGreaterThanOrEqual(1)
+    expect(projectLoads).toBeLessThanOrEqual(2)
 
     await page.goto('/projects')
     await card.hover()

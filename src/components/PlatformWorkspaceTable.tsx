@@ -1,4 +1,5 @@
 import type { ApiAdminWorkspace, PlanKey } from "@/types"
+import { useTableDragScroll } from "@/hooks/useTableDragScroll"
 
 interface PlatformWorkspaceTableProps {
   workspaces: ApiAdminWorkspace[]
@@ -27,9 +28,11 @@ export default function PlatformWorkspaceTable({
   onReactivate,
   onAssignManualPlan,
 }: PlatformWorkspaceTableProps) {
+  const tableContainerRef = useTableDragScroll<HTMLDivElement>()
+
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="overflow-x-auto">
+      <div ref={tableContainerRef} className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead className="border-b border-slate-100 bg-slate-50/75 text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
             <tr>
@@ -38,7 +41,7 @@ export default function PlatformWorkspaceTable({
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Estado</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Prueba / Período</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Proyectos</th>
-              <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Acciones</th>
+              <th className="sticky right-0 z-10 bg-slate-50 dark:bg-slate-800 px-4 py-3 font-semibold text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -50,7 +53,7 @@ export default function PlatformWorkspaceTable({
               workspaces.map((workspace) => {
                 const busy = actionBusyId === workspace.id
                 return (
-                  <tr key={workspace.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                  <tr key={workspace.id} className="group hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="max-w-44 truncate font-semibold text-slate-900 dark:text-white" title={workspace.name}>{workspace.name}</div>
                       <div className="truncate text-[11px] text-slate-400">slug: {workspace.slug}</div>
@@ -91,7 +94,7 @@ export default function PlatformWorkspaceTable({
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                       {workspace.projectCount} {workspace.projectCount === 1 ? "proyecto" : "proyectos"}
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <td className="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/70 px-4 py-3 text-right whitespace-nowrap shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.3)]">
                       <div className="flex items-center justify-end gap-1.5">
                         <button type="button" disabled={busy || workspace.billingSource === "MANUAL"} onClick={() => onExtendTrial(workspace.id)} className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">+14d Prueba</button>
                         <button type="button" disabled={busy} onClick={() => onAssignManualPlan(workspace, "STARTER")} className="rounded border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-200">Starter manual</button>

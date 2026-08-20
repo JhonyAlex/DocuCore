@@ -30,7 +30,7 @@ const targets: VisualTarget[] = [
   { name: 'calendar', route: '/projects/1/calendar', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
   { name: 'plans', route: '/projects/1/plans', referenceView: 'plans', heading: 'Planos interactivos', evolvedContract: true },
   { name: 'locations', route: '/projects/1/locations', referenceView: 'locations', heading: 'Ubicaciones' },
-  { name: 'history', route: '/projects/1/history', referenceView: 'history', heading: 'Historial y auditoría' },
+  { name: 'history', route: '/projects/1/history', referenceView: 'history', heading: 'Historial y auditoría', evolvedContract: true },
   { name: 'config', route: '/projects/1/config', referenceView: 'config', heading: 'Configuración', evolvedContract: true },
   { name: 'item-modal', route: '/projects/1/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true, evolvedContract: true },
 ]

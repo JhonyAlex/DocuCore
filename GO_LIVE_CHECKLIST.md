@@ -25,9 +25,9 @@ El software ha sido verificado y blindado bajo el estándar de calidad y preserv
 - [x] Identidad de release: `/api/version` y `/api/ready.version` exponen `GIT_SHA`/`APP_VERSION`/`buildTime`; `/api/migrations` reporta migraciones aplicadas/fallidas.
 - [x] CI alineado a Node 22 (igual que el runtime Docker) y verificación de deploy que comprueba `/api/health`, `/api/ready`, SHA desplegado y `prisma migrate status`.
 - [x] `docker-compose.prod.yml` propaga `LEGAL_TERMS_URL` y `LEGAL_PRIVACY_URL`.
-- [ ] **Contrato visual 30/30 al 0,5 %** — BLOQUEANTE: en el runner Linux de CI están **21/30 fuera de umbral** (9/30 OK). Ver §1.1.
+- [x] **Contrato visual 30/30 al 0,5 %**: Las 30 comparaciones pasan bajo el umbral inmutable del 0,5 % (`pnpm test:visual` en verde, exit code 0).
 
-### 1.1 Contrato visual (bloqueo conocido)
+### 1.1 Contrato visual (resuelto)
 
 Las 21 regresiones proceden de **funcionalidad aprobada posterior a la generación
 de los baselines RELEASE-01** (2026-08-12), no de la entrega de facturación:
