@@ -71,16 +71,21 @@ describe('AUTH-01 authentication', () => {
     expect(restore.status).toBe(204)
   })
 
-  it('allows a project manager to create an inactive account and blocks editors from user administration', async () => {
+  it('invites users without setting passwords, lists members scoped to the workspace, and blocks editors from user administration', async () => {
     const suffix = Date.now()
-    const created = await raw('/api/users', {
+    // An invitation carries the workspace role and per-project assignments;
+    // it NEVER requires the admin to define someone else's password (§14).
+    const created = await raw('/api/users/invitations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ projectId: 1, name: 'Cuenta pendiente', email: `pending-${suffix}@docucore.local`, password: 'CuentaInicial!2026', initials: 'CP', color: 'brand', isActive: false, role: 'VIEWER' }),
+      body: JSON.stringify({ email: `pending-${suffix}@docucore.local`, workspaceRole: 'MEMBER', projectAssignments: [{ projectId: 1, role: 'VIEWER' }] }),
     })
     expect(created.status).toBe(201)
-    expect(await created.json()).toMatchObject({ isActive: false, projectRole: 'VIEWER' })
-    const editor = await raw('/api/users?projectId=1', { headers: { 'x-docucore-test-actor-id': '2' } })
+    const invitation = await created.json()
+    expect(invitation.workspaceRole).toBe('MEMBER')
+    expect(typeof invitation.inviteToken).toBe('string') // returned exactly once, stored hashed
+
+    const editor = await raw('/api/users', { headers: { 'x-docucore-test-actor-id': '3' } })
     expect(editor.status).toBe(403)
   })
 

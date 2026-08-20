@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import prisma from "../../server/lib/prisma"
 import { startServer } from "../../server/index"
 import { hashPassword } from "../../server/lib/passwords"
-import { resolveWorkspacePlan, requireProjectCapacity } from "../../server/lib/plans"
+import { resolveWorkspacePlan } from "../../server/lib/plans"
+import { resolveEntitlement } from "../../server/lib/entitlements"
 
 describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
   it("resolves plan metadata correctly for Trial, Starter, and Pro", () => {
@@ -28,76 +29,78 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
     expect(proPlan.isTrial).toBe(false)
   })
 
-  it("enforces project capacity limits on Starter plan (max 1 active project)", async () => {
-    const stamp = Date.now()
-    const now = new Date()
+  it("enforces project capacity limits on Starter plan (max 1 active project) via API", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const stamp = Date.now()
+      const now = new Date()
 
-    const user = await prisma.user.create({
-      data: {
-        name: "Starter User",
-        email: `starter.${stamp}@docucore.test`,
-        passwordHash: await hashPassword("Password2026!"),
-        role: "Propietario",
-        initials: "SU",
-        color: "brand",
-        emailVerifiedAt: now,
-      },
-    })
+      const user = await prisma.user.create({
+        data: {
+          name: "Starter User",
+          email: `starter.${stamp}@docucore.test`,
+          passwordHash: await hashPassword("Password2026!"),
+          role: "Propietario",
+          initials: "SU",
+          color: "brand",
+          emailVerifiedAt: now,
+        },
+      })
 
-    const ws = await prisma.workspace.create({
-      data: {
-        name: "Starter Workspace",
-        slug: `starter-ws-${stamp}`,
-        billingStatus: "ACTIVE",
-        planKey: "STARTER",
-      },
-    })
-    await prisma.workspaceMember.create({
-      data: { workspaceId: ws.id, userId: user.id, role: "OWNER" },
-    })
+      const ws = await prisma.workspace.create({
+        data: {
+          name: "Starter Workspace",
+          slug: `starter-ws-${stamp}`,
+          billingStatus: "ACTIVE",
+          planKey: "STARTER",
+        },
+      })
+      await prisma.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: user.id, role: "OWNER" },
+      })
 
-    // Creating 1st project should succeed
-    const p1 = await prisma.project.create({
-      data: {
-        workspaceId: ws.id,
-        code: `PRJ1_${stamp}`.slice(0, 30),
-        name: "Proyecto Uno",
-        description: "Primer proyecto",
-        status: "ACTIVE",
-      },
-    })
-    await prisma.projectMember.create({
-      data: { projectId: p1.id, userId: user.id, role: "OWNER" },
-    })
+      // 1st project via the real enforcement path succeeds.
+      const create1 = await fetch(`${baseUrl}/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ code: `PRJ1_${stamp}`.slice(0, 30), name: "Proyecto Uno", description: "", themeKey: "blue" }),
+      })
+      expect(create1.status).toBe(201)
 
-    // Checking capacity for 2nd project should throw 409
-    await expect(requireProjectCapacity(ws.id, { actorId: user.id })).rejects.toThrow(/alcanzado el límite de 1 proyecto/)
+      // 2nd project is blocked at the Starter limit.
+      const create2 = await fetch(`${baseUrl}/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ code: `PRJ2_${stamp}`.slice(0, 30), name: "Proyecto Dos", description: "", themeKey: "blue" }),
+      })
+      expect(create2.status).toBe(409)
+      expect((await create2.json()).code).toBe("PROJECT_LIMIT_EXCEEDED")
 
-    // Archiving 1st project frees capacity
-    await prisma.project.update({
-      where: { id: p1.id },
-      data: { status: "ARCHIVED" },
-    })
+      // Archiving frees capacity.
+      const p1 = await prisma.project.findFirstOrThrow({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+      const archive = await fetch(`${baseUrl}/api/projects/${p1.id}/archive`, {
+        method: "POST",
+        headers: { "x-docucore-test-actor-id": String(user.id) },
+      })
+      expect(archive.status).toBe(200)
 
-    // Now capacity check should succeed
-    await expect(requireProjectCapacity(ws.id, { actorId: user.id })).resolves.toBeDefined()
+      // 2nd project now succeeds.
+      const create3 = await fetch(`${baseUrl}/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ code: `PRJ2_${stamp}`.slice(0, 30), name: "Proyecto Dos", description: "", themeKey: "blue" }),
+      })
+      expect(create3.status).toBe(201)
+    } finally {
+      server.close()
+    }
+  })
 
-    // Create 2nd active project
-    const p2 = await prisma.project.create({
-      data: {
-        workspaceId: ws.id,
-        code: `PRJ2_${stamp}`.slice(0, 30),
-        name: "Proyecto Dos",
-        description: "Segundo proyecto",
-        status: "ACTIVE",
-      },
-    })
-    await prisma.projectMember.create({
-      data: { projectId: p2.id, userId: user.id, role: "OWNER" },
-    })
-
-    // Trying to restore 1st project should now throw capacity error
-    await expect(requireProjectCapacity(ws.id, { actorId: user.id })).rejects.toThrow(/alcanzado el límite de 1 proyecto/)
+  it("billing and entitlements consume one canonical plan resolution", () => {
+    expect(resolveWorkspacePlan).toBe(resolveEntitlement)
   })
 
   it("handles downgrade protection and webhook price resolution via API", async () => {
@@ -172,7 +175,7 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
       expect(downgradeRes.status).toBe(409)
       const downgradeData = await downgradeRes.json()
       expect(downgradeData.code).toBe("DOWNGRADE_PROJECT_LIMIT_EXCEEDED")
-      expect(downgradeData.error).toContain("debes dejar únicamente 1 proyecto activo")
+      expect(downgradeData.error).toContain("seleccionar qué proyecto conservar")
 
       // 3. Archive 1 project
       const projects = await prisma.project.findMany({ where: { workspaceId: ws.id } })

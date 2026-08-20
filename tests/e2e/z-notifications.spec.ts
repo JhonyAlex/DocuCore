@@ -36,7 +36,13 @@ test.describe('Sistema de notificaciones', () => {
     // Probar marcar todas como leídas si hay botón
     const markAllBtn = popover.getByRole('button', { name: 'Marcar leídas' })
     if (await markAllBtn.isVisible()) {
+      // El botón actualiza el estado local de forma optimista; espera a que la
+      // escritura en servidor termine antes de cambiar de pestaña. De lo
+      // contrario, el refetch de "No leídas" puede devolver notificaciones
+      // todavía no persistidas y hacer el assertion flaky bajo carga.
+      const markAllResponse = page.waitForResponse((response) => response.url().includes('/read-all') && response.request().method() === 'POST')
       await markAllBtn.click()
+      await markAllResponse
       await expect(markAllBtn).toBeHidden()
     }
 
