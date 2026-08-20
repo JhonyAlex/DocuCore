@@ -10,6 +10,12 @@ export interface CheckoutSessionParams {
   planKey?: "STARTER" | "PRO"
   projectLimit?: number
   trialEndTimestamp?: number | null
+  /** Persisted PlanTransition id to apply when Stripe brings the plan into force. */
+  transitionId?: string
+  /** Which active project the operator chose to keep (downgrade selection). */
+  selectedProjectId?: number
+  /** Which active members the operator chose to keep (downgrade seat selection). */
+  selectedMemberIds?: number[]
 }
 
 export interface CustomerPortalParams {

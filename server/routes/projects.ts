@@ -5,8 +5,8 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProjectConfiguration } from '../lib/projectConfiguration'
 import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
-import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from '../lib/workspaceScope'
-import { requireProjectCapacity } from '../lib/plans'
+import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace, assertWorkspaceWriteAllowed } from '../lib/workspaceScope'
+import { computeCompliance, lockWorkspaceForEntitlement, restoreProjectTransactional } from '../lib/entitlements'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
 
 const router = Router()
@@ -49,13 +49,15 @@ const projectInclude = {
 
 type ProjectWithSummary = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>
 
-function serializeProject(project: ProjectWithSummary) {
+function serializeProject(project: ProjectWithSummary, currentRole?: string | null) {
   return {
     id: project.id,
     code: project.code,
     name: project.name,
     description: project.description,
     status: project.status,
+    archivedByPlan: project.archivedByPlan,
+    planLockedAt: project.planLockedAt?.toISOString() ?? null,
     themeKey: project.themeKey,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
@@ -64,6 +66,7 @@ function serializeProject(project: ProjectWithSummary) {
     locationCount: project._count.locations,
     memberCount: project._count.members,
     members: project.members.map((member) => ({ ...member.user, role: member.role })),
+    currentRole: currentRole ?? null,
   }
 }
 
@@ -93,7 +96,9 @@ router.get('/', asyncHandler(async (req, res) => {
   const wsScope = await getUserPrimaryWorkspace(actorId)
   const where: Prisma.ProjectWhereInput = {
     workspaceId: wsScope.workspace.id,
-    members: { some: { userId: actorId } },
+    ...(wsScope.membership.role === 'OWNER' || wsScope.membership.role === 'ADMIN'
+      ? {}
+      : { members: { some: { userId: actorId } } }),
     status: query.status === 'all' ? undefined : query.status === 'active' ? 'ACTIVE' : 'ARCHIVED',
     ...(query.search ? {
       OR: [
@@ -110,11 +115,26 @@ router.get('/', asyncHandler(async (req, res) => {
       : query.sort === 'created'
         ? [{ createdAt: 'asc' }, { id: 'asc' }]
         : [{ updatedAt: 'desc' }, { id: 'desc' }]
-  const [total, rows] = await Promise.all([
+  const [total, rows, actorMemberships] = await Promise.all([
     prisma.project.count({ where }),
     prisma.project.findMany({ where, include: projectInclude, orderBy, skip: (query.page - 1) * query.limit, take: query.limit }),
+    prisma.projectMember.findMany({ where: { userId: actorId, project: { workspaceId: wsScope.workspace.id } }, select: { projectId: true, role: true } }),
   ])
-  res.json({ data: rows.map(serializeProject), total, page: query.page, limit: query.limit, totalPages: Math.max(1, Math.ceil(total / query.limit)) })
+  const roleByProject = new Map(actorMemberships.map((m) => [m.projectId, m.role]))
+  res.json({
+    data: rows.map((p) =>
+      serializeProject(
+        p,
+        wsScope.membership.role === 'OWNER' || wsScope.membership.role === 'ADMIN'
+          ? (roleByProject.get(p.id) ?? wsScope.membership.role)
+          : roleByProject.get(p.id),
+      ),
+    ),
+    total,
+    page: query.page,
+    limit: query.limit,
+    totalPages: Math.max(1, Math.ceil(total / query.limit)),
+  })
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
@@ -131,15 +151,24 @@ router.post('/', asyncHandler(async (req, res) => {
     })
   }
 
-  // Validate active project capacity against workspace plan limit
-  await requireProjectCapacity(wsScope.workspace.id, { actorId })
-
+  // Validate active project capacity against workspace plan (concurrency-safe:
+  // the same FOR UPDATE lock is re-acquired inside the create transaction).
   await ensureUsersExist(input.memberIds)
   if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
   const created = await prisma.$transaction(async (tx) => {
-    // Re-verify capacity inside transaction
-    await requireProjectCapacity(wsScope.workspace.id, { actorId, tx })
+    const { workspace, counts } = await lockWorkspaceForEntitlement(tx, wsScope.workspace.id)
+    const snapshot = computeCompliance(workspace, counts)
+    if (!snapshot.canCreateProject) {
+      throw Object.assign(
+        new Error(
+          snapshot.reason === 'PLAN_ACTION_REQUIRED'
+            ? 'El workspace debe resolver primero qué proyecto conservar antes de crear otro.'
+            : `Has alcanzado el límite de ${snapshot.maxActiveProjects} proyecto(s) activo(s) para tu plan.`,
+        ),
+        { status: 409, code: snapshot.reason === 'PLAN_ACTION_REQUIRED' ? 'PLAN_COMPLIANCE_REQUIRED' : 'PROJECT_LIMIT_EXCEEDED', maxActiveProjects: snapshot.maxActiveProjects, activeProjects: snapshot.activeProjectsCount },
+      )
+    }
 
     const project = await tx.project.create({
       data: { workspaceId: wsScope.workspace.id, code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
@@ -169,6 +198,7 @@ router.patch('/:projectId', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const scope = await ensureManagementScope(projectId, actorId)
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
+  await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const input = projectPatchSchema.parse(req.body)
   const project = await prisma.$transaction(async (tx) => {
     const updated = await tx.project.update({ where: { id: projectId }, data: input, include: projectInclude })
@@ -183,8 +213,8 @@ router.post('/:projectId/archive', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   await ensureManagementScope(projectId, actorId)
   const project = await prisma.$transaction(async (tx) => {
-    const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ARCHIVED' }, include: projectInclude })
-    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Archivo', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" archivado`, timestamp: new Date() } })
+    const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ARCHIVED', archivedByPlan: false }, include: projectInclude })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Archivo', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" archivado manualmente`, timestamp: new Date() } })
     return updated
   })
   res.json(serializeProject(project))
@@ -194,13 +224,10 @@ router.post('/:projectId/restore', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
   const actorId = actorIdFromRequest(req)
   const scope = await ensureManagementScope(projectId, actorId)
-  await requireProjectCapacity(scope.project.workspaceId, { actorId })
-  const project = await prisma.$transaction(async (tx) => {
-    await requireProjectCapacity(scope.project.workspaceId, { actorId, tx })
-    const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ACTIVE' }, include: projectInclude })
-    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Reactivación', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" reactivado`, timestamp: new Date() } })
-    return updated
+  await prisma.$transaction(async (tx) => {
+    await restoreProjectTransactional(tx, { workspaceId: scope.project.workspaceId, actorId, projectId })
   })
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: projectInclude })
   res.json(serializeProject(project))
 }))
 
@@ -210,6 +237,7 @@ router.post('/:projectId/copy-configuration', asyncHandler(async (req, res) => {
   const input = z.object({ sourceProjectId: z.number().int().positive() }).strict().parse(req.body)
   const targetScope = await ensureManagementScope(targetProjectId, actorId, 'MANAGE_CONFIGURATION')
   if (targetScope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
+  await assertWorkspaceWriteAllowed(targetScope.project.workspaceId)
   if (input.sourceProjectId === targetProjectId) return res.status(400).json({ error: 'El proyecto origen debe ser distinto' })
   await ensureManagementScope(input.sourceProjectId, actorId, 'MANAGE_CONFIGURATION')
   const copied = await prisma.$transaction(async (tx) => {
@@ -249,6 +277,7 @@ router.post('/:projectId/members', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const scope = await ensureManagementScope(projectId, actorId, 'MANAGE_MEMBERS')
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
+  await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const input = memberInputSchema.parse(req.body)
   await ensureUsersExist([input])
   const member = await prisma.$transaction(async (tx) => {
@@ -264,6 +293,7 @@ router.patch('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const scope = await ensureManagementScope(projectId, actorId, 'MANAGE_MEMBERS')
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
+  await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const userId = parseProjectId(req.params.userId)
   const input = z.object({ role: projectRoleSchema }).strict().parse(req.body)
   const before = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
@@ -282,6 +312,7 @@ router.delete('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const scope = await ensureManagementScope(projectId, actorId, 'MANAGE_MEMBERS')
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
+  await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const userId = parseProjectId(req.params.userId)
   const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
   if (!member) return res.status(404).json({ error: 'Project member not found' })

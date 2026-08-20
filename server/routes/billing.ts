@@ -9,13 +9,18 @@ import {
   reconcileWorkspace,
 } from "../lib/billing"
 import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from "../lib/workspaceScope"
+import { fetchWorkspaceCompliance } from "../lib/entitlements"
 import { getStripePriceIdForPlan, resolveWorkspacePlan } from "../lib/plans"
+import { PLAN_CATALOG } from "../../shared/planCatalog"
 import prisma from "../lib/prisma"
 
 const router = Router()
 
 const checkoutInputSchema = z.object({
   planKey: z.enum(["STARTER", "PRO"]),
+  transitionId: z.string().min(1).max(100).optional(),
+  selectedProjectId: z.number().int().positive().optional(),
+  selectedMemberIds: z.array(z.number().int().positive()).max(15).optional(),
 }).strict()
 
 // Webhook endpoint needs raw body for signature verification
@@ -36,9 +41,9 @@ router.get("/status", asyncHandler(async (req, res) => {
   const wsScope = await getUserPrimaryWorkspace(actorId)
   const entitlement = evaluateWorkspaceEntitlement(wsScope.workspace)
   const planInfo = resolveWorkspacePlan(wsScope.workspace)
+  const compliance = await fetchWorkspaceCompliance(wsScope.workspace.id)
 
-  const [activeProjectsCount, archivedProjectsCount] = await Promise.all([
-    prisma.project.count({ where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" } }),
+  const [archivedProjectsCount] = await Promise.all([
     prisma.project.count({ where: { workspaceId: wsScope.workspace.id, status: "ARCHIVED" } }),
   ])
 
@@ -51,9 +56,19 @@ router.get("/status", asyncHandler(async (req, res) => {
     planKey: planInfo.planKey,
     planName: planInfo.planName,
     maxActiveProjects: planInfo.maxActiveProjects,
-    activeProjectsCount,
+    activeProjectsCount: compliance.activeProjectsCount,
     archivedProjectsCount,
-    canDowngradeToStarter: activeProjectsCount <= 1,
+    maxActiveMembers: planInfo.maxActiveMembers,
+    activeMembersCount: compliance.activeMembersCount,
+    planLockedMembersCount: compliance.planLockedMembersCount,
+    suspendedMembersCount: compliance.suspendedMembersCount,
+    remainingMemberSeats: compliance.remainingMemberSeats,
+    projectsCompliant: compliance.projectsCompliant,
+    membersCompliant: compliance.membersCompliant,
+    complianceStatus: compliance.complianceStatus,
+    canDowngradeToStarter: compliance.activeProjectsCount <= PLAN_CATALOG.STARTER.maxActiveProjects && compliance.activeMembersCount <= PLAN_CATALOG.STARTER.maxActiveMembers,
+    canInviteMember: compliance.canInviteMember,
+    canActivateMember: compliance.canActivateMember,
     trialStartedAt: wsScope.workspace.trialStartedAt?.toISOString() ?? null,
     trialEndsAt: wsScope.workspace.trialEndsAt?.toISOString() ?? null,
     trialDaysLeft: entitlement.trialDaysLeft ?? 0,
@@ -78,21 +93,41 @@ router.post("/checkout", asyncHandler(async (req, res) => {
 
   const input = checkoutInputSchema.parse(req.body)
 
+  // A transition id must belong to this workspace, still be PENDING, and match
+  // the plan being checked out (never apply a transition under the wrong plan).
+  if (input.transitionId) {
+    const transition = await prisma.planTransition.findUnique({ where: { id: input.transitionId } })
+    if (!transition || transition.workspaceId !== wsScope.workspace.id || transition.status !== "PENDING" || transition.targetPlanKey !== input.planKey) {
+      return res.status(409).json({ error: "La transición de plan indicada no es válida para esta cuenta.", code: "INVALID_TRANSITION" })
+    }
+  }
+
   if (wsScope.workspace.billingSource === "MANUAL") {
     return res.status(409).json({ error: "Esta licencia está gestionada manualmente por la plataforma. La contratación mediante Stripe no está disponible para esta cuenta." })
   }
 
-  // Downgrade protection: If selecting STARTER, active projects must be <= 1
+  // Downgrade protection: a STARTER selection with several active projects or
+  // members must come with a persisted transition (the wizard stores it and its
+  // selections); otherwise the workspace must already be within the limits.
   if (input.planKey === "STARTER") {
-    const activeProjectsCount = await prisma.project.count({
-      where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" },
-    })
-    if (activeProjectsCount > 1) {
+    const [activeProjectsCount, activeMembersCount] = await Promise.all([
+      prisma.project.count({ where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" } }),
+      prisma.workspaceMember.count({ where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" } }),
+    ])
+    if (activeProjectsCount > PLAN_CATALOG.STARTER.maxActiveProjects && !(input.transitionId && input.selectedProjectId)) {
       return res.status(409).json({
-        error: "Para cambiar al plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.",
+        error: "Para cambiar al plan Starter debes seleccionar qué proyecto conservar (transición de plan).",
         code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
         activeProjectsCount,
-        maxAllowed: 1,
+        maxAllowed: PLAN_CATALOG.STARTER.maxActiveProjects,
+      })
+    }
+    if (activeMembersCount > PLAN_CATALOG.STARTER.maxActiveMembers && !(input.transitionId && input.selectedMemberIds?.length)) {
+      return res.status(409).json({
+        error: "Para cambiar al plan Starter debes seleccionar qué usuarios conservarán acceso (transición de plan).",
+        code: "DOWNGRADE_MEMBER_LIMIT_EXCEEDED",
+        activeMembersCount,
+        maxAllowed: PLAN_CATALOG.STARTER.maxActiveMembers,
       })
     }
   }
@@ -110,7 +145,7 @@ router.post("/checkout", asyncHandler(async (req, res) => {
   }
 
   const priceId = getStripePriceIdForPlan(input.planKey)
-  const projectLimit = input.planKey === "STARTER" ? 1 : 15
+  const projectLimit = input.planKey === "STARTER" ? PLAN_CATALOG.STARTER.maxActiveProjects : PLAN_CATALOG.PRO.maxActiveProjects
 
   const session = await createCheckoutSession({
     workspaceId: wsScope.workspace.id,
@@ -122,6 +157,9 @@ router.post("/checkout", asyncHandler(async (req, res) => {
     successUrl: `${baseUrl}/account?checkout=success`,
     cancelUrl: `${baseUrl}/account?checkout=cancel`,
     trialEndTimestamp,
+    transitionId: input.transitionId,
+    selectedProjectId: input.selectedProjectId,
+    selectedMemberIds: input.selectedMemberIds,
   })
 
   res.json({ checkoutUrl: session.checkoutUrl })
@@ -155,6 +193,9 @@ router.post("/portal", asyncHandler(async (req, res) => {
 router.post("/reconcile", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
+    return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden reconciliar la facturación.", code: "WORKSPACE_ACCESS_DENIED" })
+  }
   const result = await reconcileWorkspace(wsScope.workspace.id)
   res.json(result)
 }))

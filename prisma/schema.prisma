@@ -32,6 +32,24 @@ enum ProjectStatus {
   ARCHIVED
 }
 
+enum PlanTransitionStatus {
+  PENDING
+  APPLIED
+  CANCELED
+}
+
+enum WorkspaceMemberStatus {
+  ACTIVE
+  SUSPENDED
+  PLAN_LOCKED
+}
+
+enum WorkspaceInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
 // Roles are persisted per project. Global user fields describe identity only;
 // authorization always comes from ProjectMember.
 enum ProjectRole {
@@ -52,42 +70,103 @@ enum FieldType {
 }
 
 model Workspace {
-  id                   Int           @id @default(autoincrement())
-  name                 String
-  slug                 String        @unique
-  billingStatus        BillingStatus @default(PENDING_VERIFICATION)
-  billingSource        BillingSource @default(STRIPE)
-  trialStartedAt       DateTime?
-  trialEndsAt          DateTime?
-  stripeCustomerId     String?       @unique
-  stripeSubscriptionId String?       @unique
-  stripePriceId        String?
-  planKey              String?
-  currentPeriodEnd     DateTime?
-  cancelAtPeriodEnd    Boolean       @default(false)
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  id                      Int           @id @default(autoincrement())
+  name                    String
+  slug                    String        @unique
+  billingStatus           BillingStatus @default(PENDING_VERIFICATION)
+  billingSource           BillingSource @default(STRIPE)
+  trialStartedAt          DateTime?
+  trialEndsAt             DateTime?
+  stripeCustomerId        String?       @unique
+  stripeSubscriptionId    String?       @unique
+  stripePriceId           String?
+  planKey                 String?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean       @default(false)
+  graceEndsAt             DateTime?
+  planComplianceStartedAt DateTime?
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
-  members   WorkspaceMember[]
-  projects  Project[]
-  auditLogs AuditLog[]
+  members         WorkspaceMember[]
+  projects        Project[]
+  auditLogs       AuditLog[]
+  planTransitions PlanTransition[]
+  invitations     WorkspaceInvitation[]
 
   @@index([billingStatus, trialEndsAt])
   @@index([stripeCustomerId])
 }
 
 model WorkspaceMember {
-  id          Int           @id @default(autoincrement())
+  id          Int                   @id @default(autoincrement())
   workspaceId Int
   userId      Int
-  role        WorkspaceRole @default(MEMBER)
-  createdAt   DateTime      @default(now())
+  role        WorkspaceRole         @default(MEMBER)
+  status      WorkspaceMemberStatus @default(ACTIVE)
+  createdAt   DateTime              @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, userId])
   @@index([userId])
+}
+
+model PlanTransition {
+  id                   String               @id
+  workspaceId          Int
+  actorId              Int
+  targetPlanKey        String
+  selectedProjectId    Int
+  planLockedProjectIds String[]
+  selectedMemberIds    String[]             @default([])
+  planLockedMemberIds  String[]             @default([])
+  effectiveAt          DateTime?
+  appliedAt            DateTime?
+  status               PlanTransitionStatus @default(PENDING)
+  stripeSessionId      String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User      @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status, createdAt(sort: Desc)])
+}
+
+model WorkspaceInvitation {
+  id            String                    @id
+  workspaceId   Int
+  email         String
+  workspaceRole WorkspaceRole             @default(MEMBER)
+  tokenHash     String                    @unique
+  invitedById   Int
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  revokedAt     DateTime?
+  status        WorkspaceInvitationStatus @default(PENDING)
+  createdAt     DateTime                  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("WorkspaceInvitations", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  projectRoles WorkspaceInvitationProjectRole[]
+
+  @@index([workspaceId, status, createdAt(sort: Desc)])
+  @@index([email])
+}
+
+model WorkspaceInvitationProjectRole {
+  invitationId String
+  projectId    Int
+  role         ProjectRole @default(VIEWER)
+
+  invitation WorkspaceInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  project    Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([invitationId, projectId])
+  @@index([projectId])
 }
 
 model EmailVerificationToken {
@@ -133,6 +212,7 @@ model User {
   color           String
   emailVerifiedAt DateTime?
   isPlatformAdmin Boolean   @default(false)
+  activeWorkspaceId Int?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -140,6 +220,8 @@ model User {
   memberships             ProjectMember[]
   workspaceMemberships    WorkspaceMember[]
   auditLogs               AuditLog[]
+  planTransitions         PlanTransition[]
+  invitedWorkspaceMembers WorkspaceInvitation[]    @relation("WorkspaceInvitations")
   locationsResponsible    Location[]               @relation("LocationResponsible")
   notifications           Notification[]
   sessions                AuthSession[]
@@ -167,31 +249,34 @@ model AuthSession {
 }
 
 model Project {
-  id          Int           @id @default(autoincrement())
-  workspaceId Int
-  code        String        @unique
-  name        String
-  description String
-  status      ProjectStatus @default(ACTIVE)
-  themeKey    String        @default("blue")
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             Int           @id @default(autoincrement())
+  workspaceId    Int
+  code           String        @unique
+  name           String
+  description    String
+  status         ProjectStatus @default(ACTIVE)
+  archivedByPlan Boolean       @default(false)
+  planLockedAt   DateTime?
+  themeKey       String        @default("blue")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  workspace        Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  assets           Asset[]
-  members          ProjectMember[]
-  documents        Document[]
-  events           Event[]
-  locations        Location[]
-  assetTypes       AssetType[]
-  documentTypes    DocumentType[]
-  fieldDefinitions DynamicFieldDefinition[]
-  statuses         Status[]
-  tasks            Task[]
-  preventivePlans  PreventivePlan[]
-  floorPlans       FloorPlan[]
-  auditLogs        AuditLog[]
-  notifications    Notification[]
+  workspace                      Workspace                        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  assets                         Asset[]
+  members                        ProjectMember[]
+  documents                      Document[]
+  events                         Event[]
+  locations                      Location[]
+  assetTypes                     AssetType[]
+  documentTypes                  DocumentType[]
+  fieldDefinitions               DynamicFieldDefinition[]
+  statuses                       Status[]
+  tasks                          Task[]
+  preventivePlans                PreventivePlan[]
+  floorPlans                     FloorPlan[]
+  auditLogs                      AuditLog[]
+  notifications                  Notification[]
+  WorkspaceInvitationProjectRole WorkspaceInvitationProjectRole[]
 
   @@index([workspaceId, status])
   @@index([status, updatedAt, id])
@@ -326,20 +411,20 @@ model AssetDynamicFieldValue {
 }
 
 model Asset {
-  id              Int       @id @default(autoincrement())
-  code            String
-  name            String
-  serialNumber    String
-  installDate     DateTime
-  typeId          Int
-  statusId        Int
-  locationId      Int
-  projectId       Int
-  responsibleId   Int
-  initials        String
-  deletedAt       DateTime?   @db.Timestamptz(6)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id            Int       @id @default(autoincrement())
+  code          String
+  name          String
+  serialNumber  String
+  installDate   DateTime
+  typeId        Int
+  statusId      Int
+  locationId    Int
+  projectId     Int
+  responsibleId Int
+  initials      String
+  deletedAt     DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   images                AssetImage[]
   type                  AssetType                   @relation(fields: [typeId], references: [id])
@@ -708,15 +793,15 @@ model FloorPlanMarker {
 }
 
 model AuditLog {
-  id          Int        @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   workspaceId Int?
   projectId   Int?
   userId      Int
   action      String
   entityId    String
   detail      String
-  timestamp   DateTime   @default(now())
-  createdAt   DateTime   @default(now())
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   project   Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)

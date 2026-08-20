@@ -25,6 +25,7 @@ import projectsRouter from './routes/projects'
 import authRouter from './routes/auth'
 import usersRouter from './routes/users'
 import billingRouter from './routes/billing'
+import planChangeRouter from './lib/billingPlanChange'
 import adminRouter from './routes/admin'
 import { errorHandler } from './middleware/error'
 import { requireProjectScope } from './lib/projectScope'
@@ -167,6 +168,7 @@ app.get('/api/ready', async (_req, res) => {
 
 app.use('/api/auth', authRouter)
 app.use('/api/billing', billingRouter)
+app.use('/api/billing/plan-change', planChangeRouter)
 app.use('/api', requireAuth)
 app.use('/api/admin', adminRouter)
 app.use('/api/users', usersRouter)

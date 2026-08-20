@@ -2,7 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { ProjectRole, ProjectStatus, Workspace, WorkspaceRole } from '@prisma/client'
 import prisma from './prisma'
 import { authenticatedUserId } from './auth'
-import { evaluateWorkspaceEntitlement } from './workspaceScope'
+import { evaluateWorkspaceEntitlement, assertWorkspaceWriteAllowed } from './workspaceScope'
 
 export function actorIdFromRequest(req: Request): number {
   return authenticatedUserId(req)
@@ -70,9 +70,15 @@ export async function resolveProjectScope(projectId: number, actorId: number): P
     }),
     prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: project.workspaceId, userId: actorId } },
-      select: { id: true, userId: true, role: true },
+      select: { id: true, userId: true, role: true, status: true },
     }),
   ])
+
+  // A SUSPENDED workspace membership revokes access to every project of that
+  // workspace: suspension is the workspace-level enforcement boundary (§16).
+  if (workspaceMembership && workspaceMembership.status !== 'ACTIVE') {
+    throw scopeError('Workspace access denied', 403)
+  }
 
   if (!membership) {
     if (user?.isPlatformAdmin) {
@@ -110,6 +116,7 @@ export function requireProjectScope(options: { write?: boolean; capability?: Pro
           })
         }
         if (scope.project.status === 'ARCHIVED') throw scopeError('Archived projects are read-only', 409)
+        await assertWorkspaceWriteAllowed(scope.project.workspaceId)
       }
 
       req.projectScope = scope

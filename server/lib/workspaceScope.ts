@@ -1,7 +1,6 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express"
 import type { BillingStatus, Workspace, WorkspaceRole } from "@prisma/client"
 import prisma from "./prisma"
-import { authenticatedUserId } from "./auth"
+import { fetchWorkspaceCompliance } from "./entitlements"
 
 export interface WorkspaceEntitlement {
   isEntitledToWrite: boolean
@@ -105,12 +104,28 @@ export function evaluateWorkspaceEntitlement(workspace: {
 export async function getUserPrimaryWorkspace(userId: number): Promise<WorkspaceScope> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, isPlatformAdmin: true },
+    select: { id: true, isPlatformAdmin: true, activeWorkspaceId: true },
   })
   if (!user) throw workspaceError("User not found", 401)
 
+  // A person may belong to several workspaces. The explicitly selected active
+  // context wins; otherwise fall back to the first membership (§15).
+  if (user.activeWorkspaceId) {
+    const activeMember = await prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: user.activeWorkspaceId, userId } },
+      include: { workspace: true },
+    })
+    if (activeMember && activeMember.status === "ACTIVE") {
+      return {
+        workspaceId: activeMember.workspaceId,
+        workspace: activeMember.workspace,
+        membership: { id: activeMember.id, userId, role: activeMember.role },
+      }
+    }
+  }
+
   const membership = await prisma.workspaceMember.findFirst({
-    where: { userId },
+    where: { userId, status: "ACTIVE" },
     include: { workspace: true },
     orderBy: { id: "asc" },
   })
@@ -176,6 +191,12 @@ export async function resolveWorkspaceScope(workspaceId: number, actorId: number
     throw workspaceError("Workspace access denied", 403)
   }
 
+  // Suspension is the workspace access boundary (§16): a SUSPENDED membership
+  // cannot select or switch into that workspace either.
+  if (membership.status !== "ACTIVE") {
+    throw workspaceError("Workspace access denied", 403)
+  }
+
   return {
     workspaceId,
     workspace,
@@ -183,30 +204,19 @@ export async function resolveWorkspaceScope(workspaceId: number, actorId: number
   }
 }
 
-export function requireWorkspaceEntitlement(options: { write?: boolean } = {}): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const actorId = authenticatedUserId(req)
-      let scope = req.workspaceScope
-      if (!scope) {
-        scope = await getUserPrimaryWorkspace(actorId)
-        req.workspaceScope = scope
-      }
-
-      if (options.write) {
-        const entitlement = evaluateWorkspaceEntitlement(scope.workspace)
-        if (!entitlement.isEntitledToWrite) {
-          return res.status(402).json({
-            error: "La suscripción o período de prueba de tu cuenta no permite operaciones de escritura.",
-            code: entitlement.reason,
-            billingStatus: scope.workspace.billingStatus,
-            trialEndsAt: scope.workspace.trialEndsAt?.toISOString(),
-          })
-        }
-      }
-      next()
-    } catch (error) {
-      next(error)
-    }
+/**
+ * Blocks writes on a workspace that is out of compliance with its plan (project
+ * or member overage). Read/export/download stay available; the OWNER must
+ * resolve which projects/members to keep first. This is the enforcement behind
+ * an external Stripe downgrade that carried no prepared transition (§11).
+ */
+export async function assertWorkspaceWriteAllowed(workspaceId: number): Promise<void> {
+  const snapshot = await fetchWorkspaceCompliance(workspaceId)
+  if (snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
+    throw workspaceError(
+      "Tu workspace supera el límite de proyectos o usuarios de su plan. Resuelve qué proyectos y usuarios conservar antes de continuar.",
+      402,
+      "PLAN_ACTION_REQUIRED",
+    )
   }
 }

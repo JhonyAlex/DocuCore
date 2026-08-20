@@ -1,7 +1,20 @@
 import Stripe from "stripe"
 import prisma from "../prisma"
-import { getPlanKeyFromPriceId, getStripePriceIdForPlan } from "../plans"
+import { planKeyFromPriceId } from "../entitlements"
+import { getStripePriceIdForPlan } from "../plans"
 import type { BillingProvider, CheckoutSessionParams, CustomerPortalParams, ReconcileResult, WebhookEventResult } from "./types"
+
+function parseMemberIds(raw: string | undefined): number[] | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return undefined
+    const ids = parsed.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+    return ids.length ? ids : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export class StripeBillingProvider implements BillingProvider {
   private stripe: Stripe
@@ -32,12 +45,18 @@ export class StripeBillingProvider implements BillingProvider {
         workspaceId: String(params.workspaceId),
         planKey: params.planKey ?? "",
         projectLimit: String(params.projectLimit ?? ""),
+        ...(params.transitionId ? { transitionId: params.transitionId } : {}),
+        ...(params.selectedProjectId ? { selectedProjectId: String(params.selectedProjectId) } : {}),
+        ...(params.selectedMemberIds ? { selectedMemberIds: JSON.stringify(params.selectedMemberIds) } : {}),
       },
       subscription_data: {
         metadata: {
           workspaceId: String(params.workspaceId),
           planKey: params.planKey ?? "",
           projectLimit: String(params.projectLimit ?? ""),
+          ...(params.transitionId ? { transitionId: params.transitionId } : {}),
+          ...(params.selectedProjectId ? { selectedProjectId: String(params.selectedProjectId) } : {}),
+          ...(params.selectedMemberIds ? { selectedMemberIds: JSON.stringify(params.selectedMemberIds) } : {}),
         },
         ...(params.trialEndTimestamp && params.trialEndTimestamp > Math.floor(Date.now() / 1000)
           ? { trial_end: params.trialEndTimestamp }
@@ -106,6 +125,9 @@ export class StripeBillingProvider implements BillingProvider {
             const cusId = typeof session.customer === "string" ? session.customer : session.customer?.id
             const sessionMetadata = (session.metadata as Record<string, string> | undefined) ?? {}
             const metaPlanKey = sessionMetadata.planKey === "STARTER" || sessionMetadata.planKey === "PRO" ? sessionMetadata.planKey : null
+            const transitionId = sessionMetadata.transitionId
+            const selectedProjectId = sessionMetadata.selectedProjectId ? Number(sessionMetadata.selectedProjectId) : undefined
+
             await tx.workspace.update({
               where: { id: wsId },
               data: {
@@ -115,6 +137,42 @@ export class StripeBillingProvider implements BillingProvider {
                 stripeSubscriptionId: subId ?? null,
               },
             })
+
+            // A persisted downgrade transition is applied now that Stripe has
+            // brought the plan into force (§5: transactional, data preserved).
+            if (transitionId && metaPlanKey && selectedProjectId) {
+              const pending = await tx.planTransition.findUnique({ where: { id: transitionId } })
+              // Ownership guard: never let a foreign workspace consume a
+              // transition (a cross-account id must not downgrade someone else).
+              if (pending && pending.status === "PENDING" && pending.workspaceId === wsId) {
+                const { applyPlanTransition } = await import("../entitlements")
+                const selectedMemberIds = pending.selectedMemberIds.length
+                  ? pending.selectedMemberIds.map(Number)
+                  : parseMemberIds(sessionMetadata.selectedMemberIds)
+                try {
+                  await applyPlanTransition(tx, {
+                    workspaceId: wsId,
+                    actorId: pending.actorId,
+                    targetPlanKey: metaPlanKey,
+                    selectedProjectId,
+                    selectedMemberIds,
+                    effectiveAt: new Date(),
+                    transitionId,
+                  })
+                } catch (error) {
+                  // A stale selection must never block billing activation (the
+                  // Subscription already transitioned). Keep the workspace ACTIVE
+                  // and leave the transition PENDING for the operator to resolve.
+                  // Any resulting overage is blocked by the central write gate
+                  // (PLAN_ACTION_REQUIRED), so the workspace is never silently
+                  // writable out of compliance (§11).
+                  const message = error instanceof Error ? error.message : String(error)
+                  await tx.auditLog.create({
+                    data: { workspaceId: wsId, userId: pending.actorId, action: "Transición de plan no aplicable", entityId: `plan-transition:${transitionId}`, detail: message, timestamp: new Date() },
+                  })
+                }
+              }
+            }
           }
           break
         }
@@ -138,7 +196,7 @@ export class StripeBillingProvider implements BillingProvider {
             else if (sub.status === "trialing") mappedStatus = "TRIAL"
 
             const priceId = sub.items.data[0]?.price?.id ?? target.stripePriceId
-            const mappedPlanKey = getPlanKeyFromPriceId(priceId)
+            const mappedPlanKey = planKeyFromPriceId(priceId)
             const rawSub = sub as unknown as { current_period_end?: number }
             await tx.workspace.update({
               where: { id: target.id },
@@ -244,7 +302,7 @@ export class StripeBillingProvider implements BillingProvider {
       else if (sub.status === "trialing") mappedStatus = "TRIAL"
 
       const priceId = sub.items.data[0]?.price?.id ?? ws.stripePriceId
-      const mappedPlanKey = getPlanKeyFromPriceId(priceId)
+      const mappedPlanKey = planKeyFromPriceId(priceId)
       const rawSub = sub as unknown as { current_period_end?: number }
       const updated = await prisma.workspace.update({
         where: { id: ws.id },

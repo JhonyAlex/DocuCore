@@ -1,6 +1,18 @@
 import prisma from "../prisma"
-import { getPlanKeyFromPriceId } from "../plans"
+import { planKeyFromPriceId } from "../entitlements"
 import type { BillingProvider, CheckoutSessionParams, CustomerPortalParams, ReconcileResult, WebhookEventResult } from "./types"
+
+function parseMemberIds(raw: string | undefined): number[] | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return undefined
+    const ids = parsed.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+    return ids.length ? ids : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export class FakeBillingProvider implements BillingProvider {
   async createCheckoutSession(params: CheckoutSessionParams): Promise<{ checkoutUrl: string; sessionId: string }> {
@@ -56,7 +68,7 @@ export class FakeBillingProvider implements BillingProvider {
           if (targetWorkspace && targetWorkspace.billingSource !== "MANUAL") {
             const rawPriceId = (obj.priceId as string) || (obj.price as string)
             const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
-            const resolvedPlanKey = metaPlanKey ?? getPlanKeyFromPriceId(rawPriceId) ?? "STARTER"
+            const resolvedPlanKey = metaPlanKey ?? planKeyFromPriceId(rawPriceId) ?? "STARTER"
             await tx.workspace.update({
               where: { id: wsId },
               data: {
@@ -68,6 +80,39 @@ export class FakeBillingProvider implements BillingProvider {
                 currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
               },
             })
+
+            // Apply any persisted downgrade transition once the (fake) checkout
+            // confirms the plan (§5): plan-lock the projects not selected.
+            const transitionId = metadata.transitionId
+            const selectedProjectId = metadata.selectedProjectId ? Number(metadata.selectedProjectId) : undefined
+            if (transitionId && resolvedPlanKey && selectedProjectId) {
+              const pending = await tx.planTransition.findUnique({ where: { id: transitionId } })
+              // Ownership guard: never let a foreign workspace consume a transition.
+              if (pending && pending.status === "PENDING" && pending.workspaceId === wsId) {
+                const { applyPlanTransition } = await import("../entitlements")
+                const selectedMemberIds = pending.selectedMemberIds.length
+                  ? pending.selectedMemberIds.map(Number)
+                  : parseMemberIds(metadata.selectedMemberIds)
+                try {
+                  await applyPlanTransition(tx, {
+                    workspaceId: wsId,
+                    actorId: pending.actorId,
+                    targetPlanKey: resolvedPlanKey,
+                    selectedProjectId,
+                    selectedMemberIds,
+                    effectiveAt: new Date(),
+                    transitionId,
+                  })
+                } catch (error) {
+                  // A stale selection must never block billing activation. Any
+                  // resulting overage is blocked by the central write gate.
+                  const message = error instanceof Error ? error.message : String(error)
+                  await tx.auditLog.create({
+                    data: { workspaceId: wsId, userId: pending.actorId, action: "Transición de plan no aplicable", entityId: `plan-transition:${transitionId}`, detail: message, timestamp: new Date() },
+                  })
+                }
+              }
+            }
           }
         }
       } else if (eventType === "customer.subscription.updated" || eventType === "customer.subscription.created") {
@@ -93,7 +138,7 @@ export class FakeBillingProvider implements BillingProvider {
           else if (status === "trialing") mappedStatus = "TRIAL"
 
           const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
-          const resolvedPlanKey = metaPlanKey ?? getPlanKeyFromPriceId(rawPriceId) ?? targetWorkspace.planKey
+          const resolvedPlanKey = metaPlanKey ?? planKeyFromPriceId(rawPriceId) ?? targetWorkspace.planKey
 
           await tx.workspace.update({
             where: { id: targetWorkspace.id },

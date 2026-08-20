@@ -4,6 +4,7 @@ import prisma from "../lib/prisma"
 import { asyncHandler } from "../lib/asyncHandler"
 import { authenticatedUserId, requireAuth, type AuthenticatedRequest } from "../lib/auth"
 import type { BillingStatus, Prisma } from "@prisma/client"
+import { PLAN_CATALOG } from "../../shared/planCatalog"
 
 const router = Router()
 
@@ -298,17 +299,28 @@ router.post("/workspaces/:workspaceId/manual-plan", asyncHandler(async (req, res
 
   // Keep manual Starter assignments subject to the same downgrade protection
   // used by the Stripe checkout flow. Existing data is preserved; the admin
-  // can archive projects first and then assign Starter.
+  // can archive projects first and then assign Starter. A platform admin never
+  // bypasses the seat limit either (§12): Starter cannot be assigned while the
+  // workspace exceeds 1 active project or 3 active members.
   if (input.planKey === "STARTER") {
-    const activeProjectsCount = await prisma.project.count({
-      where: { workspaceId, status: "ACTIVE" },
-    })
-    if (activeProjectsCount > 1) {
+    const [activeProjectsCount, activeMembersCount] = await Promise.all([
+      prisma.project.count({ where: { workspaceId, status: "ACTIVE" } }),
+      prisma.workspaceMember.count({ where: { workspaceId, status: "ACTIVE" } }),
+    ])
+    if (activeProjectsCount > PLAN_CATALOG.STARTER.maxActiveProjects) {
       return res.status(409).json({
         error: "Para activar el plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.",
         code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
         activeProjectsCount,
-        maxAllowed: 1,
+        maxAllowed: PLAN_CATALOG.STARTER.maxActiveProjects,
+      })
+    }
+    if (activeMembersCount > PLAN_CATALOG.STARTER.maxActiveMembers) {
+      return res.status(409).json({
+        error: "Para activar el plan Starter debes dejar únicamente 3 usuarios activos. Suspende o retira los que excedan el límite sin perder sus datos.",
+        code: "DOWNGRADE_MEMBER_LIMIT_EXCEEDED",
+        activeMembersCount,
+        maxAllowed: PLAN_CATALOG.STARTER.maxActiveMembers,
       })
     }
   }
