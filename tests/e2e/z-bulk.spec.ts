@@ -46,14 +46,20 @@ async function createDocument(page: import('@playwright/test').Page, name: strin
 }
 
 async function searchAssetsAndWait(page: import('@playwright/test').Page, text: string): Promise<void> {
+  const input = page.getByPlaceholder('Buscar por nombre, código, serie…')
+  const current = await input.inputValue()
+  if (current === text) return
   const response = page.waitForResponse((r) => r.url().includes('/api/assets?') && r.request().method() === 'GET')
-  await page.getByPlaceholder('Buscar por nombre, código, serie…').fill(text)
+  await input.fill(text)
   await response
 }
 
 async function searchTrashAndWait(page: import('@playwright/test').Page, text: string): Promise<void> {
+  const input = page.getByPlaceholder('Buscar en la papelera por nombre, código o serie…')
+  const current = await input.inputValue()
+  if (current === text) return
   const response = page.waitForResponse((r) => r.url().includes('/api/assets?') && r.request().method() === 'GET')
-  await page.getByPlaceholder('Buscar en la papelera por nombre, código o serie…').fill(text)
+  await input.fill(text)
   await response
 }
 
