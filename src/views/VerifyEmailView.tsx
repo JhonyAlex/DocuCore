@@ -7,6 +7,7 @@ import { useTheme } from "@/hooks/useTheme"
 export default function VerifyEmailView() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get("token")
+  const returnTo = searchParams.get("returnTo")
   const navigate = useNavigate()
   const { setSession } = useSession()
   const { isDark, toggle } = useTheme()
@@ -14,6 +15,10 @@ export default function VerifyEmailView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  // A safe, same-app continuation (e.g. back to an invitation acceptance flow).
+  // Never allow an absolute URL or a protocol-relative one (§13: no open redirects).
+  const safeReturnTo = returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/projects"
 
   useEffect(() => {
     if (!token) {
@@ -96,14 +101,16 @@ export default function VerifyEmailView() {
             </div>
             <h1 className="mt-4 text-xl font-bold tracking-tight">¡Cuenta activada con éxito!</h1>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-              Tu prueba gratuita de <strong>14 días</strong> ya está en marcha.
+              {safeReturnTo.startsWith("/accept-invitation")
+                ? "Tu correo está verificado. Continúa para aceptar la invitación."
+                : <>Tu prueba gratuita de <strong>14 días</strong> ya está en marcha.</>}
             </p>
             <button
               type="button"
-              onClick={() => void navigate("/projects", { replace: true })}
+              onClick={() => void navigate(safeReturnTo, { replace: true })}
               className="mt-6 w-full rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600"
             >
-              Entrar a mis proyectos
+              {safeReturnTo.startsWith("/accept-invitation") ? "Continuar con la invitación" : "Entrar a mis proyectos"}
             </button>
           </div>
         )}

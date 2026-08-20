@@ -1,10 +1,13 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
-import { register, resendVerification } from "@/lib/api"
+import { Link, useLocation } from "react-router-dom"
+import { register, registerInvitee, resendVerification } from "@/lib/api"
 import { useTheme } from "@/hooks/useTheme"
 
 export default function RegisterView() {
   const { isDark, toggle } = useTheme()
+  const location = useLocation()
+  const invitationToken = (location.state as { invitationToken?: string } | null)?.invitationToken ?? null
+  const isInvitee = Boolean(invitationToken)
   const [name, setName] = useState("")
   const [workspaceName, setWorkspaceName] = useState("")
   const [email, setEmail] = useState("")
@@ -33,14 +36,9 @@ export default function RegisterView() {
 
     setBusy(true)
     try {
-      const res = await register({
-        name,
-        workspaceName,
-        email,
-        password,
-        confirmPassword,
-        termsAccepted,
-      })
+      const res = isInvitee
+        ? await registerInvitee({ name, email, password, confirmPassword, invitationToken: invitationToken as string, termsAccepted })
+        : await register({ name, workspaceName, email, password, confirmPassword, termsAccepted })
       setRegisteredEmail(res.email)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al registrar la cuenta.")
@@ -83,7 +81,11 @@ export default function RegisterView() {
           <p className="mt-1 font-semibold text-brand-600 dark:text-brand-400">{registeredEmail}</p>
           <div className="mt-4 rounded-xl bg-slate-50 p-4 text-left text-xs text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
             <p>
-              💡 <strong>Tu prueba gratuita de 14 días</strong> comenzará en cuanto pulses el enlace de verificación en tu correo.
+              💡{" "}
+              <strong>{isInvitee ? "Verifica tu correo para continuar con la invitación." : "Tu prueba gratuita de 14 días"}</strong>{" "}
+              {isInvitee
+                ? "Al confirmar tu email volverás automáticamente al flujo de aceptación de la invitación."
+                : "comenzará en cuanto pulses el enlace de verificación en tu correo."}
             </p>
           </div>
 
@@ -131,8 +133,8 @@ export default function RegisterView() {
         <div className="mb-6 flex items-center gap-3">
           <img src="/logo.png" className="h-10 w-10 rounded-xl" alt="Report Map Online" />
           <div>
-            <h1 className="text-lg font-bold tracking-tight">Crear cuenta en Report Map Online</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">14 días de prueba completa sin coste.</p>
+            <h1 className="text-lg font-bold tracking-tight">{isInvitee ? "Crea tu cuenta para unirte al equipo" : "Crear cuenta en Report Map Online"}</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{isInvitee ? "Verifica tu correo para aceptar la invitación." : "14 días de prueba completa sin coste."}</p>
           </div>
         </div>
 
@@ -156,17 +158,19 @@ export default function RegisterView() {
             />
           </div>
 
-          <div>
-            <label className="block font-medium text-slate-700 dark:text-slate-300">Nombre de tu empresa o espacio</label>
-            <input
-              type="text"
-              required
-              value={workspaceName}
-              onChange={(e) => setWorkspaceName(e.target.value)}
-              placeholder="Ej. Industrias Metalmecánicas Norte"
-              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900"
-            />
-          </div>
+          {!isInvitee && (
+            <div>
+              <label className="block font-medium text-slate-700 dark:text-slate-300">Nombre de tu empresa o espacio</label>
+              <input
+                type="text"
+                required
+                value={workspaceName}
+                onChange={(e) => setWorkspaceName(e.target.value)}
+                placeholder="Ej. Industrias Metalmecánicas Norte"
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block font-medium text-slate-700 dark:text-slate-300">Correo electrónico corporativo</label>
@@ -234,7 +238,7 @@ export default function RegisterView() {
           disabled={busy}
           className="mt-6 w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60 dark:bg-brand-500 dark:hover:bg-brand-600"
         >
-          {busy ? "Creando cuenta…" : "Iniciar prueba gratuita de 14 días"}
+          {busy ? "Creando cuenta…" : isInvitee ? "Crear cuenta y continuar" : "Iniciar prueba gratuita de 14 días"}
         </button>
 
         <p className="mt-4 text-center text-xs text-slate-500">

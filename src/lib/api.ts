@@ -110,6 +110,8 @@ export interface ApiProjectSummary {
   name: string
   description: string
   status: ApiProjectStatus
+  archivedByPlan: boolean
+  planLockedAt: string | null
   themeKey: ProjectThemeKey
   createdAt: string
   updatedAt: string
@@ -546,6 +548,20 @@ export interface ApiDocumentListResponse {
   totalPages: number
 }
 
+export class ApiError extends Error {
+  status: number
+  code: string | null
+  metadata: Record<string, unknown> | null
+
+  constructor(message: string, status: number, code: string | null = null, metadata: Record<string, unknown> | null = null) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.metadata = metadata
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
@@ -554,8 +570,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' })
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null
-    throw Object.assign(new Error(payload?.error ?? `API error ${response.status}`), { status: response.status })
+    const payload = (await response.json().catch(() => null)) as { error?: string; code?: string; metadata?: Record<string, unknown> } | null
+    throw new ApiError(payload?.error ?? `API error ${response.status}`, response.status, payload?.code ?? null, payload?.metadata ?? null)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -950,6 +966,20 @@ export function register(input: {
   })
 }
 
+export function registerInvitee(input: {
+  name: string
+  email: string
+  password: string
+  confirmPassword: string
+  invitationToken: string
+  termsAccepted?: boolean
+}): Promise<{ message: string; email: string }> {
+  return request<{ message: string; email: string }>('/auth/register-invitee', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
 export function verifyEmail(token: string): Promise<ApiSession> {
   return request<ApiSession>('/auth/verify-email', {
     method: 'POST',
@@ -1001,10 +1031,10 @@ export function fetchBillingStatus(): Promise<import('@/types').ApiBillingStatus
   return request<import('@/types').ApiBillingStatus>('/billing/status')
 }
 
-export function createBillingCheckoutSession(planKey: import('@/types').PlanKey): Promise<{ checkoutUrl: string }> {
+export function createBillingCheckoutSession(planKey: import('@/types').PlanKey, options?: { transitionId?: string; selectedProjectId?: number; selectedMemberIds?: number[] }): Promise<{ checkoutUrl: string }> {
   return request<{ checkoutUrl: string }>('/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({ planKey }),
+    body: JSON.stringify({ planKey, ...(options ?? {}) }),
   })
 }
 
@@ -1079,7 +1109,6 @@ export function archiveProject(projectId: number): Promise<ApiProjectSummary> {
 export function restoreProject(projectId: number): Promise<ApiProjectSummary> {
   return request<ApiProjectSummary>(`/projects/${projectId}/restore`, { method: 'POST' })
 }
-
 export function copyProjectConfiguration(projectId: number, sourceProjectId: number): Promise<{ success: boolean }> {
   return request<{ success: boolean }>(`/projects/${projectId}/copy-configuration`, { method: 'POST', body: JSON.stringify({ sourceProjectId }) })
 }
@@ -1115,6 +1144,82 @@ export function createManagedUser(input: { projectId: number; name: string; emai
 }
 export function updateManagedUser(userId: number, input: { projectId: number; name?: string; email?: string; initials?: string; color?: string; isActive?: boolean }): Promise<ApiManagedUser> {
   return request<ApiManagedUser>(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify(input) })
+}
+
+// ── Plan-change & compliance (§10) ───────────────────────────────────────────
+export type PlanKey = 'STARTER' | 'PRO'
+export interface PlanChangeMemberPreview {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+export interface PlanChangePreview {
+  currentPlanKey: PlanKey | null
+  targetPlanKey: PlanKey
+  maxActiveProjects: number
+  maxActiveMembers: number
+  activeProjects: number
+  planLockedProjects: number
+  activeMembers: number
+  planLockedMembers: number
+  suspendedMembers: number
+  affectedProjects: Array<{ id: number; code: string; name: string }>
+  affectedMembers: PlanChangeMemberPreview[]
+  requiresSelection: boolean
+  requiresProjectSelection: boolean
+  requiresMemberSelection: boolean
+  wouldLockProjectIds: number[]
+  wouldLockMemberIds: number[]
+  canProceed: boolean
+  complianceStatus: string
+}
+export function previewPlanChange(targetPlanKey: PlanKey): Promise<PlanChangePreview> {
+  return request<PlanChangePreview>('/billing/plan-change/preview', { method: 'POST', body: JSON.stringify({ targetPlanKey }) })
+}
+export function initiatePlanChange(input: { targetPlanKey: PlanKey; selectedProjectId?: number; selectedMemberIds?: number[]; transitionId?: string }): Promise<{ transitionId: string; status: string; targetPlanKey: string; selectedProjectId: number; selectedMemberIds?: number[]; effectiveAt: string | null }> {
+  return request('/billing/plan-change/initiate', { method: 'POST', body: JSON.stringify(input) })
+}
+export function resolvePlanCompliance(input: { targetPlanKey: PlanKey; selectedProjectId: number; selectedMemberIds?: number[] }): Promise<{ transitionId: string; keptProjectId: number; planLockedProjectIds: number[]; selectedMemberIds: number[]; planLockedMemberIds: number[]; graceEndsAt: string | null }> {
+  return request('/billing/plan-change/resolve', { method: 'POST', body: JSON.stringify(input) })
+}
+export function swapActiveProject(keepProjectId: number): Promise<{ keptProjectId: number; lockedProjectIds: number[]; graceEndsAt: string | null }> {
+  return request('/billing/plan-change/swap', { method: 'POST', body: JSON.stringify({ keepProjectId }) })
+}
+
+// ── Workspace team management (§13/§14/§16) ─────────────────────────────────
+export interface ApiWorkspaceMember extends ApiUserRef {
+  email: string
+  isActive: boolean
+  role: 'OWNER' | 'ADMIN' | 'MEMBER'
+  workspaceStatus: 'ACTIVE' | 'SUSPENDED' | 'PLAN_LOCKED'
+  createdAt: string
+}
+export function fetchWorkspaceMembers(search = ''): Promise<ApiWorkspaceMember[]> {
+  const query = new URLSearchParams()
+  if (search.trim()) query.set('search', search.trim())
+  return request<ApiWorkspaceMember[]>(`/users${query.size ? `?${query.toString()}` : ''}`)
+}
+export function inviteWorkspaceMember(input: { email: string; workspaceRole: 'OWNER' | 'ADMIN' | 'MEMBER'; projectAssignments?: Array<{ projectId: number; role: ApiProjectRole }> }): Promise<{ invitationId: string; email: string; workspaceRole: string; expiresAt: string; inviteToken: string; inviteUrl: string }> {
+  return request('/users/invitations', { method: 'POST', body: JSON.stringify(input) })
+}
+export function acceptWorkspaceInvitation(token: string): Promise<{ accepted: boolean; workspaceId: number }> {
+  return request('/users/invitations/accept', { method: 'POST', body: JSON.stringify({ token }) })
+}
+export function updateWorkspaceMemberRole(userId: number, role: 'OWNER' | 'ADMIN' | 'MEMBER'): Promise<{ userId: number; role: string }> {
+  return request(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) })
+}
+export function setWorkspaceMemberStatus(userId: number, suspend: boolean): Promise<{ userId: number; workspaceStatus: string }> {
+  return request(`/users/${userId}/status`, { method: 'PATCH', body: JSON.stringify({ suspend }) })
+}
+export function reactivateWorkspaceMember(userId: number): Promise<{ userId: number; workspaceStatus: string }> {
+  return request(`/users/${userId}/reactivate`, { method: 'POST' })
+}
+export function removeWorkspaceMember(userId: number): Promise<void> {
+  return request<void>(`/users/${userId}`, { method: 'DELETE' })
+}
+export function switchActiveWorkspace(workspaceId: number): Promise<{ activeWorkspaceId: number }> {
+  return request('/users/switch-workspace', { method: 'POST', body: JSON.stringify({ workspaceId }) })
 }
 
 export async function fetchDocuments(projectId: number, params: Omit<DocumentListParams, 'projectId'> = {}): Promise<ApiDocumentListResponse> {

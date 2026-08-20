@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ProjectFormModal from '@/components/ProjectFormModal'
-import { archiveProject, createProject, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
+import { archiveProject, ApiError, createProject, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
 import { projectThemeClass } from '../../shared/projectThemes'
 
 const PAGE_SIZE = 12
@@ -15,7 +15,8 @@ type ProjectCardProps = {
 }
 
 function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps, 'onOpen'>) {
-  const archiveLabel = project.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'
+  const planLocked = project.status === 'ARCHIVED' && project.archivedByPlan
+  const archiveLabel = project.status === 'ACTIVE' ? 'Archivar' : planLocked ? 'Plan requerido' : 'Reactivar'
   return (
     <div className="flex items-center gap-1.5">
       <button
@@ -30,11 +31,13 @@ function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps,
       </button>
       <button
         type="button"
+        disabled={planLocked}
         onClick={(event) => {
           event.stopPropagation()
           onArchive()
         }}
-        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-white"
+        title={planLocked ? 'Actualiza a Pro para reactivar este proyecto bloqueado por el límite del plan.' : undefined}
+        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-white"
       >
         {archiveLabel}
       </button>
@@ -43,7 +46,8 @@ function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps,
 }
 
 function ProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
-  const status = project.status === 'ACTIVE' ? 'Activo' : 'Archivo'
+  const status = project.status === 'ACTIVE' ? 'Activo' : project.archivedByPlan ? 'Bloqueado por plan' : 'Archivo'
+  const statusClassName = project.archivedByPlan ? 'bg-amber-600/30 text-white' : 'bg-white/20 text-white'
   return (
     <div
       role="button"
@@ -56,7 +60,7 @@ function ProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
     >
       <div className={`relative h-32 shrink-0 rounded-t-xl bg-gradient-to-br ${projectThemeClass[project.themeKey]}`}>
         <div className="absolute right-3 top-3">
-          <span className="chip bg-white/20 text-white backdrop-blur">{status}</span>
+          <span className={`chip backdrop-blur ${statusClassName}`}>{status}</span>
         </div>
       </div>
       <div className="flex flex-1 flex-col p-5">
@@ -98,7 +102,7 @@ function ProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
 }
 
 function FeaturedProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
-  const status = project.status === 'ACTIVE' ? 'Activo' : 'Archivo'
+  const status = project.status === 'ACTIVE' ? 'Activo' : project.archivedByPlan ? 'Bloqueado por plan' : 'Archivo'
   return (
     <div
       role="button"
@@ -217,10 +221,15 @@ export default function ProjectsView() {
       setEditing(undefined)
       await load()
     } catch (reason) {
+      const code = reason instanceof ApiError ? reason.code : null
       setFormError(
-        reason instanceof Error && reason.message.includes('409')
-          ? 'Ya existe un proyecto con ese código.'
-          : 'No se pudo guardar el proyecto.'
+        code === 'PROJECT_LIMIT_EXCEEDED'
+          ? 'Has alcanzado el límite de proyectos activos de tu plan. Archiva uno o actualiza tu plan.'
+          : code === 'PLAN_COMPLIANCE_REQUIRED'
+            ? 'Debes resolver primero qué proyecto conservar para tu plan antes de crear otro.'
+            : reason instanceof Error && reason.message.includes('409')
+              ? 'Ya existe un proyecto con ese código.'
+              : 'No se pudo guardar el proyecto.'
       )
     } finally {
       setSaving(false)
@@ -235,8 +244,15 @@ export default function ProjectsView() {
       else await restoreProject(archiveTarget.id)
       setArchiveTarget(null)
       await load()
-    } catch {
-      setError('No se pudo actualizar el estado del proyecto.')
+    } catch (reason) {
+      const code = reason instanceof ApiError ? reason.code : null
+      setError(
+        code === 'PLAN_LOCKED_PROJECT'
+          ? 'Este proyecto está bloqueado por el límite del plan Starter. Actualiza a Pro para reactivarlo.'
+          : code === 'GRACE_PERIOD_EXPIRED'
+            ? 'La ventana de 30 días para seleccionar el proyecto activo ha finalizado.'
+            : 'No se pudo actualizar el estado del proyecto.'
+      )
     } finally {
       setArchiving(false)
     }
