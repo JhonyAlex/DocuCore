@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { PLAN_CATALOG } from "../../../shared/planCatalog"
 
 const APP_URL = import.meta.env.VITE_APP_PUBLIC_URL || "https://app.report-map.online"
 
@@ -22,7 +23,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     question: "¿Puedo cambiar de plan más adelante?",
-    answer: "Sí. Puedes actualizar de Starter a Pro en cualquier momento. Si deseas pasar de Pro a Starter, únicamente necesitas dejar como máximo 1 proyecto activo (pudiendo archivar los restantes sin perder su información).",
+    answer: "Sí. Puedes actualizar de Starter a Pro en cualquier momento. Si deseas pasar de Pro a Starter, el plan Starter admite 1 proyecto y 3 usuarios activos: al bajar de plan eliges cuáles conservarán acceso, y el resto de tus datos no se elimina (queda archivado o bloqueado, listo para reactivarse).",
   },
   {
     question: "¿Puedo archivar proyectos para liberar capacidad?",
@@ -78,7 +79,7 @@ export default function HomePage() {
           </div>
 
           <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-            Sin tarjeta de crédito requerida · 14 días de prueba completa · Hasta 15 proyectos activos
+            Sin tarjeta de crédito requerida · 14 días de prueba completa · Hasta 15 proyectos y 15 usuarios
           </p>
         </div>
       </section>
@@ -212,7 +213,7 @@ export default function HomePage() {
             </div>
             <h3 className="mt-4 font-semibold text-sm text-slate-900 dark:text-white">Usuarios y permisos</h3>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Roles granulares (Propietario, Administrador, Editor, Visor) con sesiones seguras basadas en digests SHA-256.
+              Invitaciones seguras, roles por workspace y por proyecto, y control granular de acceso para cada miembro de tu equipo.
             </p>
           </div>
         </div>
@@ -268,7 +269,9 @@ export default function HomePage() {
           <div className="max-w-2xl">
             <h2 className="text-2xl font-bold sm:text-3xl">Prueba todas las funciones durante 14 días</h2>
             <p className="mt-3 text-sm text-brand-100 leading-relaxed">
-              Disfruta de acceso total para crear <strong>hasta 15 proyectos activos</strong> durante tu período de prueba. Explora la plataforma con tu equipo sin compromiso y sin ingresar tarjeta de crédito.
+              Disfruta de acceso total para crear <strong>hasta 15 proyectos activos</strong> e invitar a{' '}
+              <strong>hasta 15 usuarios</strong> durante tu período de prueba. Explora la plataforma con tu equipo sin
+              compromiso y sin ingresar tarjeta de crédito.
             </p>
             <div className="mt-8 flex flex-wrap gap-4 items-center">
               <a
@@ -322,23 +325,27 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  Proyectos archivados ilimitados
+                  <strong>Hasta {PLAN_CATALOG.STARTER.maxActiveMembers} usuarios</strong>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  Planos interactivos Deep Zoom
+                  Roles y permisos
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  Gestión documental con control de versiones
+                  Compartir el proyecto con tu equipo
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  Mantenimiento preventivo y calendario
+                  Activos y documentos
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  14 días de prueba gratuita completa
+                  Calendario y preventivos
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Planos interactivos
                 </li>
               </ul>
             </div>
@@ -378,11 +385,19 @@ export default function HomePage() {
               <ul className="mt-6 space-y-3 text-xs text-slate-600 dark:text-slate-300">
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  <strong>Hasta 15 proyectos activos simultáneos</strong>
+                  <strong>Hasta {PLAN_CATALOG.PRO.maxActiveProjects} proyectos activos</strong>
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
-                  Proyectos archivados ilimitados
+                  <strong>Hasta {PLAN_CATALOG.PRO.maxActiveMembers} usuarios</strong>
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Roles y permisos
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  Compartir múltiples proyectos y equipos
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
@@ -395,10 +410,6 @@ export default function HomePage() {
                 <li className="flex items-center gap-2.5">
                   <span className="text-emerald-500 font-bold">✓</span>
                   Planes preventivos y calendarios consolidados
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span className="text-emerald-500 font-bold">✓</span>
-                  14 días de prueba gratuita completa
                 </li>
               </ul>
             </div>
