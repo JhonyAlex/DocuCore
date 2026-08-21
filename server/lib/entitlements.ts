@@ -372,8 +372,8 @@ export interface PlanTransitionSpec {
   workspaceId: number
   actorId: number
   targetPlanKey: PlanKey
-  /** Which active project must remain active after a downgrade with >1 active. */
-  selectedProjectId: number
+  /** Which active project must remain active after a downgrade with >1 active (nullable when 0 active projects). */
+  selectedProjectId?: number | null
   /** Which active members must remain ACTIVE after a downgrade that exceeds the seat limit. */
   selectedMemberIds?: number[]
   /** When the transition must take effect (Stripe effective date when known). */
@@ -390,7 +390,7 @@ export interface AppliedPlanTransition {
   effectiveAt: Date | null
   appliedAt: Date | null
   targetPlanKey: PlanKey
-  keptProjectId: number
+  keptProjectId: number | null
   planLockedProjectIds: number[]
   selectedMemberIds: number[]
   planLockedMemberIds: number[]
@@ -406,31 +406,38 @@ export interface LockedWorkspaceState {
 /**
  * Load the plan-limit + active project/member state needed by the compliance
  * engine within an existing transaction, and lock the workspace row FOR UPDATE
- * so two concurrent create/restore/swap/transition/accept operations cannot all
- * observe the same capacity. This is the concurrency strategy required by §9.
+ * strictly first so two concurrent operations cannot all observe the same capacity.
  */
 export async function lockWorkspaceForEntitlement(
   client: Prisma.TransactionClient,
   workspaceId: number,
 ): Promise<LockedWorkspaceState> {
-  const [workspaceRow, projects, members] = await Promise.all([
-    client.$queryRaw<Array<{
-      id: number
-      name: string
-      slug: string
-      billingStatus: string
-      billingSource: string
-      trialStartedAt: Date | null
-      trialEndsAt: Date | null
-      stripeCustomerId: string | null
-      stripeSubscriptionId: string | null
-      stripePriceId: string | null
-      currentPeriodEnd: Date | null
-      cancelAtPeriodEnd: boolean
-      planKey: string | null
-      graceEndsAt: Date | null
-      planComplianceStartedAt: Date | null
-    }>>`SELECT id, name, slug, "billingStatus", "billingSource", "trialStartedAt", "trialEndsAt", "stripeCustomerId", "stripeSubscriptionId", "stripePriceId", "currentPeriodEnd", "cancelAtPeriodEnd", "planKey", "graceEndsAt", "planComplianceStartedAt" FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`,
+  // 1. Await workspace row lock FOR UPDATE first
+  const workspaceRow = await client.$queryRaw<Array<{
+    id: number
+    name: string
+    slug: string
+    billingStatus: string
+    billingSource: string
+    trialStartedAt: Date | null
+    trialEndsAt: Date | null
+    stripeCustomerId: string | null
+    stripeSubscriptionId: string | null
+    stripePriceId: string | null
+    currentPeriodEnd: Date | null
+    cancelAtPeriodEnd: boolean
+    planKey: string | null
+    graceEndsAt: Date | null
+    planComplianceStartedAt: Date | null
+  }>>`SELECT id, name, slug, "billingStatus", "billingSource", "trialStartedAt", "trialEndsAt", "stripeCustomerId", "stripeSubscriptionId", "stripePriceId", "currentPeriodEnd", "cancelAtPeriodEnd", "planKey", "graceEndsAt", "planComplianceStartedAt" FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`
+
+  if (workspaceRow.length === 0) {
+    throw Object.assign(new Error("Workspace not found"), { status: 404 })
+  }
+  const row = workspaceRow[0]
+
+  // 2. Read projects and members after the lock is established
+  const [projects, members] = await Promise.all([
     client.project.findMany({
       where: { workspaceId },
       select: { id: true, workspaceId: true, code: true, status: true, archivedByPlan: true, planLockedAt: true },
@@ -440,11 +447,6 @@ export async function lockWorkspaceForEntitlement(
       select: { id: true, userId: true, role: true, status: true },
     }),
   ])
-
-  if (workspaceRow.length === 0) {
-    throw Object.assign(new Error("Workspace not found"), { status: 404 })
-  }
-  const row = workspaceRow[0]
 
   const workspace: WorkspaceEntitlementInput & { stripeCustomerId: string | null; stripeSubscriptionId: string | null; billingSource: string; name: string; slug: string } = {
     id: row.id,
@@ -497,8 +499,8 @@ function validateMemberSelection(activeMembers: ActiveMemberInput[], selectedMem
   if (selectedSet.size !== selectedMemberIds.length) {
     throw Object.assign(new Error("La selección de usuarios contiene duplicados."), { status: 409, code: "INVALID_MEMBER_SELECTION" })
   }
-  if (selectedSet.size !== maxActiveMembers) {
-    throw Object.assign(new Error(`Debes conservar exactamente ${maxActiveMembers} usuario(s) activo(s).`), { status: 409, code: "INVALID_MEMBER_SELECTION" })
+  if (selectedSet.size > maxActiveMembers || selectedSet.size < 1) {
+    throw Object.assign(new Error(`Debes conservar entre 1 y ${maxActiveMembers} usuario(s) activo(s).`), { status: 409, code: "INVALID_MEMBER_SELECTION" })
   }
   for (const id of selectedMemberIds) {
     if (!active.some((m) => m.id === id)) {
@@ -506,10 +508,12 @@ function validateMemberSelection(activeMembers: ActiveMemberInput[], selectedMem
     }
   }
 
-  const owners = active.filter((m) => m.role === "OWNER")
-  if (owners.length === 1) {
-    if (!selectedSet.has(owners[0].id)) throw ownerRequiredError()
-  } else if (!selectedMemberIds.some((id) => active.some((m) => m.id === id && m.role === "OWNER"))) {
+  const activeOwners = active.filter((m) => m.role === "OWNER")
+  if (activeOwners.length === 0) {
+    throw ownerRequiredError()
+  }
+  const selectedOwners = selectedMemberIds.filter((id) => active.some((m) => m.id === id && m.role === "OWNER"))
+  if (selectedOwners.length === 0) {
     throw ownerRequiredError()
   }
 }
@@ -524,9 +528,15 @@ export async function applyPlanTransition(
   const { counts, projects, members } = await lockWorkspaceForEntitlement(client, spec.workspaceId)
 
   const active = projects.filter((p) => p.status === "ACTIVE")
-  const selected = active.find((p) => p.id === spec.selectedProjectId)
-  if (!selected) {
-    throw Object.assign(new Error("El proyecto seleccionado debe ser un proyecto activo del workspace."), { status: 409, code: "INVALID_PROJECT_SELECTION" })
+  let keptProjectId: number | null = null
+  if (spec.selectedProjectId) {
+    const selected = active.find((p) => p.id === spec.selectedProjectId)
+    if (!selected) {
+      throw Object.assign(new Error("El proyecto seleccionado debe ser un proyecto activo del workspace."), { status: 409, code: "INVALID_PROJECT_SELECTION" })
+    }
+    keptProjectId = selected.id
+  } else if (active.length > 0) {
+    keptProjectId = active[0].id
   }
 
   // Capacity for the TARGET plan. A downgrade only plan-locks projects/members
@@ -535,12 +545,16 @@ export async function applyPlanTransition(
   const maxAllowedProjects = resolution.maxActiveProjects
   const maxAllowedMembers = resolution.maxActiveMembers
 
+  if (counts.activeProjects > maxAllowedProjects && !keptProjectId) {
+    throw Object.assign(new Error("Debes seleccionar qué proyecto deseas conservar activo."), { status: 409, code: "INVALID_PROJECT_SELECTION" })
+  }
+
   const planLockIds: number[] = []
   const nowDate = now
-  if (counts.activeProjects > maxAllowedProjects) {
+  if (counts.activeProjects > maxAllowedProjects && keptProjectId) {
     // Sort deterministically and keep the SELECTED project active.
     const toLock = [...active]
-      .filter((p) => p.id !== spec.selectedProjectId)
+      .filter((p) => p.id !== keptProjectId)
       .sort((a, b) => a.id - b.id)
       .slice(0, Math.max(0, counts.activeProjects - maxAllowedProjects))
     for (const project of toLock) {
@@ -556,7 +570,7 @@ export async function applyPlanTransition(
   // The operator's selection is persisted and auditable; associations are kept.
   let selectedMemberIds: number[] = []
   let planLockedMemberIds: number[] = []
-  if (counts.activeMembers > maxAllowedMembers) {
+  if (counts.activeMembers > maxAllowedMembers || (spec.selectedMemberIds && spec.selectedMemberIds.length > 0)) {
     const selected = spec.selectedMemberIds ?? []
     validateMemberSelection(members, selected, maxAllowedMembers)
     selectedMemberIds = selected
@@ -591,7 +605,7 @@ export async function applyPlanTransition(
       workspaceId: spec.workspaceId,
       actorId: spec.actorId,
       targetPlanKey: spec.targetPlanKey,
-      selectedProjectId: spec.selectedProjectId,
+      selectedProjectId: keptProjectId,
       planLockedProjectIds: planLockIds.map(String),
       selectedMemberIds: selectedMemberIds.map(String),
       planLockedMemberIds: planLockedMemberIds.map(String),
@@ -601,7 +615,7 @@ export async function applyPlanTransition(
     },
     update: {
       targetPlanKey: spec.targetPlanKey,
-      selectedProjectId: spec.selectedProjectId,
+      selectedProjectId: keptProjectId,
       planLockedProjectIds: planLockIds.map(String),
       selectedMemberIds: selectedMemberIds.map(String),
       planLockedMemberIds: planLockedMemberIds.map(String),
@@ -619,7 +633,7 @@ export async function applyPlanTransition(
       entityId: `plan-transition:${transitionId}`,
       detail: JSON.stringify({
         targetPlanKey: spec.targetPlanKey,
-        keptProjectId: spec.selectedProjectId,
+        keptProjectId,
         planLockedProjectIds: planLockIds,
         selectedMemberIds,
         planLockedMemberIds,
@@ -635,7 +649,7 @@ export async function applyPlanTransition(
     effectiveAt: spec.effectiveAt ?? now,
     appliedAt: now,
     targetPlanKey: spec.targetPlanKey,
-    keptProjectId: spec.selectedProjectId,
+    keptProjectId,
     planLockedProjectIds: planLockIds,
     selectedMemberIds,
     planLockedMemberIds,

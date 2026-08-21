@@ -2,7 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { ProjectRole, ProjectStatus, Workspace, WorkspaceRole } from '@prisma/client'
 import prisma from './prisma'
 import { authenticatedUserId } from './auth'
-import { evaluateWorkspaceEntitlement, assertWorkspaceWriteAllowed } from './workspaceScope'
+import { evaluateWorkspaceEntitlement, assertWorkspaceWriteAllowed, getUserPrimaryWorkspace } from './workspaceScope'
 
 export function actorIdFromRequest(req: Request): number {
   return authenticatedUserId(req)
@@ -22,6 +22,7 @@ export interface ProjectScope {
   project: { id: number; workspaceId: number; code: string; name: string; status: ProjectStatus; themeKey: string; workspace: Workspace }
   membership: { id: number; userId: number; role: ProjectRole }
   workspaceMembership?: { id: number; userId: number; role: WorkspaceRole }
+  supportAccess: boolean
 }
 
 declare module 'express' {
@@ -62,6 +63,10 @@ export async function resolveProjectScope(projectId: number, actorId: number): P
     where: { id: actorId },
     select: { id: true, isPlatformAdmin: true },
   })
+  const workspaceScope = await getUserPrimaryWorkspace(actorId)
+  if (workspaceScope.workspaceId !== project.workspaceId) {
+    throw scopeError('Workspace access denied', 403)
+  }
 
   const [membership, workspaceMembership] = await Promise.all([
     prisma.projectMember.findUnique({
@@ -81,12 +86,13 @@ export async function resolveProjectScope(projectId: number, actorId: number): P
   }
 
   if (!membership) {
-    if (user?.isPlatformAdmin) {
+    if (user?.isPlatformAdmin && workspaceScope.supportAccess) {
       return {
         projectId,
         project,
-        membership: { id: 0, userId: actorId, role: 'OWNER' },
-        workspaceMembership: workspaceMembership ?? { id: 0, userId: actorId, role: 'OWNER' },
+        // Explicit support access is administrative but never impersonates an OWNER.
+        membership: { id: 0, userId: actorId, role: 'ADMIN' },
+        supportAccess: true,
       }
     }
     throw scopeError('Project access denied', 403)
@@ -96,7 +102,7 @@ export async function resolveProjectScope(projectId: number, actorId: number): P
     throw scopeError('Workspace access denied', 403)
   }
 
-  return { projectId, project, membership, workspaceMembership: workspaceMembership ?? undefined }
+  return { projectId, project, membership, workspaceMembership: workspaceMembership ?? undefined, supportAccess: false }
 }
 
 export function requireProjectScope(options: { write?: boolean; capability?: ProjectCapability } = {}): RequestHandler {

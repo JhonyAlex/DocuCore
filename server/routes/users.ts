@@ -131,9 +131,6 @@ router.post('/invitations', asyncHandler(async (req, res) => {
     return created
   })
 
-  // Deliver the invitation: the invitee uses the single-use link to sign in (or
-  // register) and accept — the admin never sets another person's password (§14).
-  // The token travels ONLY in this one-time link; it is stored hashed server-side.
   const appBase = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
   const inviteUrl = `${appBase}/accept-invitation?token=${encodeURIComponent(token)}`
   const inviter = await prisma.user.findUnique({ where: { id: actorId }, select: { name: true } })
@@ -143,14 +140,13 @@ router.post('/invitations', asyncHandler(async (req, res) => {
     invitationId: invitation.id,
     email: invitation.email,
     workspaceRole: invitation.workspaceRole,
+    status: invitation.status,
     expiresAt: invitation.expiresAt.toISOString(),
-    inviteUrl,
-    // The plaintext token is returned exactly once; it is only ever stored hashed.
-    inviteToken: token,
+    createdAt: invitation.createdAt.toISOString(),
   })
 }))
 
-// ── Accept an invitation (single-use, expiring) (§14). ──────────────────────
+// ── Accept an invitation (§14). ─────────────────────────────────────────────
 const acceptSchema = z.object({ token: z.string().min(1).max(512) }).strict()
 
 router.post('/invitations/accept', asyncHandler(async (req, res) => {
@@ -158,46 +154,45 @@ router.post('/invitations/accept', asyncHandler(async (req, res) => {
   const input = acceptSchema.parse(req.body)
   const tokenHash = hashToken(input.token)
   const now = new Date()
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: actorId } })
 
-  const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { email: true } })
-  if (!actor) throw Object.assign(new Error('Not found'), { status: 404 })
+  const result = await prisma.$transaction(async (tx) => {
+    // Lock the invitation before reading state so revoke and accept are mutually exclusive.
+    const lockedInvitationIds = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "WorkspaceInvitation" WHERE "tokenHash" = ${tokenHash} FOR UPDATE
+    `
+    if (lockedInvitationIds.length === 0) {
+      throw Object.assign(new Error('La invitación no es válida o ha caducado.'), { status: 409, code: 'INVALID_INVITATION' })
+    }
 
-  // Single-use acceptance is enforced atomically: the UPDATE only transitions
-  // a still-PENDING invite, so a concurrent double-accept loses at this step
-  // instead of both racing the read-then-act check outside the transaction.
-  const claim = await prisma.$transaction(async (tx) => {
-    const invitation = await tx.workspaceInvitation.findUnique({ where: { tokenHash }, include: { projectRoles: true } })
-    if (!invitation || invitation.status !== 'PENDING' || invitation.expiresAt <= now) return null
-    if (actor.email.toLowerCase() !== invitation.email.toLowerCase()) throw Object.assign(new Error('Esta invitación pertenece a otro correo electrónico.'), { status: 403, code: 'INVITATION_EMAIL_MISMATCH' })
-
-    const outcome = await tx.workspaceInvitation.updateMany({
-      where: { id: invitation.id, status: 'PENDING' },
-      data: { status: 'ACCEPTED', acceptedAt: now },
+    const invitation = await tx.workspaceInvitation.findUnique({
+      where: { tokenHash },
+      include: { projectRoles: true },
     })
-    if (outcome.count === 0) return null // someone else accepted it first
+    if (!invitation || invitation.status !== 'PENDING' || invitation.expiresAt <= now) {
+      throw Object.assign(new Error('La invitación no es válida o ha caducado.'), { status: 409, code: 'INVALID_INVITATION' })
+    }
+    if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+      throw Object.assign(new Error('Esta invitación fue emitida para otra dirección de correo.'), { status: 403, code: 'INVITATION_EMAIL_MISMATCH' })
+    }
 
-    // Add workspace membership if missing (never create a duplicate User). A
-    // SUSPENDED membership is not usable for acceptance: suspended members must
-    // not silently regain admin-revoked access by consuming a pending invite.
-    // A PLAN_LOCKED membership must not silently regain access either: it waits
-    // for an OWNER/ADMIN to reactivate it when a seat is available (§7).
-    const existingMember = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: actorId } } })
-    if (existingMember && existingMember.status === 'SUSPENDED') {
-      throw Object.assign(new Error('Tu membresía en este workspace está suspendida; contacta a la administración.'), { status: 403, code: 'WORKSPACE_SUSPENDED' })
+    const { workspace, counts } = await lockWorkspaceForEntitlement(tx, invitation.workspaceId)
+    const existingMember = await tx.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: actorId } },
+    })
+    if (existingMember?.status === 'ACTIVE') {
+      throw Object.assign(new Error('Ya eres miembro de este workspace.'), { status: 409, code: 'ALREADY_MEMBER' })
     }
-    if (existingMember && existingMember.status === 'PLAN_LOCKED') {
-      throw Object.assign(new Error('Tu plaza en este workspace está bloqueada por el límite del plan. Solicita a la administración que la reactive.'), { status: 409, code: 'MEMBER_PLAN_LOCKED' })
-    }
-    if (!existingMember) {
-      // Acceptance that creates a NEW ACTIVE membership consumes a seat. The
-      // workspace row is locked FOR UPDATE so two concurrent acceptances for the
-      // last seat cannot both succeed (§8): exactly one ends ACTIVE.
-      const { workspace, counts } = await lockWorkspaceForEntitlement(tx, invitation.workspaceId)
-      const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
-      assertMemberSeatAvailable(resolution.maxActiveMembers, counts.activeMembers)
-      await tx.workspaceMember.create({ data: { workspaceId: invitation.workspaceId, userId: actorId, role: invitation.workspaceRole } })
-    }
-    // Apply the selected project assignments.
+
+    const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
+    assertMemberSeatAvailable(resolution.maxActiveMembers, counts.activeMembers)
+
+    const membership = await tx.workspaceMember.upsert({
+      where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: actorId } },
+      create: { workspaceId: invitation.workspaceId, userId: actorId, role: invitation.workspaceRole, status: 'ACTIVE' },
+      update: { role: invitation.workspaceRole, status: 'ACTIVE' },
+    })
+
     for (const assignment of invitation.projectRoles) {
       await tx.projectMember.upsert({
         where: { projectId_userId: { projectId: assignment.projectId, userId: actorId } },
@@ -205,54 +200,93 @@ router.post('/invitations/accept', asyncHandler(async (req, res) => {
         update: { role: assignment.role },
       })
     }
+
+    await tx.workspaceInvitation.update({ where: { id: invitation.id }, data: { status: 'ACCEPTED', acceptedAt: now } })
+    await tx.user.update({ where: { id: actorId }, data: { activeWorkspaceId: invitation.workspaceId } })
     await tx.auditLog.create({
       data: {
         workspaceId: invitation.workspaceId,
         userId: actorId,
         action: 'Invitación aceptada',
         entityId: `workspace-invitation:${invitation.id}`,
-        detail: JSON.stringify({ email: actor.email }),
+        detail: JSON.stringify({ email: invitation.email, workspaceRole: invitation.workspaceRole }),
         timestamp: now,
       },
     })
-    return { workspaceId: invitation.workspaceId }
+    return { membership, workspaceId: invitation.workspaceId }
   })
 
-  if (!claim) {
-    return res.status(400).json({ error: 'La invitación no es válida, ha expirado o ya fue usada.', code: 'INVITATION_INVALID' })
-  }
-
-  res.json({ accepted: true, workspaceId: claim.workspaceId })
+  res.status(200).json({ workspaceId: result.workspaceId, role: result.membership.role, status: result.membership.status })
 }))
 
-// ── Change a workspace member's role (§13). ─────────────────────────────────
+// ── Revoke invitation (§14). ────────────────────────────────────────────────
+router.delete('/invitations/:invitationId', asyncHandler(async (req, res) => {
+  const actorId = authenticatedUserId(req)
+  const scope = await requireWorkspaceAdmin(actorId)
+  const { invitationId } = req.params
+
+  await prisma.$transaction(async (tx) => {
+    const lockedInvitationIds = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "WorkspaceInvitation" WHERE "id" = ${invitationId} FOR UPDATE
+    `
+    if (lockedInvitationIds.length === 0) {
+      throw Object.assign(new Error('Invitación no encontrada.'), { status: 404 })
+    }
+
+    const invitation = await tx.workspaceInvitation.findUnique({ where: { id: invitationId } })
+    if (!invitation || invitation.workspaceId !== scope.workspace.id) {
+      throw Object.assign(new Error('Invitación no encontrada.'), { status: 404 })
+    }
+    if (invitation.status !== 'PENDING') {
+      throw Object.assign(new Error('Solo se pueden revocar invitaciones pendientes.'), { status: 409 })
+    }
+
+    await tx.workspaceInvitation.update({ where: { id: invitationId }, data: { status: 'REVOKED', revokedAt: new Date() } })
+    await tx.auditLog.create({
+      data: {
+        workspaceId: scope.workspace.id,
+        userId: actorId,
+        action: 'Invitación revocada',
+        entityId: `workspace-invitation:${invitationId}`,
+        detail: JSON.stringify({ email: invitation.email }),
+        timestamp: new Date(),
+      },
+    })
+  })
+  res.status(204).end()
+}))
+
+// ── Change member role (§13). ───────────────────────────────────────────────
 const memberPatchSchema = z.object({ role: roleSchema }).strict()
 
 router.patch('/:userId', asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
-  await requireWorkspaceAdmin(actorId)
+  const scope = await requireWorkspaceAdmin(actorId)
   const userId = Number(req.params.userId)
   if (!Number.isInteger(userId) || userId <= 0) throw Object.assign(new Error('Identificador de usuario inválido.'), { status: 400 })
-
-  const scope = await getUserPrimaryWorkspace(actorId)
   const input = memberPatchSchema.parse(req.body)
 
-  const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } } })
-  if (!target) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
-
-  // OWNER is the only role that can grant or revoke the OWNER role (authz:
-  // otherwise an ADMIN could promote themselves and take over the workspace).
-  if ((input.role === 'OWNER' || target.role === 'OWNER') && scope.membership.role !== 'OWNER') {
-    throw Object.assign(new Error('Solo la persona propietaria puede asignar o revocar el rol Propietario.'), { status: 403, code: 'INSUFFICIENT_WORKSPACE_ROLE' })
-  }
-
-  // Never leave a workspace without an OWNER.
-  if (target.role === 'OWNER' && input.role !== 'OWNER') {
-    const owners = await prisma.workspaceMember.count({ where: { workspaceId: scope.workspace.id, role: 'OWNER' } })
-    if (owners <= 1) throw Object.assign(new Error('El workspace debe conservar al menos una persona propietaria.'), { status: 409, code: 'LAST_OWNER' })
-  }
-
   const updated = await prisma.$transaction(async (tx) => {
+    // The workspace lock serializes every mutation that can reduce ACTIVE OWNERs.
+    await lockWorkspaceForEntitlement(tx, scope.workspace.id)
+    const target = await tx.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } },
+    })
+    if (!target) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
+
+    if ((input.role === 'OWNER' || target.role === 'OWNER') && scope.membership.role !== 'OWNER') {
+      throw Object.assign(new Error('Solo la persona propietaria puede asignar o revocar el rol Propietario.'), { status: 403, code: 'INSUFFICIENT_WORKSPACE_ROLE' })
+    }
+
+    if (target.role === 'OWNER' && input.role !== 'OWNER' && target.status === 'ACTIVE') {
+      const activeOwners = await tx.workspaceMember.count({
+        where: { workspaceId: scope.workspace.id, role: 'OWNER', status: 'ACTIVE' },
+      })
+      if (activeOwners <= 1) {
+        throw Object.assign(new Error('El workspace debe conservar al menos una persona propietaria activa.'), { status: 409, code: 'LAST_ACTIVE_OWNER' })
+      }
+    }
+
     const result = await tx.workspaceMember.update({ where: { id: target.id }, data: { role: input.role } })
     await tx.auditLog.create({
       data: {
@@ -270,11 +304,7 @@ router.patch('/:userId', asyncHandler(async (req, res) => {
   res.json({ userId, role: updated.role })
 }))
 
-// ── Suspend / unsuspend a member ONLY within this workspace (§16, §3). ──────
-// SUSPENDED is a manual, administrative state: an upgrade never reactivates it.
-// Re-activating a SUSPENDED member back to ACTIVE consumes a seat and is gated
-// by the central capacity guard. PLAN_LOCKED is managed only by the plan engine
-// and the dedicated reactivate endpoint below.
+// ── Suspend / unsuspend member (§16, §3). ──────────────────────────────────
 const suspendSchema = z.object({ suspend: z.boolean() }).strict()
 
 router.patch('/:userId/status', asyncHandler(async (req, res) => {
@@ -288,12 +318,10 @@ router.patch('/:userId/status', asyncHandler(async (req, res) => {
   const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } } })
   if (!target) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
 
-  // A workspace ADMIN cannot suspend the OWNER (lockout/takeover prevention).
   if (target.role === 'OWNER' && scope.membership.role !== 'OWNER') {
     throw Object.assign(new Error('Solo la persona propietaria puede suspenderse a sí misma.'), { status: 403, code: 'INSUFFICIENT_WORKSPACE_ROLE' })
   }
 
-  // PLAN_LOCKED is never set or cleared through the manual suspend toggle.
   if (target.status === 'PLAN_LOCKED') {
     throw Object.assign(new Error('Este miembro está bloqueado por el límite del plan. Usa la acción de reactivación cuando haya una plaza disponible.'), { status: 409, code: 'MEMBER_PLAN_LOCKED' })
   }
@@ -301,15 +329,32 @@ router.patch('/:userId/status', asyncHandler(async (req, res) => {
   if (input.suspend) {
     if (target.status === 'SUSPENDED') return res.json({ userId, workspaceStatus: target.status })
 
-    // Suspension is per-workspace: the global identity (User.isActive) is untouched.
     const updated = await prisma.$transaction(async (tx) => {
-      const result = await tx.workspaceMember.update({ where: { id: target.id }, data: { status: 'SUSPENDED' } })
+      await lockWorkspaceForEntitlement(tx, scope.workspace.id)
+      const lockedTarget = await tx.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } },
+      })
+      if (!lockedTarget) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
+      if (lockedTarget.status === 'SUSPENDED') return lockedTarget
+      if (lockedTarget.status === 'PLAN_LOCKED') {
+        throw Object.assign(new Error('Este miembro está bloqueado por el límite del plan. Usa la acción de reactivación cuando haya una plaza disponible.'), { status: 409, code: 'MEMBER_PLAN_LOCKED' })
+      }
+      if (lockedTarget.role === 'OWNER') {
+        const activeOwners = await tx.workspaceMember.count({
+          where: { workspaceId: scope.workspace.id, role: 'OWNER', status: 'ACTIVE' },
+        })
+        if (activeOwners <= 1) {
+          throw Object.assign(new Error('El workspace debe conservar al menos una persona propietaria activa.'), { status: 409, code: 'LAST_ACTIVE_OWNER' })
+        }
+      }
+
+      const result = await tx.workspaceMember.update({ where: { id: lockedTarget.id }, data: { status: 'SUSPENDED' } })
       await tx.auditLog.create({
         data: {
           workspaceId: scope.workspace.id,
           userId: actorId,
           action: 'Miembro suspendido',
-          entityId: `workspace-member:${target.id}`,
+          entityId: `workspace-member:${lockedTarget.id}`,
           detail: JSON.stringify({ targetUserId: userId, workspaceOnly: true }),
           timestamp: new Date(),
         },
@@ -319,8 +364,6 @@ router.patch('/:userId/status', asyncHandler(async (req, res) => {
     return res.json({ userId, workspaceStatus: updated.status })
   }
 
-  // Unsuspend: re-activation consumes a seat, so it goes through the capacity
-  // guard. Already-ACTIVE members are a no-op.
   if (target.status === 'ACTIVE') return res.json({ userId, workspaceStatus: target.status })
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -344,7 +387,7 @@ router.patch('/:userId/status', asyncHandler(async (req, res) => {
   res.json({ userId, workspaceStatus: updated.status })
 }))
 
-// ── Reactivate a PLAN_LOCKED member when a seat is available (§4, §7). ───────
+// ── Reactivate PLAN_LOCKED member (§4, §7). ────────────────────────────────
 router.post('/:userId/reactivate', asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   await requireWorkspaceAdmin(actorId)
@@ -366,31 +409,33 @@ router.post('/:userId/reactivate', asyncHandler(async (req, res) => {
   res.json({ userId, workspaceStatus: result.status })
 }))
 
-// ── Remove a member from the workspace (never deletes the global identity). ──
+// ── Remove member (§12). ────────────────────────────────────────────────────
 router.delete('/:userId', asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
-  await requireWorkspaceAdmin(actorId)
+  const scope = await requireWorkspaceAdmin(actorId)
   const userId = Number(req.params.userId)
   if (!Number.isInteger(userId) || userId <= 0) throw Object.assign(new Error('Identificador de usuario inválido.'), { status: 400 })
-  const scope = await getUserPrimaryWorkspace(actorId)
-
-  const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } } })
-  if (!target) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
-
-  // Only the OWNER can remove an OWNER (an ADMIN must not have the power to
-  // strip the owner and take over the workspace).
-  if (target.role === 'OWNER' && scope.membership.role !== 'OWNER') {
-    throw Object.assign(new Error('Solo la persona propietaria puede retirar a otra persona propietaria.'), { status: 403, code: 'INSUFFICIENT_WORKSPACE_ROLE' })
-  }
-
-  if (target.role === 'OWNER') {
-    const owners = await prisma.workspaceMember.count({ where: { workspaceId: scope.workspace.id, role: 'OWNER' } })
-    if (owners <= 1) throw Object.assign(new Error('El workspace debe conservar al menos una persona propietaria.'), { status: 409, code: 'LAST_OWNER' })
-  }
 
   await prisma.$transaction(async (tx) => {
-    // Revoke the member's project memberships in this workspace transactionally,
-    // but NEVER delete the global User.
+    await lockWorkspaceForEntitlement(tx, scope.workspace.id)
+    const target = await tx.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } },
+    })
+    if (!target) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
+
+    if (target.role === 'OWNER' && scope.membership.role !== 'OWNER') {
+      throw Object.assign(new Error('Solo la persona propietaria puede retirar a otra persona propietaria.'), { status: 403, code: 'INSUFFICIENT_WORKSPACE_ROLE' })
+    }
+
+    if (target.role === 'OWNER' && target.status === 'ACTIVE') {
+      const activeOwners = await tx.workspaceMember.count({
+        where: { workspaceId: scope.workspace.id, role: 'OWNER', status: 'ACTIVE' },
+      })
+      if (activeOwners <= 1) {
+        throw Object.assign(new Error('El workspace debe conservar al menos una persona propietaria activa.'), { status: 409, code: 'LAST_ACTIVE_OWNER' })
+      }
+    }
+
     const projectIds = await tx.project.findMany({ where: { workspaceId: scope.workspace.id }, select: { id: true } })
     await tx.projectMember.deleteMany({ where: { userId, projectId: { in: projectIds.map((p) => p.id) } } })
     await tx.workspaceMember.delete({ where: { id: target.id } })
@@ -409,7 +454,7 @@ router.delete('/:userId', asyncHandler(async (req, res) => {
   res.status(204).end()
 }))
 
-// ── The active workspace context (§15): switch without leaking data. ─────────
+// ── Switch workspace (§15). ────────────────────────────────────────────────
 const switchSchema = z.object({ workspaceId: z.number().int().positive() }).strict()
 
 router.post('/switch-workspace', asyncHandler(async (req, res) => {

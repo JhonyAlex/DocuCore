@@ -49,7 +49,7 @@ export default function UsersConfigView() {
     try {
       const invitation = await inviteWorkspaceMember({ email: inviteEmail, workspaceRole: 'MEMBER', projectAssignments: [{ projectId, role: inviteRole }] })
       setInviteEmail('')
-      setNotice(`Invitación enviada a ${invitation.email}. La persona la aceptará y configurará su propia contraseña. Enlace: ${invitation.inviteUrl ?? ''}`)
+      setNotice(`Invitación enviada a ${invitation.email}. La persona recibirá un correo electrónico para aceptarla y configurar su propia contraseña.`)
       await load()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo enviar la invitación.')

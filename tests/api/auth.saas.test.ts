@@ -235,4 +235,98 @@ describe("SAAS-01 Authentication and Lifecycle API", () => {
       server.close()
     }
   })
+
+  it("resend-verification preserves returnTo when a valid invitationToken is provided", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    try {
+      const stamp = Date.now()
+      const inviter = await prisma.user.create({
+        data: {
+          name: "Inviter User",
+          email: `inviter.${stamp}@docucore.test`,
+          passwordHash: "dummyHash",
+          role: "Propietario",
+          initials: "IU",
+          color: "brand",
+          emailVerifiedAt: new Date(),
+        },
+      })
+      const ws = await prisma.workspace.create({
+        data: { name: "Invite WS", slug: `inv-ws-${stamp}`, billingStatus: "ACTIVE", planKey: "PRO" },
+      })
+      await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: inviter.id, role: "OWNER" } })
+
+      const guestEmail = `guest.${stamp}@docucore.test`
+      const rawToken = `invtoken_${stamp}`
+      const { hashToken } = await import("../../server/lib/auth")
+      await prisma.workspaceInvitation.create({
+        data: {
+          id: `inv_${stamp}`,
+          workspaceId: ws.id,
+          email: guestEmail,
+          workspaceRole: "MEMBER",
+          tokenHash: hashToken(rawToken),
+          invitedById: inviter.id,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          status: "PENDING",
+        },
+      })
+
+      // Register guest
+      await fetch(`${baseUrl}/api/auth/register-invitee`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Guest User",
+          email: guestEmail,
+          password: "Password123456!",
+          confirmPassword: "Password123456!",
+          invitationToken: rawToken,
+          termsAccepted: true,
+        }),
+      })
+
+      // 1. Resend with valid invitationToken -> email text contains returnTo=/accept-invitation?token=...
+      clearSentEmails()
+      const res1 = await fetch(`${baseUrl}/api/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail, invitationToken: rawToken }),
+      })
+      expect(res1.status).toBe(200)
+      const emails1 = getSentEmails()
+      expect(emails1.length).toBe(1)
+      expect(emails1[0].text).toContain(`returnTo=${encodeURIComponent(`/accept-invitation?token=${rawToken}`)}`)
+
+      // 2. Resend without invitationToken -> normal flow without returnTo
+      clearSentEmails()
+      const res2 = await fetch(`${baseUrl}/api/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail }),
+      })
+      expect(res2.status).toBe(200)
+      const emails2 = getSentEmails()
+      expect(emails2.length).toBe(1)
+      expect(emails2[0].text).not.toContain("returnTo=")
+
+      // 3. Resend with invalid/foreign invitationToken -> ignores invalid token and emits normal email
+      clearSentEmails()
+      const res3 = await fetch(`${baseUrl}/api/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: guestEmail, invitationToken: "foreign_invalid_token" }),
+      })
+      expect(res3.status).toBe(200)
+      const emails3 = getSentEmails()
+      expect(emails3.length).toBe(1)
+      expect(emails3[0].text).not.toContain("returnTo=")
+    } finally {
+      server.close()
+    }
+  })
 })

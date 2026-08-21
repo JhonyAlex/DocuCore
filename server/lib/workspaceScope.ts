@@ -17,6 +17,8 @@ export interface WorkspaceScope {
     userId: number
     role: WorkspaceRole
   }
+  /** True only for an explicit PlatformAdmin support context without membership. */
+  supportAccess: boolean
 }
 
 declare module "express" {
@@ -27,6 +29,16 @@ declare module "express" {
 
 function workspaceError(message: string, status: number, code?: string, extra?: Record<string, unknown>): Error & { status: number; code?: string } {
   return Object.assign(new Error(message), { status, code, ...extra })
+}
+
+function platformSupportScope(workspace: Workspace, userId: number): WorkspaceScope {
+  return {
+    workspaceId: workspace.id,
+    workspace,
+    // This is an authorization scope, never a persisted WorkspaceMember or seat.
+    membership: { id: 0, userId, role: "ADMIN" },
+    supportAccess: true,
+  }
 }
 
 export function evaluateWorkspaceEntitlement(workspace: {
@@ -94,7 +106,6 @@ export function evaluateWorkspaceEntitlement(workspace: {
     }
   }
 
-  // ACTIVE
   return {
     isEntitledToWrite: true,
     currentStatus: workspace.billingStatus,
@@ -108,8 +119,52 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
   })
   if (!user) throw workspaceError("User not found", 401)
 
-  // A person may belong to several workspaces. The explicitly selected active
-  // context wins; otherwise fall back to the first membership (§15).
+  // PlatformAdmin access is deliberately explicit: it never falls back to an
+  // arbitrary workspace. With an explicit selection, a real membership keeps
+  // its role and a membership-less context becomes support access. Without a
+  // selection, a real ACTIVE membership is still the source of authority (its
+  // own role, never a synthetic one); only a Platform admin without any
+  // membership must select a support context before continuing.
+  if (user.isPlatformAdmin) {
+    if (user.activeWorkspaceId) {
+      const selectedMembership = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: user.activeWorkspaceId, userId } },
+        include: { workspace: true },
+      })
+      if (selectedMembership) {
+        if (selectedMembership.status !== "ACTIVE") throw workspaceError("Workspace access denied", 403)
+        return {
+          workspaceId: selectedMembership.workspaceId,
+          workspace: selectedMembership.workspace,
+          membership: { id: selectedMembership.id, userId, role: selectedMembership.role },
+          supportAccess: false,
+        }
+      }
+
+      const selectedWorkspace = await prisma.workspace.findUnique({ where: { id: user.activeWorkspaceId } })
+      if (!selectedWorkspace) throw workspaceError("Workspace not found", 404)
+      return platformSupportScope(selectedWorkspace, userId)
+    }
+
+    const realMembership = await prisma.workspaceMember.findFirst({
+      where: { userId, status: "ACTIVE" },
+      include: { workspace: true },
+      orderBy: { id: "asc" },
+    })
+    if (realMembership) {
+      return {
+        workspaceId: realMembership.workspaceId,
+        workspace: realMembership.workspace,
+        membership: { id: realMembership.id, userId, role: realMembership.role },
+        supportAccess: false,
+      }
+    }
+    const anyMembership = await prisma.workspaceMember.findFirst({ where: { userId }, select: { id: true } })
+    if (anyMembership) throw workspaceError("Workspace access denied", 403)
+    throw workspaceError("Platform admin must select a workspace before continuing", 409, "WORKSPACE_SELECTION_REQUIRED")
+  }
+
+  // A normal user may only use an ACTIVE membership as their selected context.
   if (user.activeWorkspaceId) {
     const activeMember = await prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: user.activeWorkspaceId, userId } },
@@ -120,6 +175,7 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
         workspaceId: activeMember.workspaceId,
         workspace: activeMember.workspace,
         membership: { id: activeMember.id, userId, role: activeMember.role },
+        supportAccess: false,
       }
     }
   }
@@ -129,36 +185,25 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
     include: { workspace: true },
     orderBy: { id: "asc" },
   })
-
-  if (membership) {
-    return {
-      workspaceId: membership.workspaceId,
-      workspace: membership.workspace,
-      membership: {
-        id: membership.id,
-        userId: membership.userId,
-        role: membership.role,
-      },
-    }
+  if (!membership) {
+    // A membership that exists but is not ACTIVE (SUSPENDED / PLAN_LOCKED) is
+    // an access-denied state, not a missing workspace: keep the 403 semantic
+    // that the scope resolvers rely on.
+    const anyMembership = await prisma.workspaceMember.findFirst({ where: { userId }, select: { id: true } })
+    if (anyMembership) throw workspaceError("Workspace access denied", 403)
+    throw workspaceError("No workspace found for user", 404)
   }
 
-  // If user is platform admin with no workspace, or user belongs to a default workspace
-  if (user.isPlatformAdmin) {
-    const firstWs = await prisma.workspace.findFirst({ orderBy: { id: "asc" } })
-    if (firstWs) {
-      return {
-        workspaceId: firstWs.id,
-        workspace: firstWs,
-        membership: {
-          id: 0,
-          userId,
-          role: "OWNER",
-        },
-      }
-    }
+  return {
+    workspaceId: membership.workspaceId,
+    workspace: membership.workspace,
+    membership: {
+      id: membership.id,
+      userId: membership.userId,
+      role: membership.role,
+    },
+    supportAccess: false,
   }
-
-  throw workspaceError("No workspace found for user", 404)
 }
 
 export async function resolveWorkspaceScope(workspaceId: number, actorId: number): Promise<WorkspaceScope> {
@@ -176,32 +221,18 @@ export async function resolveWorkspaceScope(workspaceId: number, actorId: number
     where: { workspaceId_userId: { workspaceId, userId: actorId } },
   })
 
-  if (!membership) {
-    if (user?.isPlatformAdmin) {
-      return {
-        workspaceId,
-        workspace,
-        membership: {
-          id: 0,
-          userId: actorId,
-          role: "OWNER",
-        },
-      }
+  if (membership) {
+    if (membership.status !== "ACTIVE") throw workspaceError("Workspace access denied", 403)
+    return {
+      workspaceId,
+      workspace,
+      membership,
+      supportAccess: false,
     }
-    throw workspaceError("Workspace access denied", 403)
   }
 
-  // Suspension is the workspace access boundary (§16): a SUSPENDED membership
-  // cannot select or switch into that workspace either.
-  if (membership.status !== "ACTIVE") {
-    throw workspaceError("Workspace access denied", 403)
-  }
-
-  return {
-    workspaceId,
-    workspace,
-    membership,
-  }
+  if (user?.isPlatformAdmin) return platformSupportScope(workspace, actorId)
+  throw workspaceError("Workspace access denied", 403)
 }
 
 /**

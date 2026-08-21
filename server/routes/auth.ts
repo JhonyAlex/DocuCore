@@ -76,6 +76,7 @@ const registerInviteeSchema = z.object({
 
 const resendVerificationSchema = z.object({
   email: z.string().trim().email().max(254),
+  invitationToken: z.string().trim().min(1).max(512).optional(),
 }).strict()
 
 const forgotPasswordSchema = z.object({
@@ -381,6 +382,22 @@ router.post("/resend-verification", asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email } })
 
   if (user && !user.emailVerifiedAt) {
+    let returnTo: string | undefined = undefined
+    if (input.invitationToken) {
+      const tokenHash = hashToken(input.invitationToken)
+      const invitation = await prisma.workspaceInvitation.findFirst({
+        where: {
+          tokenHash,
+          email,
+          status: "PENDING",
+          expiresAt: { gt: new Date() },
+        },
+      })
+      if (invitation) {
+        returnTo = `/accept-invitation?token=${encodeURIComponent(input.invitationToken)}`
+      }
+    }
+
     const token = randomBytes(32).toString("hex")
     const hashed = hashToken(token)
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
@@ -392,7 +409,7 @@ router.post("/resend-verification", asyncHandler(async (req, res) => {
       })
     })
 
-    void sendVerificationEmail({ to: email, name: user.name, token }).catch(() => undefined)
+    void sendVerificationEmail({ to: email, name: user.name, token, returnTo }).catch(() => undefined)
   }
 
   res.json({ message: "Si el correo está registrado y pendiente de verificación, recibirás un nuevo enlace." })

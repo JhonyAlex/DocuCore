@@ -50,6 +50,11 @@ enum WorkspaceInvitationStatus {
   REVOKED
 }
 
+enum ProjectArchivalReason {
+  MANUAL
+  PLAN_LIMIT
+}
+
 // Roles are persisted per project. Global user fields describe identity only;
 // authorization always comes from ProjectMember.
 enum ProjectRole {
@@ -80,6 +85,7 @@ model Workspace {
   stripeCustomerId        String?       @unique
   stripeSubscriptionId    String?       @unique
   stripePriceId           String?
+  stripeScheduleId        String?
   planKey                 String?
   currentPeriodEnd        DateTime?
   cancelAtPeriodEnd       Boolean       @default(false)
@@ -118,14 +124,15 @@ model PlanTransition {
   workspaceId          Int
   actorId              Int
   targetPlanKey        String
-  selectedProjectId    Int
-  planLockedProjectIds String[]
+  selectedProjectId    Int?
+  planLockedProjectIds String[]             @default([])
   selectedMemberIds    String[]             @default([])
   planLockedMemberIds  String[]             @default([])
   effectiveAt          DateTime?
   appliedAt            DateTime?
   status               PlanTransitionStatus @default(PENDING)
   stripeSessionId      String?
+  stripeScheduleId     String?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 

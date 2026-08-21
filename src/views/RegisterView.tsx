@@ -51,7 +51,7 @@ export default function RegisterView() {
     if (!registeredEmail) return
     setResendStatus(null)
     try {
-      const res = await resendVerification(registeredEmail)
+      const res = await resendVerification(registeredEmail, (invitationToken as string) || undefined)
       setResendStatus(res.message)
     } catch {
       setResendStatus("No se pudo reenviar el enlace. Inténtalo más tarde.")

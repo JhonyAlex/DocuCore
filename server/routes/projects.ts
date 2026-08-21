@@ -70,12 +70,24 @@ function serializeProject(project: ProjectWithSummary, currentRole?: string | nu
   }
 }
 
-async function ensureUsersExist(members: Array<{ userId: number }>): Promise<void> {
+async function ensureWorkspaceMembersActive(workspaceId: number, members: Array<{ userId: number }>): Promise<void> {
   const uniqueIds = [...new Set(members.map((member) => member.userId))]
   if (uniqueIds.length !== members.length) throw Object.assign(new Error('Un miembro solo puede añadirse una vez'), { status: 409 })
   if (!uniqueIds.length) return
-  const count = await prisma.user.count({ where: { id: { in: uniqueIds } } })
-  if (count !== uniqueIds.length) throw Object.assign(new Error('Uno o más usuarios no existen'), { status: 400 })
+  const workspaceMembers = await prisma.workspaceMember.findMany({
+    where: {
+      workspaceId,
+      userId: { in: uniqueIds },
+    },
+    select: { userId: true, status: true },
+  })
+  if (workspaceMembers.length !== uniqueIds.length) {
+    throw Object.assign(new Error('Uno o más usuarios no pertenecen a este workspace.'), { status: 403, code: 'WORKSPACE_ACCESS_DENIED' })
+  }
+  const inactive = workspaceMembers.filter((m) => m.status !== 'ACTIVE')
+  if (inactive.length > 0) {
+    throw Object.assign(new Error('Solo se pueden añadir miembros activos del workspace a un proyecto.'), { status: 409, code: 'WORKSPACE_MEMBER_NOT_ACTIVE' })
+  }
 }
 
 async function ensureManagementScope(projectId: number, actorId: number, capability: 'MANAGE_PROJECT' | 'MANAGE_MEMBERS' | 'MANAGE_CONFIGURATION' = 'MANAGE_PROJECT') {
@@ -84,9 +96,16 @@ async function ensureManagementScope(projectId: number, actorId: number, capabil
   return scope
 }
 
-async function ensureOwnerRemains(projectId: number, affectedRole: ProjectRole): Promise<void> {
+async function lockProjectForOwnerMutation(tx: Prisma.TransactionClient, projectId: number): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: number }>>`
+    SELECT "id" FROM "Project" WHERE "id" = ${projectId} FOR UPDATE
+  `
+  if (rows.length === 0) throw Object.assign(new Error('Project not found'), { status: 404 })
+}
+
+async function ensureOwnerRemainsLocked(tx: Prisma.TransactionClient, projectId: number, affectedRole: ProjectRole): Promise<void> {
   if (affectedRole !== 'OWNER') return
-  const owners = await prisma.projectMember.count({ where: { projectId, role: 'OWNER' } })
+  const owners = await tx.projectMember.count({ where: { projectId, role: 'OWNER' } })
   if (owners <= 1) throw Object.assign(new Error('Un proyecto debe conservar al menos una persona propietaria'), { status: 409 })
 }
 
@@ -153,7 +172,7 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Validate active project capacity against workspace plan (concurrency-safe:
   // the same FOR UPDATE lock is re-acquired inside the create transaction).
-  await ensureUsersExist(input.memberIds)
+  await ensureWorkspaceMembersActive(wsScope.workspace.id, input.memberIds)
   if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
   const created = await prisma.$transaction(async (tx) => {
@@ -279,7 +298,7 @@ router.post('/:projectId/members', asyncHandler(async (req, res) => {
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const input = memberInputSchema.parse(req.body)
-  await ensureUsersExist([input])
+  await ensureWorkspaceMembersActive(scope.project.workspaceId, [input])
   const member = await prisma.$transaction(async (tx) => {
     const created = await tx.projectMember.create({ data: { projectId, userId: input.userId, role: input.role }, include: { user: { select: { id: true, name: true, email: true, initials: true, color: true } } } })
     await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Miembro añadido', entityId: `project-member:${created.id}`, detail: `${created.user.name} añadido al proyecto`, timestamp: new Date() } })
@@ -296,10 +315,11 @@ router.patch('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const userId = parseProjectId(req.params.userId)
   const input = z.object({ role: projectRoleSchema }).strict().parse(req.body)
-  const before = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
-  if (!before) return res.status(404).json({ error: 'Project member not found' })
-  if (before.role === 'OWNER' && input.role !== 'OWNER') await ensureOwnerRemains(projectId, before.role)
   const member = await prisma.$transaction(async (tx) => {
+    await lockProjectForOwnerMutation(tx, projectId)
+    const before = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
+    if (!before) throw Object.assign(new Error('Project member not found'), { status: 404 })
+    if (before.role === 'OWNER' && input.role !== 'OWNER') await ensureOwnerRemainsLocked(tx, projectId, before.role)
     const updated = await tx.projectMember.update({ where: { id: before.id }, data: { role: input.role }, include: { user: { select: { id: true, name: true, email: true, initials: true, color: true } } } })
     await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Rol actualizado', entityId: `project-member:${updated.id}`, detail: `Rol de ${updated.user.name} actualizado a ${updated.role}`, timestamp: new Date() } })
     return updated
@@ -314,13 +334,14 @@ router.delete('/:projectId/members/:userId', asyncHandler(async (req, res) => {
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const userId = parseProjectId(req.params.userId)
-  const member = await prisma.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
-  if (!member) return res.status(404).json({ error: 'Project member not found' })
-  await ensureOwnerRemains(projectId, member.role)
-  await prisma.$transaction([
-    prisma.projectMember.delete({ where: { id: member.id } }),
-    prisma.auditLog.create({ data: { projectId, userId: actorId, action: 'Miembro retirado', entityId: `project-member:${member.id}`, detail: `${member.user.name} retirado del proyecto`, timestamp: new Date() } }),
-  ])
+  await prisma.$transaction(async (tx) => {
+    await lockProjectForOwnerMutation(tx, projectId)
+    const member = await tx.projectMember.findUnique({ where: { projectId_userId: { projectId, userId } }, include: { user: true } })
+    if (!member) throw Object.assign(new Error('Project member not found'), { status: 404 })
+    await ensureOwnerRemainsLocked(tx, projectId, member.role)
+    await tx.projectMember.delete({ where: { id: member.id } })
+    await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Miembro retirado', entityId: `project-member:${member.id}`, detail: `${member.user.name} retirado del proyecto`, timestamp: new Date() } })
+  })
   res.status(204).end()
 }))
 

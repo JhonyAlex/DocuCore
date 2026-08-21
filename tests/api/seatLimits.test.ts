@@ -6,10 +6,11 @@ import { hashToken } from "../../server/lib/auth"
 import { findLatestEmail } from "../../server/lib/email"
 
 async function makeUser(stamp: string, name: string, opts: { isPlatformAdmin?: boolean } = {}) {
+  const cleanStamp = `${stamp}-${Math.random().toString(36).slice(2, 8)}`
   return prisma.user.create({
     data: {
       name,
-      email: `${name.toLowerCase().replace(/\s+/g, ".")}.${stamp}@docucore.test`,
+      email: `${name.toLowerCase().replace(/[^a-z0-9]/g, ".")}.${cleanStamp}@docucore.test`,
       passwordHash: await hashPassword("Password2026!"),
       role: "Usuario",
       initials: name.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase(),
@@ -21,10 +22,11 @@ async function makeUser(stamp: string, name: string, opts: { isPlatformAdmin?: b
 }
 
 async function makeWorkspace(stamp: string, planKey: "STARTER" | "PRO" | "TRIAL", ownerId: number) {
+  const cleanStamp = `${stamp}-${Math.random().toString(36).slice(2, 8)}`
   const ws = await prisma.workspace.create({
     data: {
-      name: `Seat WS ${stamp}`,
-      slug: `seat-${stamp}`,
+      name: `Seat WS ${cleanStamp}`,
+      slug: `seat-${cleanStamp}`,
       billingStatus: planKey === "TRIAL" ? "TRIAL" : "ACTIVE",
       planKey: planKey === "TRIAL" ? null : planKey,
       trialStartedAt: planKey === "TRIAL" ? new Date() : null,
@@ -432,13 +434,19 @@ describe("member seat limits (per-plan ACTIVE member capacity)", () => {
       })
       expect(invRes.status).toBe(201)
       const invitation = await invRes.json()
-      expect(invitation.inviteToken).toBeTruthy()
+      expect(invitation.invitationId).toBeDefined()
+      expect(invitation.inviteToken).toBeUndefined()
+
+      const inviteEmail = findLatestEmail(inviteeEmail)
+      expect(inviteEmail).toBeDefined()
+      const inviteToken = inviteEmail!.text.match(/token=([a-zA-Z0-9_-]+)/)?.[1]
+      expect(inviteToken).toBeTruthy()
 
       // New user registers via the invitation (no workspace created yet).
       const regRes = await fetch(`${baseUrl}/api/auth/register-invitee`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "New Invitee", email: inviteeEmail, password: "Password2026!", confirmPassword: "Password2026!", invitationToken: invitation.inviteToken, termsAccepted: true }),
+        body: JSON.stringify({ name: "New Invitee", email: inviteeEmail, password: "Password2026!", confirmPassword: "Password2026!", invitationToken: inviteToken, termsAccepted: true }),
       })
       expect(regRes.status).toBe(201)
       expect(await prisma.workspaceMember.findFirst({ where: { workspaceId: ws.id, user: { email: inviteeEmail } } })).toBeNull()
@@ -464,7 +472,7 @@ describe("member seat limits (per-plan ACTIVE member capacity)", () => {
       const acceptRes = await fetch(`${baseUrl}/api/users/invitations/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(invitee.id) },
-        body: JSON.stringify({ token: invitation.inviteToken }),
+        body: JSON.stringify({ token: inviteToken }),
       })
       expect(acceptRes.status).toBe(200)
       expect(await prisma.workspaceMember.findFirst({ where: { workspaceId: ws.id, userId: invitee.id } })).not.toBeNull()
@@ -536,6 +544,53 @@ describe("member seat limits (per-plan ACTIVE member capacity)", () => {
       expect(res.status).toBe(200)
       expect(await prisma.workspaceMember.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })).toBe(2)
       expect(await prisma.workspaceMember.count({ where: { workspaceId: ws.id, status: "PLAN_LOCKED" } })).toBe(0)
+    } finally {
+      server.close()
+    }
+  })
+
+  it("downgrade with 0 projects and member excess succeeds with selectedProjectId: null", async () => {
+    const stamp = `${Date.now()}-zeroprj`
+    const owner = await makeUser(stamp, "Owner Zero Prj")
+    const ws = await makeWorkspace(stamp, "PRO", owner.id)
+    const m1 = await makeUser(`${stamp}-z1`, "Zero Member 1")
+    const m2 = await makeUser(`${stamp}-z2`, "Zero Member 2")
+    await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: m1.id, role: "MEMBER" } })
+    await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: m2.id, role: "MEMBER" } })
+    const ownerMember = await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: ws.id, userId: owner.id } })
+
+    // 0 projects in workspace, 3 active members. Target limit for test is selecting 1 user (or owner only).
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      // Initiate downgrade to STARTER selecting only the owner
+      const initRes = await fetch(`${baseUrl}/api/billing/plan-change/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(owner.id) },
+        body: JSON.stringify({ targetPlanKey: "STARTER", selectedProjectId: null, selectedMemberIds: [ownerMember.id] }),
+      })
+      expect(initRes.status).toBe(201)
+      const initData = await initRes.json()
+      expect(initData.transitionId).toBeDefined()
+
+      // Resolve transition immediately
+      const resolveRes = await fetch(`${baseUrl}/api/billing/plan-change/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(owner.id) },
+        body: JSON.stringify({ transitionId: initData.transitionId }),
+      })
+      expect(resolveRes.status).toBe(200)
+
+      // Verification: 0 projects, 1 active user (owner), 2 plan-locked users
+      const projectCount = await prisma.project.count({ where: { workspaceId: ws.id } })
+      const activeMembers = await prisma.workspaceMember.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+      const lockedMembers = await prisma.workspaceMember.count({ where: { workspaceId: ws.id, status: "PLAN_LOCKED" } })
+
+      expect(projectCount).toBe(0)
+      expect(activeMembers).toBe(1)
+      expect(lockedMembers).toBe(2)
     } finally {
       server.close()
     }

@@ -26,7 +26,7 @@ const targetSchema = z.object({
 
 const initiateSchema = z.object({
   targetPlanKey: z.enum(["STARTER", "PRO"]),
-  selectedProjectId: z.number().int().positive().optional(),
+  selectedProjectId: z.number().int().positive().nullable().optional(),
   selectedMemberIds: z.array(z.number().int().positive()).max(15).optional(),
   // When provided, this confirms an already-persisted pending transition.
   transitionId: z.string().min(1).max(100).optional(),
@@ -34,8 +34,9 @@ const initiateSchema = z.object({
 
 const applySchema = z.object({
   targetPlanKey: z.enum(["STARTER", "PRO"]).default("STARTER"),
-  selectedProjectId: z.number().int().positive(),
+  selectedProjectId: z.number().int().positive().nullable().optional(),
   selectedMemberIds: z.array(z.number().int().positive()).max(15).optional(),
+  transitionId: z.string().min(1).max(100).optional(),
 }).strict()
 
 const swapSchema = z.object({
@@ -50,6 +51,13 @@ function loadWorkspace(scope: { workspaceId: number }) {
  *  makes the initiate operation idempotent under double-submit and retries. */
 function deterministicTransitionId(workspaceId: number, targetPlanKey: PlanKey): string {
   return `pct_${workspaceId}_${targetPlanKey}`
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const sortedA = [...a].sort()
+  const sortedB = [...b].sort()
+  return sortedA.every((val, idx) => val === sortedB[idx])
 }
 
 interface MemberPreview {
@@ -162,8 +170,8 @@ router.post("/initiate", asyncHandler(async (req, res) => {
         metadata: { affectedProjectIds: rows.filter((p) => p.status === "ACTIVE").map((p) => p.id) },
       })
     }
-  } else if (input.targetPlanKey === "STARTER" && counts.activeProjects <= targetMaxProjects && snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
-    // Out-of-compliance inherited state: selection is mandatory to resolve.
+  } else if (input.targetPlanKey === "STARTER" && counts.activeProjects > 0 && counts.activeProjects <= targetMaxProjects && snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
+    // Out-of-compliance inherited state with active projects: selection is mandatory to resolve.
     if (!input.selectedProjectId) {
       return res.status(409).json({ error: "Debes seleccionar qué proyecto deseas conservar activo.", code: "PLAN_COMPLIANCE_REQUIRED" })
     }
@@ -190,18 +198,21 @@ router.post("/initiate", asyncHandler(async (req, res) => {
   }
 
   // Persist the transition decision (never browser memory, §5).
+  // When in TRIAL, effectiveAt must be trialEndsAt so capacity is preserved until trial ends (§2).
   const now = new Date()
-  const effectiveAt = workspace.currentPeriodEnd && workspace.currentPeriodEnd.getTime() > now.getTime() ? workspace.currentPeriodEnd : now
-
-  const selectedProjectId = input.selectedProjectId ?? rows.find((p) => p.status === "ACTIVE")?.id ?? null
-  if (selectedProjectId === null) {
-    return res.status(409).json({ error: "No hay un proyecto activo que conservar.", code: "PLAN_COMPLIANCE_REQUIRED" })
+  let effectiveAt = now
+  if (workspace.billingStatus === "TRIAL" && workspace.trialEndsAt && workspace.trialEndsAt.getTime() > now.getTime()) {
+    effectiveAt = workspace.trialEndsAt
+  } else if (input.targetPlanKey === "STARTER" && workspace.currentPeriodEnd && workspace.currentPeriodEnd.getTime() > now.getTime()) {
+    // Downgrades preserve the paid Pro period; upgrades become effective now.
+    effectiveAt = workspace.currentPeriodEnd
   }
 
-  // Idempotency: the same plan-change decision maps to a DETERMINISTIC id, so a
-  // double submit, an HTTP retry or a re-send after timeout reuses the single
-  // PENDING transition instead of creating functionally-equivalent orphans. A
-  // caller may also confirm an already-persisted transition by its id.
+  const selectedProjectId = counts.activeProjects === 0
+    ? null
+    : (input.selectedProjectId ?? rows.find((p) => p.status === "ACTIVE")?.id ?? null)
+
+  // Idempotency and binding check
   let transitionId = input.transitionId ?? deterministicTransitionId(workspace.id, input.targetPlanKey)
   if (input.transitionId) {
     const existing = await prisma.planTransition.findUnique({ where: { id: input.transitionId } })
@@ -214,6 +225,28 @@ router.post("/initiate", asyncHandler(async (req, res) => {
     // a later downgrade never overwrites the previous one.
     if (existing && existing.status !== "PENDING") {
       transitionId = `pct_${workspace.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    } else if (existing && existing.status === "PENDING" && existing.stripeSessionId) {
+      // Transition is already frozen/bound to a Stripe operation (§4).
+      const sameTarget = existing.targetPlanKey === input.targetPlanKey
+      const sameProject = existing.selectedProjectId === selectedProjectId
+      const sameMembers = arraysEqual(existing.selectedMemberIds, selectedMemberIds.map(String))
+      if (sameTarget && sameProject && sameMembers) {
+        // Idempotent retry with identical parameters
+        return res.status(200).json({
+          transitionId: existing.id,
+          status: existing.status,
+          targetPlanKey: existing.targetPlanKey,
+          selectedProjectId: existing.selectedProjectId,
+          selectedMemberIds: existing.selectedMemberIds.map(Number),
+          effectiveAt: existing.effectiveAt?.toISOString() ?? null,
+        })
+      } else {
+        // Different parameters on a frozen transition cannot overwrite it
+        return res.status(409).json({
+          error: "Esta transición de plan ya está vinculada a una operación de pago activa y no puede modificarse.",
+          code: "TRANSITION_FROZEN",
+        })
+      }
     }
   }
 
@@ -269,10 +302,23 @@ router.post("/resolve", asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar planes.", code: "WORKSPACE_ACCESS_DENIED" })
   }
 
+  let targetPlanKey = input.targetPlanKey
+  let selectedProjectId = input.selectedProjectId
+  let selectedMemberIds = input.selectedMemberIds
+
+  if (input.transitionId) {
+    const persisted = await prisma.planTransition.findUnique({ where: { id: input.transitionId } })
+    if (persisted && persisted.workspaceId === wsScope.workspace.id) {
+      targetPlanKey = persisted.targetPlanKey as PlanKey
+      selectedProjectId = persisted.selectedProjectId
+      selectedMemberIds = persisted.selectedMemberIds.length > 0 ? persisted.selectedMemberIds.map(Number) : undefined
+    }
+  }
+
   // This endpoint resolves a non-compliant STARTER state. It must NEVER be a
   // self-upgrade path: upgrading to PRO requires a confirmed Stripe checkout
   // (the webhook marks PENDING -> applied). Reject PRO here.
-  if (input.targetPlanKey === "PRO") {
+  if (targetPlanKey === "PRO") {
     const ws = await prisma.workspace.findUnique({ where: { id: wsScope.workspace.id }, select: { planKey: true } })
     if (ws?.planKey !== "PRO") {
       return res.status(409).json({
@@ -286,9 +332,10 @@ router.post("/resolve", asyncHandler(async (req, res) => {
     return applyPlanTransition(tx, {
       workspaceId: wsScope.workspace.id,
       actorId,
-      targetPlanKey: input.targetPlanKey,
-      selectedProjectId: input.selectedProjectId,
-      selectedMemberIds: input.selectedMemberIds,
+      targetPlanKey,
+      selectedProjectId,
+      selectedMemberIds,
+      transitionId: input.transitionId,
       effectiveAt: new Date(),
     })
   })

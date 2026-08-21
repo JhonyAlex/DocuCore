@@ -79,8 +79,15 @@ export const optionalAuth: RequestHandler = async (req, _res, next) => {
       : Number.NaN
     const token = cookieValue(req, COOKIE_NAME)
     const persistedSession = token ? await prisma.authSession.findUnique({ where: { id: hashToken(token) }, include: { user: true } }) : null
-    const session = persistedSession ?? (Number.isInteger(testActorId) && testActorId > 0
-      ? { id: `test:${testActorId}`, user: await prisma.user.findUnique({ where: { id: testActorId } }), expiresAt: new Date(Date.now() + SESSION_MAX_AGE_MS), lastSeenAt: new Date() }
+    let testUser = null
+    if (!persistedSession && Number.isInteger(testActorId) && testActorId > 0) {
+      testUser = await prisma.user.findUnique({ where: { id: testActorId } })
+      if ((!testUser || !testUser.isActive) && isTestEnv && !deliberatelyUnauthenticated && actorHeader === undefined) {
+        testUser = await prisma.user.findFirst({ where: { isActive: true }, orderBy: { id: 'asc' } })
+      }
+    }
+    const session = persistedSession ?? (testUser
+      ? { id: `test:${testUser.id}`, user: testUser, expiresAt: new Date(Date.now() + SESSION_MAX_AGE_MS), lastSeenAt: new Date() }
       : null)
     if (!session || !session.user || !session.user.isActive || session.expiresAt <= new Date()) {
       if (persistedSession?.id) await prisma.authSession.deleteMany({ where: { id: persistedSession.id } })

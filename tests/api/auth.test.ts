@@ -83,7 +83,9 @@ describe('AUTH-01 authentication', () => {
     expect(created.status).toBe(201)
     const invitation = await created.json()
     expect(invitation.workspaceRole).toBe('MEMBER')
-    expect(typeof invitation.inviteToken).toBe('string') // returned exactly once, stored hashed
+    expect(invitation.invitationId).toBeDefined()
+    expect(invitation.inviteToken).toBeUndefined()
+    expect(invitation.inviteUrl).toBeUndefined()
 
     const editor = await raw('/api/users', { headers: { 'x-docucore-test-actor-id': '3' } })
     expect(editor.status).toBe(403)

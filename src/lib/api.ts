@@ -987,10 +987,10 @@ export function verifyEmail(token: string): Promise<ApiSession> {
   })
 }
 
-export function resendVerification(email: string): Promise<{ message: string }> {
+export function resendVerification(email: string, invitationToken?: string): Promise<{ message: string }> {
   return request<{ message: string }>('/auth/resend-verification', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, ...(invitationToken ? { invitationToken } : {}) }),
   })
 }
 
@@ -1031,10 +1031,10 @@ export function fetchBillingStatus(): Promise<import('@/types').ApiBillingStatus
   return request<import('@/types').ApiBillingStatus>('/billing/status')
 }
 
-export function createBillingCheckoutSession(planKey: import('@/types').PlanKey, options?: { transitionId?: string; selectedProjectId?: number; selectedMemberIds?: number[] }): Promise<{ checkoutUrl: string }> {
-  return request<{ checkoutUrl: string }>('/billing/checkout', {
+export function createBillingCheckoutSession(planKey: import('@/types').PlanKey, options: { transitionId: string; selectedProjectId?: number | null; selectedMemberIds?: number[] }): Promise<{ checkoutUrl?: string | null; sessionId?: string; reused?: boolean; success?: boolean; planKey?: string; message?: string; status?: string }> {
+  return request<{ checkoutUrl?: string | null; sessionId?: string; reused?: boolean; success?: boolean; planKey?: string; message?: string; status?: string }>('/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({ planKey, ...(options ?? {}) }),
+    body: JSON.stringify({ planKey, ...options }),
   })
 }
 
@@ -1109,11 +1109,11 @@ export function archiveProject(projectId: number): Promise<ApiProjectSummary> {
 export function restoreProject(projectId: number): Promise<ApiProjectSummary> {
   return request<ApiProjectSummary>(`/projects/${projectId}/restore`, { method: 'POST' })
 }
-export function copyProjectConfiguration(projectId: number, sourceProjectId: number): Promise<{ success: boolean }> {
-  return request<{ success: boolean }>(`/projects/${projectId}/copy-configuration`, { method: 'POST', body: JSON.stringify({ sourceProjectId }) })
+export function copyProjectConfiguration(targetProjectId: number, sourceProjectId: number): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/projects/${targetProjectId}/copy-configuration`, { method: 'POST', body: JSON.stringify({ sourceProjectId }) })
 }
 
-export function fetchProjectMembers(projectId: number, options: { search?: string; page?: number; limit?: number } = {}): Promise<{ data: ApiProjectMember[]; total: number; page: number; limit: number; totalPages: number }> {
+export function fetchProjectMembers(projectId: number, options: { search?: string; page?: number; limit?: number } = {}): Promise<{ data: Array<ApiUserRef & { role: ApiProjectRole }>; total: number; page: number; limit: number; totalPages: number }> {
   const query = new URLSearchParams()
   if (options.search?.trim()) query.set('search', options.search.trim())
   if (options.page) query.set('page', String(options.page))
@@ -1121,13 +1121,15 @@ export function fetchProjectMembers(projectId: number, options: { search?: strin
   return request(`/projects/${projectId}/members${query.size ? `?${query.toString()}` : ''}`)
 }
 
-export function addProjectMember(projectId: number, input: { userId: number; role: ApiProjectRole }): Promise<ApiProjectMember> {
-  return request<ApiProjectMember>(`/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify(input) })
+export function addProjectMember(projectId: number, input: { userId: number; role: ApiProjectRole }): Promise<ApiUserRef & { role: ApiProjectRole }> {
+  return request<ApiUserRef & { role: ApiProjectRole }>(`/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function updateProjectMember(projectId: number, userId: number, role: ApiProjectRole): Promise<ApiProjectMember> {
-  return request<ApiProjectMember>(`/projects/${projectId}/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) })
+export function updateProjectMemberRole(projectId: number, userId: number, role: ApiProjectRole): Promise<ApiUserRef & { role: ApiProjectRole }> {
+  return request<ApiUserRef & { role: ApiProjectRole }>(`/projects/${projectId}/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) })
 }
+
+export const updateProjectMember = updateProjectMemberRole
 
 export function removeProjectMember(projectId: number, userId: number): Promise<void> {
   return request<void>(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' })
@@ -1200,7 +1202,7 @@ export function fetchWorkspaceMembers(search = ''): Promise<ApiWorkspaceMember[]
   if (search.trim()) query.set('search', search.trim())
   return request<ApiWorkspaceMember[]>(`/users${query.size ? `?${query.toString()}` : ''}`)
 }
-export function inviteWorkspaceMember(input: { email: string; workspaceRole: 'OWNER' | 'ADMIN' | 'MEMBER'; projectAssignments?: Array<{ projectId: number; role: ApiProjectRole }> }): Promise<{ invitationId: string; email: string; workspaceRole: string; expiresAt: string; inviteToken: string; inviteUrl: string }> {
+export function inviteWorkspaceMember(input: { email: string; workspaceRole: 'OWNER' | 'ADMIN' | 'MEMBER'; projectAssignments?: Array<{ projectId: number; role: ApiProjectRole }> }): Promise<{ invitationId: string; email: string; workspaceRole: string; status: string; expiresAt: string; createdAt: string }> {
   return request('/users/invitations', { method: 'POST', body: JSON.stringify(input) })
 }
 export function acceptWorkspaceInvitation(token: string): Promise<{ accepted: boolean; workspaceId: number }> {

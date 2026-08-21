@@ -163,7 +163,7 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
       expect(statusData.activeProjectsCount).toBe(2)
       expect(statusData.canDowngradeToStarter).toBe(false)
 
-      // 2. Checkout to STARTER should be rejected with 409
+      // 2. Checkout without a persisted transition is rejected before any provider call.
       const downgradeRes = await fetch(`${baseUrl}/api/billing/checkout`, {
         method: "POST",
         headers: {
@@ -172,10 +172,7 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
         },
         body: JSON.stringify({ planKey: "STARTER" }),
       })
-      expect(downgradeRes.status).toBe(409)
-      const downgradeData = await downgradeRes.json()
-      expect(downgradeData.code).toBe("DOWNGRADE_PROJECT_LIMIT_EXCEEDED")
-      expect(downgradeData.error).toContain("seleccionar qué proyecto conservar")
+      expect(downgradeRes.status).toBe(400)
 
       // 3. Archive 1 project
       const projects = await prisma.project.findMany({ where: { workspaceId: ws.id } })
@@ -192,14 +189,21 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
       expect(statusData2.activeProjectsCount).toBe(1)
       expect(statusData2.canDowngradeToStarter).toBe(true)
 
-      // 5. Checkout to STARTER now succeeds
+      // 5. Persist a compliant transition, then checkout to STARTER succeeds.
+      const transitionRes = await fetch(`${baseUrl}/api/billing/plan-change/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ targetPlanKey: "STARTER" }),
+      })
+      expect(transitionRes.status).toBe(201)
+      const transitionId = (await transitionRes.json()).transitionId as string
       const starterCheckoutRes = await fetch(`${baseUrl}/api/billing/checkout`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-docucore-test-actor-id": String(user.id),
         },
-        body: JSON.stringify({ planKey: "STARTER" }),
+        body: JSON.stringify({ planKey: "STARTER", transitionId }),
       })
       expect(starterCheckoutRes.status).toBe(200)
       const checkoutData = await starterCheckoutRes.json()
@@ -220,6 +224,7 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
               metadata: {
                 workspaceId: String(ws.id),
                 planKey: "STARTER",
+                transitionId,
               },
             },
           },

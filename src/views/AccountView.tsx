@@ -4,6 +4,7 @@ import {
   createBillingCheckoutSession,
   createBillingPortalSession,
   fetchBillingStatus,
+  initiatePlanChange,
   updateProfile,
 } from "@/lib/api"
 import type { ApiBillingStatus, PlanKey } from "@/types"
@@ -68,7 +69,10 @@ export default function AccountView() {
     setBillingActionBusy(true)
     setBillingError(null)
     try {
-      const res = await createBillingCheckoutSession(planKey)
+      // Every purchase or plan change is represented by a durable transition,
+      // even when the current capacity needs no explicit selection.
+      const transition = await initiatePlanChange({ targetPlanKey: planKey })
+      const res = await createBillingCheckoutSession(planKey, { transitionId: transition.transitionId })
       if (res.checkoutUrl) {
         window.location.href = res.checkoutUrl
       }
@@ -346,7 +350,7 @@ export default function AccountView() {
               <strong className="text-sm">Período de prueba gratuito de 14 días activo</strong>
             </div>
             <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
-              Dispones de acceso completo con <strong>hasta 15 proyectos activos</strong> durante tu prueba.
+              Dispones de acceso completo con <strong>hasta 15 proyectos activos y 15 usuarios activos</strong> durante tu prueba.
               {billing.trialDaysLeft > 0 ? (
                 <> Te quedan <strong className="text-brand-600 dark:text-brand-400">{billing.trialDaysLeft} {billing.trialDaysLeft === 1 ? "día" : "días"}</strong> para elegir tu plan mensual.</>
               ) : (

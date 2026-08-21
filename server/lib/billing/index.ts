@@ -1,6 +1,15 @@
 import { FakeBillingProvider } from "./fakeProvider"
 import { StripeBillingProvider } from "./stripeProvider"
-import type { BillingProvider, CheckoutSessionParams, CustomerPortalParams, ReconcileResult, WebhookEventResult } from "./types"
+import type {
+  BillingProvider,
+  ChangePlanResult,
+  ChangeSubscriptionPlanParams,
+  CheckoutSessionParams,
+  CustomerPortalParams,
+  InitialCheckoutParams,
+  ReconcileResult,
+  WebhookEventResult,
+} from "./types"
 
 export * from "./types"
 export { FakeBillingProvider } from "./fakeProvider"
@@ -63,8 +72,16 @@ export function setBillingProvider(provider: BillingProvider | null): void {
   billingProviderInstance = provider
 }
 
+export async function createInitialSubscriptionCheckout(params: InitialCheckoutParams): Promise<{ checkoutUrl: string; sessionId: string }> {
+  return getBillingProvider().createInitialSubscriptionCheckout(params)
+}
+
 export async function createCheckoutSession(params: CheckoutSessionParams): Promise<{ checkoutUrl: string; sessionId: string }> {
   return getBillingProvider().createCheckoutSession(params)
+}
+
+export async function changeExistingSubscriptionPlan(params: ChangeSubscriptionPlanParams): Promise<ChangePlanResult> {
+  return getBillingProvider().changeExistingSubscriptionPlan(params)
 }
 
 export async function createCustomerPortalSession(params: CustomerPortalParams): Promise<{ portalUrl: string }> {
