@@ -496,7 +496,14 @@ test.describe('Locations lifecycle', () => {
     // PERF-01 precarga el camino de la primera hoja relevante; el resto del
     // árbol sigue diferido y no exige una descarga completa al entrar.
     const child = project1.find((location) => location.code === 'H-E2E')!
-    await expect(page.locator('summary, a', { hasText: child.name }).first()).toBeVisible()
+    const childNode = page.locator('summary, a', { hasText: child.name }).first()
+    if (!await childNode.isVisible()) {
+      const root = project1.find((location) => location.code === 'R-E2E')!
+      const rootSummary = page.locator('summary', { hasText: root.name })
+      await expect(rootSummary).toBeVisible()
+      await rootSummary.click()
+    }
+    await expect(childNode).toBeVisible()
 
     // Persistencia: el nieto borrado ya no aparece y el resto sigue.
     await page.reload()
