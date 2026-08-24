@@ -6,6 +6,7 @@ import path from 'node:path'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { databaseUrl, ensureTestDatabase, projectApiPath } from '../helpers/database'
+import prisma from '../../server/lib/prisma'
 
 let server: Server | undefined
 let baseUrl: string
@@ -70,6 +71,39 @@ describe('floor plan API', () => {
     const tile = await api(`/api/floor-plans/${plan.id}/versions/1/tiles/${level}/0_0.jpeg`)
     expect(tile.status).toBe(200)
     expect(tile.headers.get('content-type')).toContain('image/jpeg')
+  })
+
+  it('stores the background contrast layer as a per-user, per-plan preference', async () => {
+    const planId = createdPlanId as number
+    const defaultPreference = await api(`/api/projects/1/floor-plan-preferences/${planId}`)
+    expect(defaultPreference.status).toBe(200)
+    expect(await defaultPreference.json()).toEqual({ floorPlanId: planId, backgroundDimmed: true })
+
+    const saved = await api(`/api/projects/1/floor-plan-preferences/${planId}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ backgroundDimmed: false }),
+    })
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toEqual({ floorPlanId: planId, backgroundDimmed: false })
+
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: 1 }, select: { workspaceId: true } })
+    const stamp = `${Date.now()}-plan-preference`
+    const viewer = await prisma.user.create({ data: { name: 'Visor de planos', email: `viewer.${stamp}@docucore.test`, passwordHash: 'not-used-in-api-test', role: 'Visor', initials: 'VP', color: 'brand', emailVerifiedAt: new Date() } })
+    try {
+      await prisma.workspaceMember.create({ data: { workspaceId: project.workspaceId, userId: viewer.id, role: 'MEMBER' } })
+      await prisma.projectMember.create({ data: { projectId: 1, userId: viewer.id, role: 'VIEWER' } })
+      const viewerPreference = await fetch(`${baseUrl}/api/projects/1/floor-plan-preferences/${planId}`, { headers: { 'x-docucore-test-actor-id': String(viewer.id) } })
+      expect(viewerPreference.status).toBe(200)
+      expect(await viewerPreference.json()).toEqual({ floorPlanId: planId, backgroundDimmed: true })
+      const viewerSave = await fetch(`${baseUrl}/api/projects/1/floor-plan-preferences/${planId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-docucore-test-actor-id': String(viewer.id) },
+        body: JSON.stringify({ backgroundDimmed: false }),
+      })
+      expect(viewerSave.status).toBe(200)
+      expect((await api(`/api/projects/1/floor-plan-preferences/${planId}`)).json()).resolves.toEqual({ floorPlanId: planId, backgroundDimmed: false })
+    } finally {
+      await prisma.user.delete({ where: { id: viewer.id } })
+    }
   })
 
   it('accepts JPEG and WebP plan sources', async () => {

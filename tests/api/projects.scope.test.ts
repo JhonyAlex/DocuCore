@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { databaseUrl, ensureTestDatabase } from '../helpers/database'
+import prisma from '../../server/lib/prisma'
 
 let server: Server | undefined
 let baseUrl = ''
@@ -196,6 +197,30 @@ describe('PROJ-01 project scope', () => {
     expect((await api(scoped(2, '/assets?limit=1'))).status).toBe(200)
     expect((await createIsolatedAsset(2, `ARCHIVED-${Date.now()}`)).status).toBe(409)
     expect((await api('/api/projects/2/restore', { method: 'POST' })).status).toBe(200)
+  })
+
+  it('permanently deletes a project only for its manager and retains workspace-level audit evidence', async () => {
+    const code = `PROJECT-DELETE-${Date.now()}`
+    const createdResponse = await jsonAs(1, '/api/projects', 'POST', {
+      code,
+      name: 'Proyecto para eliminación definitiva',
+      description: 'Debe eliminar el agregado completo.',
+      themeKey: 'blue',
+      memberIds: [{ userId: 3, role: 'EDITOR' }],
+    })
+    expect(createdResponse.status).toBe(201)
+    const created = await createdResponse.json() as { id: number }
+    const projectBeforeDeletion = await prisma.project.findUniqueOrThrow({ where: { id: created.id }, select: { workspaceId: true } })
+
+    expect((await jsonAs(3, `/api/projects/${created.id}`, 'DELETE')).status).toBe(403)
+    expect((await jsonAs(1, `/api/projects/${created.id}`, 'DELETE')).status).toBe(204)
+    expect(await prisma.project.findUnique({ where: { id: created.id } })).toBeNull()
+    expect(await prisma.projectMember.count({ where: { projectId: created.id } })).toBe(0)
+    expect(await prisma.assetType.count({ where: { projectId: created.id } })).toBe(0)
+    expect(await prisma.auditLog.findFirst({ where: { projectId: null, action: 'Proyecto eliminado definitivamente', entityId: `project:${created.id}` } })).toMatchObject({
+      workspaceId: projectBeforeDeletion.workspaceId,
+      userId: 1,
+    })
   })
 
   it('clones configuration without operational rows', async () => {

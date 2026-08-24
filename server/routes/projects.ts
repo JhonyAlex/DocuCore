@@ -7,6 +7,7 @@ import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProje
 import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
 import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace, assertWorkspaceWriteAllowed } from '../lib/workspaceScope'
 import { computeCompliance, lockWorkspaceForEntitlement, restoreProjectTransactional, fetchWorkspaceCompliance } from '../lib/entitlements'
+import { permanentlyDeleteProject } from '../lib/projectDeletion'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
 
 const router = Router()
@@ -278,6 +279,20 @@ router.post('/:projectId/restore', asyncHandler(async (req, res) => {
   })
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: projectInclude })
   res.json(serializeProject(project))
+}))
+
+router.delete('/:projectId', asyncHandler(async (req, res) => {
+  const projectId = parseProjectId(req.params.projectId)
+  const actorId = actorIdFromRequest(req)
+  const scope = await ensureManagementScope(projectId, actorId)
+  const compliance = await fetchWorkspaceCompliance(scope.project.workspaceId)
+  // A deletion can resolve a plan overage, so it remains available in that
+  // state. Other billing blocks retain the usual read-only protection.
+  if (!compliance.canWrite && compliance.complianceStatus !== 'PLAN_ACTION_REQUIRED') {
+    await assertWorkspaceWriteAllowed(scope.project.workspaceId)
+  }
+  await permanentlyDeleteProject({ projectId, workspaceId: scope.project.workspaceId, actorId })
+  res.status(204).end()
 }))
 
 router.post('/:projectId/copy-configuration', asyncHandler(async (req, res) => {

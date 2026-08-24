@@ -415,6 +415,29 @@ describe("member seat limits (per-plan ACTIVE member capacity)", () => {
     expect(await prisma.workspaceMember.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })).toBe(1)
   })
 
+  it("a platform admin with a Starter workspace is limited to one active project", async () => {
+    const stamp = `${Date.now()}-pa-project-capacity`
+    const admin = await makeUser(stamp, "Platform Admin Starter", { isPlatformAdmin: true })
+    await makeWorkspace(stamp, "STARTER", admin.id)
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const create = (suffix: string) => fetch(`${baseUrl}/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(admin.id) },
+        body: JSON.stringify({ code: `PA_${suffix}_${stamp}`.slice(0, 40), name: `Proyecto ${suffix}`, description: "", themeKey: "blue" }),
+      })
+      expect((await create("one")).status).toBe(201)
+      const second = await create("two")
+      expect(second.status).toBe(409)
+      expect((await second.json()).code).toBe("PROJECT_LIMIT_EXCEEDED")
+    } finally {
+      server.close()
+    }
+  })
+
   it("new-user invitation continues after register + verify + accept", async () => {
     const stamp = `${Date.now()}-flow`
     const owner = await makeUser(stamp, "Owner Flow")
