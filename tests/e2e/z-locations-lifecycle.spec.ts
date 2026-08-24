@@ -47,6 +47,13 @@ async function goToLocations(page: Page): Promise<void> {
 test.describe('Locations lifecycle', () => {
   test.describe.configure({ mode: 'serial' })
 
+  // Esta spec modifica deliberadamente el dataset E2E. Restaura siempre el
+  // seed canónico, incluso si un caso serial falla y Playwright omite los
+  // restantes, para no contaminar notificaciones, sugerencias ni visuales.
+  test.afterAll(async () => {
+    await runDbScript('db:seed', e2eEnv)
+  })
+
   test('reset leaves zero assets, documents, locations and empty storage', async ({ page }) => {
     await runDbScript('db:reset:manual-test', e2eEnv)
 
@@ -384,10 +391,17 @@ test.describe('Locations lifecycle', () => {
 
   test('tree and detail show the same count for a branch', async ({ page }) => {
     await goToLocations(page)
-    // PERF-01 has already opened the root path to the relevant initial leaf.
-    // Opening the selected branch itself remains an explicit lazy action.
-    await expect(page.locator('summary', { hasText: 'Hijo E2E' })).toBeVisible()
-    await page.locator('summary', { hasText: 'Hijo E2E' }).click()
+    // El bootstrap abre el camino de la primera hoja relevante, que puede ser
+    // otra raíz cuando los controles P0 existen. Expande Raíz E2E solo cuando
+    // su hijo todavía no ha sido cargado.
+    const childSummary = page.locator('summary', { hasText: 'Hijo E2E' })
+    if (!await childSummary.isVisible()) {
+      const rootSummary = page.locator('summary', { hasText: 'Raíz E2E' })
+      await expect(rootSummary).toBeVisible()
+      await rootSummary.click()
+      await expect(childSummary).toBeVisible()
+    }
+    await childSummary.click()
 
     // Hijo E2E tiene el activo ACT-E2E en su subrama (nieto vacío).
     const treeCount = await page.locator('summary', { hasText: /Hijo E2E/ }).locator('span.ml-auto').textContent()
@@ -481,7 +495,5 @@ test.describe('Locations lifecycle', () => {
     await expect(page.getByText('Nieto E2E', { exact: true })).toHaveCount(0)
     await expect(page.locator('summary', { hasText: 'Raíz E2E' })).toBeVisible()
 
-    // Restaurar el seed canónico para el resto de la suite.
-    await runDbScript('db:seed', e2eEnv)
   })
 })
