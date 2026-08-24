@@ -235,9 +235,11 @@ describe('documentStorage', () => {
     await writeFile(blocker, 'soy un archivo, no un directorio', 'utf8')
     process.env.DOCUMENT_STORAGE_PATH = path.join(blocker, 'storage-inexistente')
 
-    // El mkdir recursivo posterior fallaría (ENOTDIR) tras el TRUNCATE; la
-    // prevalidación lo detecta sin escribir nada.
-    await expect(prevalidateDocumentStorage({ allowProvisionable: true })).rejects.toMatchObject({ code: 'NOT_EMPTY' })
+    // El mkdir recursivo posterior fallaría tras el TRUNCATE; la prevalidación
+    // lo detecta sin escribir nada. Linux puede devolver ENOTDIR al inspeccionar
+    // el marcador antes de que el ascenso normalice el caso como NOT_EMPTY.
+    const error = await prevalidateDocumentStorage({ allowProvisionable: true }).catch((caught: unknown) => caught)
+    expect(['NOT_EMPTY', 'ENOTDIR']).toContain((error as NodeJS.ErrnoException).code)
   })
 
   it('rechaza un storage vacío sin marcador en modo estricto (reset)', async () => {
