@@ -83,12 +83,10 @@ export function resolveEntitlement(input: {
 
 export function planKeyFromPriceId(priceId: string | null | undefined): PlanKey | null {
   if (!priceId) return null
-  const starterPrice = process.env.STRIPE_PRICE_STARTER
-  const proPrice = process.env.STRIPE_PRICE_PRO
+  const starterPrice = process.env.STRIPE_PRICE_STARTER || (process.env.BILLING_PROVIDER === "fake" || process.env.NODE_ENV === "test" ? "fake_price_starter" : null)
+  const proPrice = process.env.STRIPE_PRICE_PRO || (process.env.BILLING_PROVIDER === "fake" || process.env.NODE_ENV === "test" ? "fake_price_pro" : null)
   if (starterPrice && priceId === starterPrice) return "STARTER"
   if (proPrice && priceId === proPrice) return "PRO"
-  if (priceId === "fake_price_starter" || priceId.includes("starter")) return "STARTER"
-  if (priceId === "fake_price_pro" || priceId.includes("pro")) return "PRO"
   return null
 }
 
@@ -527,10 +525,64 @@ export async function applyPlanTransition(
   const now = opts.now ?? new Date()
   const { counts, projects, members } = await lockWorkspaceForEntitlement(client, spec.workspaceId)
 
+  let existingTransition: {
+    id: string
+    workspaceId: number
+    actorId: number
+    targetPlanKey: string
+    selectedProjectId: number | null
+    selectedMemberIds: string[]
+    planLockedProjectIds: string[]
+    planLockedMemberIds: string[]
+    status: string
+    effectiveAt: Date | null
+    appliedAt: Date | null
+  } | null = null
+
+  if (spec.transitionId) {
+    const lockedTransitionRows = await client.$queryRaw<Array<{
+      id: string
+      workspaceId: number
+      actorId: number
+      targetPlanKey: string
+      selectedProjectId: number | null
+      selectedMemberIds: string[]
+      planLockedProjectIds: string[]
+      planLockedMemberIds: string[]
+      status: string
+      effectiveAt: Date | null
+      appliedAt: Date | null
+    }>>`SELECT id, "workspaceId", "actorId", "targetPlanKey", "selectedProjectId", "selectedMemberIds", "planLockedProjectIds", "planLockedMemberIds", status, "effectiveAt", "appliedAt" FROM "PlanTransition" WHERE id = ${spec.transitionId} FOR UPDATE`
+
+    if (lockedTransitionRows.length > 0) {
+      existingTransition = lockedTransitionRows[0]
+      if (existingTransition.workspaceId !== spec.workspaceId || existingTransition.targetPlanKey !== spec.targetPlanKey) {
+        throw Object.assign(new Error("La transición de plan no coincide con el workspace o el plan solicitado."), { status: 409, code: "INVALID_TRANSITION" })
+      }
+      if (existingTransition.status === "CANCELED") {
+        throw Object.assign(new Error("La transición de plan fue cancelada y no puede aplicarse."), { status: 409, code: "TRANSITION_CANCELED" })
+      }
+      if (existingTransition.status === "APPLIED") {
+        return {
+          transitionId: existingTransition.id,
+          status: "APPLIED",
+          effectiveAt: existingTransition.effectiveAt,
+          appliedAt: existingTransition.appliedAt,
+          targetPlanKey: existingTransition.targetPlanKey as PlanKey,
+          keptProjectId: existingTransition.selectedProjectId,
+          planLockedProjectIds: existingTransition.planLockedProjectIds.map(Number),
+          selectedMemberIds: existingTransition.selectedMemberIds.map(Number),
+          planLockedMemberIds: existingTransition.planLockedMemberIds.map(Number),
+        }
+      }
+    }
+  }
+
   const active = projects.filter((p) => p.status === "ACTIVE")
   let keptProjectId: number | null = null
-  if (spec.selectedProjectId) {
-    const selected = active.find((p) => p.id === spec.selectedProjectId)
+  const selectedProjId = spec.selectedProjectId ?? existingTransition?.selectedProjectId
+  if (selectedProjId) {
+    const selected = active.find((p) => p.id === selectedProjId)
     if (!selected) {
       throw Object.assign(new Error("El proyecto seleccionado debe ser un proyecto activo del workspace."), { status: 409, code: "INVALID_PROJECT_SELECTION" })
     }
@@ -570,8 +622,9 @@ export async function applyPlanTransition(
   // The operator's selection is persisted and auditable; associations are kept.
   let selectedMemberIds: number[] = []
   let planLockedMemberIds: number[] = []
-  if (counts.activeMembers > maxAllowedMembers || (spec.selectedMemberIds && spec.selectedMemberIds.length > 0)) {
-    const selected = spec.selectedMemberIds ?? []
+  const specSelectedMembers = spec.selectedMemberIds ?? (existingTransition?.selectedMemberIds?.length ? existingTransition.selectedMemberIds.map(Number) : undefined)
+  if (counts.activeMembers > maxAllowedMembers || (specSelectedMembers && specSelectedMembers.length > 0)) {
+    const selected = specSelectedMembers ?? []
     validateMemberSelection(members, selected, maxAllowedMembers)
     selectedMemberIds = selected
     const selectedSet = new Set(selected)
@@ -603,7 +656,7 @@ export async function applyPlanTransition(
     create: {
       id: transitionId,
       workspaceId: spec.workspaceId,
-      actorId: spec.actorId,
+      actorId: spec.actorId ?? null,
       targetPlanKey: spec.targetPlanKey,
       selectedProjectId: keptProjectId,
       planLockedProjectIds: planLockIds.map(String),
@@ -664,9 +717,22 @@ export async function swapActiveProject(
 ): Promise<{ keptProjectId: number; lockedProjectIds: number[]; graceEndsAt: Date | null }> {
   const now = opts.now ?? new Date()
   const { workspace, counts, projects } = await lockWorkspaceForEntitlement(client, args.workspaceId)
+  const snapshot = computeCompliance(workspace, counts, { now })
 
-  const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
-  if (resolution.maxActiveProjects === 0) {
+  if (!snapshot.canWrite && snapshot.complianceStatus !== "PLAN_ACTION_REQUIRED") {
+    if (snapshot.complianceStatus === "SUSPENDED" || snapshot.reason === "WORKSPACE_SUSPENDED") {
+      throw Object.assign(new Error("El workspace está suspendido."), { status: 403, code: "WORKSPACE_SUSPENDED" })
+    }
+    if (snapshot.complianceStatus === "BLOCKED_FOR_PAYMENT" || snapshot.reason === "PAST_DUE") {
+      throw Object.assign(new Error("La suscripción tiene un pago pendiente."), { status: 402, code: "PAST_DUE" })
+    }
+    if (snapshot.reason === "TRIAL_EXPIRED") {
+      throw Object.assign(new Error("El período de prueba ha finalizado."), { status: 402, code: "TRIAL_EXPIRED" })
+    }
+    throw Object.assign(new Error("La suscripción no permite realizar cambios."), { status: 402, code: snapshot.reason ?? "SUBSCRIPTION_EXPIRED" })
+  }
+
+  if (snapshot.maxActiveProjects === 0) {
     throw Object.assign(new Error("El workspace no tiene un plan con capacidad de proyectos."), { status: 409, code: "NO_PLAN_CAPACITY" })
   }
 
@@ -713,10 +779,25 @@ export async function restoreProjectTransactional(
 ): Promise<{ projectId: number }> {
   const now = opts.now ?? new Date()
   const { workspace, counts } = await lockWorkspaceForEntitlement(client, args.workspaceId)
+  const snapshot = computeCompliance(workspace, counts, { now })
 
-  const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
-  if (resolution.maxActiveProjects === 0) {
-    throw Object.assign(new Error("El workspace no tiene un plan con capacidad de proyectos."), { status: 409, code: "NO_PLAN_CAPACITY" })
+  if (!snapshot.canWrite) {
+    if (snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
+      throw Object.assign(new Error("El workspace debe resolver primero el exceso de proyectos o usuarios."), { status: 402, code: "PLAN_ACTION_REQUIRED" })
+    }
+    if (snapshot.complianceStatus === "SUSPENDED" || snapshot.reason === "WORKSPACE_SUSPENDED") {
+      throw Object.assign(new Error("El workspace está suspendido."), { status: 403, code: "WORKSPACE_SUSPENDED" })
+    }
+    if (snapshot.complianceStatus === "BLOCKED_FOR_PAYMENT" || snapshot.reason === "PAST_DUE") {
+      throw Object.assign(new Error("La suscripción tiene un pago pendiente."), { status: 402, code: "PAST_DUE" })
+    }
+    if (snapshot.reason === "TRIAL_EXPIRED") {
+      throw Object.assign(new Error("El período de prueba ha finalizado."), { status: 402, code: "TRIAL_EXPIRED" })
+    }
+    if (snapshot.maxActiveProjects === 0) {
+      throw Object.assign(new Error("El workspace no tiene un plan con capacidad de proyectos."), { status: 409, code: "NO_PLAN_CAPACITY" })
+    }
+    throw Object.assign(new Error("La suscripción no permite restaurar proyectos."), { status: 402, code: snapshot.reason ?? "SUBSCRIPTION_EXPIRED" })
   }
 
   const project = await client.project.findUnique({ where: { id: args.projectId }, select: { id: true, status: true, archivedByPlan: true, planLockedAt: true } })
@@ -725,11 +806,11 @@ export async function restoreProjectTransactional(
   }
 
   // Plan-locked projects can only be restored when the plan allows (Starter → Pro).
-  if (isPlanLocked(project) && resolution.planKey === "STARTER") {
+  if (isPlanLocked(project) && snapshot.planKey === "STARTER") {
     throw Object.assign(new Error("Este proyecto está bloqueado por el límite del plan Starter. Actualiza a Pro para restaurarlo."), { status: 409, code: "PLAN_LOCKED_PROJECT" })
   }
 
-  if (counts.activeProjects >= resolution.maxActiveProjects) {
+  if (counts.activeProjects >= snapshot.maxActiveProjects) {
     throw Object.assign(new Error("Has alcanzado el límite de proyectos activos para tu plan."), { status: 409, code: "PROJECT_LIMIT_EXCEEDED" })
   }
 
@@ -766,6 +847,23 @@ export async function reactivateMemberTransactional(
 ): Promise<{ memberId: number; status: WorkspaceMemberStatus }> {
   const now = opts.now ?? new Date()
   const { workspace, counts } = await lockWorkspaceForEntitlement(client, args.workspaceId)
+  const snapshot = computeCompliance(workspace, counts, { now })
+
+  if (!snapshot.canWrite) {
+    if (snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
+      throw Object.assign(new Error("El workspace debe resolver primero el exceso de proyectos o usuarios."), { status: 402, code: "PLAN_ACTION_REQUIRED" })
+    }
+    if (snapshot.complianceStatus === "SUSPENDED" || snapshot.reason === "WORKSPACE_SUSPENDED") {
+      throw Object.assign(new Error("El workspace está suspendido."), { status: 403, code: "WORKSPACE_SUSPENDED" })
+    }
+    if (snapshot.complianceStatus === "BLOCKED_FOR_PAYMENT" || snapshot.reason === "PAST_DUE") {
+      throw Object.assign(new Error("La suscripción tiene un pago pendiente."), { status: 402, code: "PAST_DUE" })
+    }
+    if (snapshot.reason === "TRIAL_EXPIRED") {
+      throw Object.assign(new Error("El período de prueba ha finalizado."), { status: 402, code: "TRIAL_EXPIRED" })
+    }
+    throw Object.assign(new Error("La suscripción no permite reactivar miembros."), { status: 402, code: snapshot.reason ?? "SUBSCRIPTION_EXPIRED" })
+  }
 
   const member = await client.workspaceMember.findFirst({ where: { id: args.memberId, workspaceId: args.workspaceId }, select: { id: true, userId: true, status: true } })
   if (!member) throw Object.assign(new Error("El usuario no pertenece a este workspace."), { status: 404, code: "WORKSPACE_ACCESS_DENIED" })
@@ -773,8 +871,7 @@ export async function reactivateMemberTransactional(
     throw Object.assign(new Error("Este miembro no está bloqueado por límite de plan."), { status: 409, code: "MEMBER_PLAN_LOCKED" })
   }
 
-  const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
-  assertMemberSeatAvailable(resolution.maxActiveMembers, counts.activeMembers)
+  assertMemberSeatAvailable(snapshot.maxActiveMembers, counts.activeMembers)
 
   const updated = await client.workspaceMember.update({ where: { id: member.id }, data: { status: "ACTIVE" } })
 

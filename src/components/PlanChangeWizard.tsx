@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, createBillingCheckoutSession, initiatePlanChange, previewPlanChange, type PlanChangeMemberPreview, type PlanChangePreview, type PlanKey } from '@/lib/api'
+import { ApiError, createBillingCheckoutSession, initiatePlanChange, previewPlanChange, resolvePlanCompliance, type PlanChangeMemberPreview, type PlanChangePreview, type PlanKey } from '@/lib/api'
 import { PLAN_CATALOG } from '../../shared/planCatalog'
 
 type Step = 'overview' | 'select' | 'confirm' | 'done'
@@ -7,7 +7,15 @@ type Step = 'overview' | 'select' | 'confirm' | 'done'
 interface PlanChangeWizardProps {
   targetPlanKey: PlanKey
   activeProjectsCount: number
+  /**
+   * 'change' (default): the wizard ends in a Stripe checkout.
+   * 'resolve': the plan is already effective and the workspace is out of
+   * compliance; the persisted selection is applied via /plan-change/resolve
+   * without creating a checkout or scheduling any Stripe change.
+   */
+  mode?: 'change' | 'resolve'
   onClose: () => void
+  onCompleted?: () => void
 }
 
 /**
@@ -16,7 +24,7 @@ interface PlanChangeWizardProps {
  * (PlanTransition), never in browser memory. A downgrade resolves BOTH
  * dimensions — projects and member seats — in the same wizard.
  */
-export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, onClose }: PlanChangeWizardProps) {
+export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, mode = 'change', onClose, onCompleted }: PlanChangeWizardProps) {
   const [step, setStep] = useState<Step>('overview')
   const [preview, setPreview] = useState<PlanChangePreview | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -75,17 +83,33 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, o
         selectedProjectId: selectedId ?? undefined,
         selectedMemberIds: requiresMemberSelection ? selectedMemberIds : undefined,
       })
-      // The decision is persisted (transitionId). Walk straight into Stripe
-      // checkout carrying that id; when the webhook confirms the plan, the
-      // persisted PENDING transition is applied transactionally.
+      // The decision is persisted (transitionId). In resolve mode the plan is
+      // already effective: apply the persisted transition immediately without
+      // Stripe. Otherwise walk into Stripe checkout carrying that id; when the
+      // webhook confirms the plan, the PENDING transition is applied
+      // transactionally.
+      if (mode === 'resolve') {
+        await resolvePlanCompliance({ transitionId: result.transitionId })
+        setStep('done')
+        setBusy(false)
+        busyRef.current = false
+        onCompleted?.()
+        return
+      }
       const checkout = await createBillingCheckoutSession(targetPlanKey, {
         transitionId: result.transitionId,
-        selectedProjectId: result.selectedProjectId,
-        selectedMemberIds: requiresMemberSelection ? selectedMemberIds : undefined,
       })
-      if (checkout.checkoutUrl) {
+      if (checkout.nextAction === 'REDIRECT_TO_CHECKOUT' && checkout.checkoutUrl) {
         setStep('done')
         window.location.href = checkout.checkoutUrl
+      } else if (checkout.nextAction === 'REFRESH_BILLING' || checkout.status === 'CHECKOUT_ALREADY_COMPLETED') {
+        // Status is CHECKOUT_ALREADY_COMPLETED or refresh result: release busy and notify
+        setStep('done')
+        setBusy(false)
+        busyRef.current = false
+        onCompleted?.()
+      } else {
+        throw new Error('Respuesta no válida recibida desde el servidor de pagos.')
       }
     } catch (reason) {
       const code = reason instanceof ApiError ? reason.code : null
@@ -109,7 +133,7 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, o
     <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-5 dark:border-brand-900/60 dark:bg-brand-950/20">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-          Cambio a {targetPlanKey === 'STARTER' ? 'Starter' : 'Pro'}
+          {mode === 'resolve' ? 'Resolver exceso de plan' : `Cambio a ${targetPlanKey === 'STARTER' ? 'Starter' : 'Pro'}`}
         </h4>
         <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="Cerrar">
           ✕
@@ -190,10 +214,18 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, o
 
       {step === 'confirm' && (
         <div className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
-          <p>
-            Al confirmar se procederá a Stripe para contratar{' '}
-            <strong>{targetPlanKey === 'STARTER' ? 'Starter' : 'Pro'}</strong>.
-          </p>
+          {mode === 'resolve' ? (
+            <p>
+              Al confirmar se aplicarán los límites del plan{' '}
+              <strong>{targetPlanKey === 'STARTER' ? 'Starter' : 'Pro'}</strong> conservando la selección. No se
+              realizará ningún cargo ni cambio de suscripción.
+            </p>
+          ) : (
+            <p>
+              Al confirmar se procederá a Stripe para contratar{' '}
+              <strong>{targetPlanKey === 'STARTER' ? 'Starter' : 'Pro'}</strong>.
+            </p>
+          )}
           {requiresProjectSelection && selectedId && (
             <p>
               Conservarás activo el proyecto:{' '}
@@ -212,7 +244,9 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, o
       )}
 
       {step === 'done' && (
-        <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-300">Transición guardada. Redirigiendo a Stripe…</p>
+        <p className="mt-3 text-xs text-emerald-700 dark:text-emerald-300">
+          {mode === 'resolve' ? 'Exceso de plan resuelto.' : 'Transición guardada. Redirigiendo a Stripe…'}
+        </p>
       )}
 
       <div className="mt-4 flex justify-end gap-2">
@@ -238,7 +272,7 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, o
           <>
             <button type="button" onClick={() => setStep(requiresProjectSelection || requiresMemberSelection ? 'select' : 'overview')} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium dark:border-slate-700">Atrás</button>
             <button type="button" disabled={busy || !selectionValid} onClick={() => void proceed()} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-              {busy ? 'Guardando…' : 'Confirmar y continuar a Stripe'}
+              {busy ? 'Guardando…' : mode === 'resolve' ? 'Confirmar y resolver' : 'Confirmar y continuar a Stripe'}
             </button>
           </>
         )}

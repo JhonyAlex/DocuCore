@@ -56,6 +56,7 @@ export interface ApiBillingStatus {
   activeMembersCount: number
   planLockedMembersCount: number
   suspendedMembersCount: number
+  planLockedProjectsCount: number
   remainingMemberSeats: number
   projectsCompliant: boolean
   membersCompliant: boolean
@@ -70,6 +71,7 @@ export interface ApiBillingStatus {
   entitlementReason: string | null
   hasSubscription: boolean
   currentPeriodEnd: string | null
+  graceEndsAt: string | null
   cancelAtPeriodEnd: boolean
   stripeCustomerId?: string | null
   stripeSubscriptionId?: string | null

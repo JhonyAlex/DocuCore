@@ -46,6 +46,7 @@ function scopedApiUrl(value: string, args: unknown[] = [], method = 'get'): stri
     value.startsWith('/api/admin') ||
     value.startsWith('/api/workspaces') ||
     value.startsWith('/api/stripe') ||
+    value.startsWith('/api/billing') ||
     value === '/api/health' ||
     value === '/api/ready' ||
     value === '/api/session' ||

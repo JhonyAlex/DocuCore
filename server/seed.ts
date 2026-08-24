@@ -2,13 +2,24 @@ import 'dotenv/config'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { PrismaClient } from '@prisma/client'
-import { StorageMarkerError, cleanDocumentStorage, storeDocumentBuffer } from './lib/documentStorage'
-import { FloorPlanStorageError, cleanFloorPlanStorage, storeFloorPlanBuffer } from './lib/floorPlanStorage'
+import { checkDestructiveGuard } from './lib/destructiveGuard'
+import { StorageMarkerError, cleanDocumentStorage, prevalidateDocumentStorage, storeDocumentBuffer } from './lib/documentStorage'
+import { FloorPlanStorageError, cleanFloorPlanStorage, prevalidateFloorPlanStorage, storeFloorPlanBuffer } from './lib/floorPlanStorage'
 import { fieldKey } from './lib/dynamicFields'
 import { createSeedPdfBuffer } from './lib/seedPdf'
 import { hashPassword } from './lib/passwords'
 
-const prisma = new PrismaClient()
+// Guardia P0-REM-01: el seed solo puede ejecutarse contra el entorno desechable
+// 127.0.0.1:5436/docucore y storages bajo <workspace>\test-results\ (ver README).
+// Se evalúa antes de crear/conectar Prisma. Después se prevalidan (READ-ONLY)
+// los storages y únicamente si ambas pasan se instancia Prisma y se ejecuta el
+// TRUNCATE / limpieza / regeneración.
+const guard = checkDestructiveGuard({ env: process.env, cwd: process.cwd() })
+if (!guard.ok) {
+  console.error('✋ Seed bloqueado por la guardia de seguridad (P0-REM-01). Condiciones incumplidas:')
+  for (const error of guard.errors) console.error(`  - ${error}`)
+  process.exit(2)
+}
 
 function isoFromEu(date: string, time?: string): Date {
   const [dd, mm, yyyy] = date.split('/').map(Number)
@@ -58,6 +69,28 @@ const generatedBuckets: Array<{ locationCode: string; count: number }> = [
 async function main(): Promise<void> {
   console.log('🌱 Seeding DocuCore database...')
 
+  // Prevalidación READ-ONLY de ambos storages ANTES de crear Prisma o mutar la
+  // BD (P0-REM-01, P1 #2): ruta, marcador, owner y estructura de las entradas
+  // gestionadas se verifican sin escribir ni borrar nada. El seed admite un
+  // storage inexistente o vacío sin marcador únicamente si la provisión
+  // posterior (mkdir + marcador) podrá completarse de forma segura; un
+  // directorio no vacío sin marcador, un marcador corrupto o de otro
+  // propietario, o una entrada gestionada con estructura incompatible bloquean
+  // el seed antes del TRUNCATE. No garantiza atomicidad BD/filesystem frente a
+  // carreras o fallos I/O posteriores al precheck (TOCTOU).
+  await prevalidateDocumentStorage({ allowProvisionable: true })
+  await prevalidateFloorPlanStorage({ allowProvisionable: true })
+  console.log('  • Prevalidación de storage OK.')
+
+  const prisma = new PrismaClient()
+  try {
+    await seedDatabase(prisma)
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function seedDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       "Notification",
@@ -627,11 +660,7 @@ async function main(): Promise<void> {
   console.log('✅ Seed complete.')
 }
 
-main()
-  .catch((err: unknown) => {
-    console.error('Seed failed:', err)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+main().catch((err: unknown) => {
+  console.error('Seed failed:', err)
+  process.exit(1)
+})

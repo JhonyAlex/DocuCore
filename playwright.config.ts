@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
+import { E2E_DATABASE_URL } from './tests/helpers/database'
 
-const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${process.env.DOCUCORE_DB_PORT ?? '5436'}/docucore?schema=public`
+// La BD del webServer es SIEMPRE el destino E2E canónico (P0-REM-01): un
+// DATABASE_URL/DOCUCORE_DB_PORT heredado del shell o del .env no puede hacer
+// que la API de Playwright use 5435 u otra base.
 const apiPort = process.env.DOCUCORE_E2E_API_PORT ?? '3101'
 const apiUrl = `http://127.0.0.1:${apiPort}`
 
@@ -31,7 +34,7 @@ export default defineConfig({
       reuseExistingServer: true,
       env: {
         ...process.env,
-        DATABASE_URL: databaseUrl,
+        DATABASE_URL: E2E_DATABASE_URL,
         DOCUCORE_NOW: '2026-07-15T00:00:00.000Z',
         NODE_ENV: 'test',
         PORT: apiPort,

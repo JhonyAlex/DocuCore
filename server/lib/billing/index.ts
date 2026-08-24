@@ -13,7 +13,8 @@ import type {
 
 export * from "./types"
 export { FakeBillingProvider } from "./fakeProvider"
-export { StripeBillingProvider } from "./stripeProvider"
+export { StripeBillingProvider, getStableTransitionSuffix, isSubscriptionEligibleForPlanTransition } from "./stripeProvider"
+export { CheckoutCoordinator, isStripeNotFoundError, validateSessionOwnership, CHECKOUT_LEASE_TTL_MS } from "./checkoutCoordinator"
 
 let billingProviderInstance: BillingProvider | null = null
 
@@ -80,6 +81,10 @@ export async function createCheckoutSession(params: CheckoutSessionParams): Prom
   return getBillingProvider().createCheckoutSession(params)
 }
 
+export async function retrieveCheckoutSession(sessionId: string): Promise<import("./types").RetrievedCheckoutSession> {
+  return getBillingProvider().retrieveCheckoutSession(sessionId)
+}
+
 export async function changeExistingSubscriptionPlan(params: ChangeSubscriptionPlanParams): Promise<ChangePlanResult> {
   return getBillingProvider().changeExistingSubscriptionPlan(params)
 }
@@ -92,6 +97,6 @@ export async function handleBillingWebhook(rawBody: Buffer | string, signature?:
   return getBillingProvider().handleWebhook(rawBody, signature)
 }
 
-export async function reconcileWorkspace(workspaceId: number): Promise<ReconcileResult> {
-  return getBillingProvider().reconcileWorkspace(workspaceId)
+export async function reconcileWorkspace(workspaceId: number, actorId?: number): Promise<ReconcileResult> {
+  return getBillingProvider().reconcileWorkspace(workspaceId, actorId)
 }

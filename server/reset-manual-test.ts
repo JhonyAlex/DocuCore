@@ -7,13 +7,44 @@
  */
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
-import { cleanDocumentStorage } from './lib/documentStorage'
-import { cleanFloorPlanStorage } from './lib/floorPlanStorage'
+import { checkDestructiveGuard } from './lib/destructiveGuard'
+import { cleanDocumentStorage, prevalidateDocumentStorage } from './lib/documentStorage'
+import { cleanFloorPlanStorage, prevalidateFloorPlanStorage } from './lib/floorPlanStorage'
 import { hashPassword } from './lib/passwords'
 
-const prisma = new PrismaClient()
+// Guardia P0-REM-01: el reset solo puede ejecutarse contra el entorno desechable
+// 127.0.0.1:5436/docucore y storages bajo <workspace>\test-results\ (ver README).
+// Se evalúa antes de crear/conectar Prisma y antes de cualquier TRUNCATE o
+// limpieza de storage.
+const guard = checkDestructiveGuard({ env: process.env, cwd: process.cwd() })
+if (!guard.ok) {
+  console.error('✋ Reset bloqueado por la guardia de seguridad (P0-REM-01). Condiciones incumplidas:')
+  for (const error of guard.errors) console.error(`  - ${error}`)
+  process.exit(2)
+}
 
 async function main(): Promise<void> {
+  // Prevalidación READ-ONLY de ambos storages ANTES de crear Prisma o mutar la
+  // BD (P0-REM-01, deuda P1): ruta, marcador, owner y estructura de las
+  // entradas gestionadas se verifican sin escribir ni borrar nada, de modo que
+  // un fallo previsible de la limpieza posterior se detecta antes del
+  // TRUNCATE. El reset es el modo estricto: el marcador válido es obligatorio
+  // (un storage inexistente o sin marcador no se admite, ni siquiera vacío).
+  // No garantiza atomicidad BD/filesystem: una carrera o un fallo I/O tardío
+  // posterior al precheck (TOCTOU) puede dejar un reset parcial.
+  await prevalidateDocumentStorage({ allowProvisionable: false })
+  await prevalidateFloorPlanStorage({ allowProvisionable: false })
+  console.log('🧹 Reset manual-test: prevalidación de storage OK.')
+
+  const prisma = new PrismaClient()
+  try {
+    await resetDatabase(prisma)
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
+async function resetDatabase(prisma: PrismaClient): Promise<void> {
   console.log('🧹 Reset manual-test: vaciando datos dependientes...')
 
   // Primero el reset de base de datos; el almacenamiento de documentos solo se
@@ -139,11 +170,7 @@ async function main(): Promise<void> {
   console.log('✅ Reset manual-test completado.')
 }
 
-main()
-  .catch((err: unknown) => {
-    console.error('Reset failed:', err)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+main().catch((err: unknown) => {
+  console.error('Reset failed:', err)
+  process.exit(1)
+})

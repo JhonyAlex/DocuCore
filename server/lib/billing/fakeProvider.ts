@@ -1,5 +1,6 @@
 import prisma from "../prisma"
 import { planKeyFromPriceId, type PlanKey } from "../entitlements"
+import { mapStripeSubscriptionStatusToBillingStatus, isSubscriptionEligibleForPlanTransition } from "./stripeProvider"
 import type {
   BillingProvider,
   ChangePlanResult,
@@ -18,6 +19,7 @@ function fakeScheduleConflict(): Error & { status: number; code: string } {
 
 export class FakeBillingProvider implements BillingProvider {
   private schedules = new Map<string, FakeSchedule>()
+  private sessions = new Map<string, { id: string; url: string; status: string; metadata: Record<string, string> }>()
 
   async createInitialSubscriptionCheckout(params: InitialCheckoutParams): Promise<{ checkoutUrl: string; sessionId: string }> {
     if (!params.transitionId) {
@@ -26,6 +28,16 @@ export class FakeBillingProvider implements BillingProvider {
     const plan = params.planKey || "STARTER"
     const sessionId = `fake_cs_${params.transitionId}`
     const checkoutUrl = `https://checkout.stripe.test/c/${sessionId}?plan=${plan}&return_to=${encodeURIComponent(params.successUrl)}`
+    this.sessions.set(sessionId, {
+      id: sessionId,
+      url: checkoutUrl,
+      status: "open",
+      metadata: {
+        workspaceId: String(params.workspaceId),
+        transitionId: params.transitionId,
+        planKey: params.planKey ?? "STARTER",
+      },
+    })
     return { checkoutUrl, sessionId }
   }
 
@@ -33,10 +45,75 @@ export class FakeBillingProvider implements BillingProvider {
     return this.createInitialSubscriptionCheckout(params)
   }
 
+  async retrieveCheckoutSession(sessionId: string): Promise<import("./types").RetrievedCheckoutSession> {
+    const existing = this.sessions.get(sessionId)
+    if (existing) {
+      return existing
+    }
+    const transition = await prisma.planTransition.findFirst({ where: { stripeSessionId: sessionId } })
+    if (transition) {
+      return {
+        id: sessionId,
+        url: `https://checkout.stripe.test/c/${sessionId}`,
+        status: "open",
+        metadata: {
+          workspaceId: String(transition.workspaceId),
+          transitionId: transition.id,
+          planKey: transition.targetPlanKey,
+        },
+      }
+    }
+    return {
+      id: sessionId,
+      url: `https://checkout.stripe.test/c/${sessionId}`,
+      status: "open",
+      metadata: {},
+    }
+  }
+
   async changeExistingSubscriptionPlan(params: ChangeSubscriptionPlanParams): Promise<ChangePlanResult> {
     const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: params.workspaceId } })
     if (!ws.stripeSubscriptionId) {
       throw Object.assign(new Error("El workspace no dispone de una suscripción activa para modificar."), { status: 400 })
+    }
+
+    // B1 (simulación del retrieve real): un workspace CANCELED refleja una
+    // suscripción en estado final; se libera el vínculo obsoleto de forma
+    // auditable y se permite una nueva contratación por el flujo inicial.
+    if (ws.billingStatus === "CANCELED") {
+      const actorId = params.actorId ?? (await prisma.planTransition.findUnique({ where: { id: params.transitionId } }))?.actorId ?? null
+      await prisma.workspace.update({
+        where: { id: ws.id },
+        data: {
+          stripeSubscriptionId: null,
+          stripeScheduleId: null,
+          billingStatus: "CANCELED",
+          cancelAtPeriodEnd: false,
+        },
+      })
+      if (actorId !== null) {
+        await prisma.auditLog.create({
+          data: {
+            workspaceId: ws.id,
+            userId: actorId,
+            action: "Vínculo de suscripción obsoleto liberado",
+            entityId: `subscription:${ws.stripeSubscriptionId}`,
+            detail: JSON.stringify({ status: "canceled", motivo: "estado final; se permite nueva contratación" }),
+            timestamp: new Date(),
+          },
+        })
+      }
+      return {
+        success: false,
+        planKey: (ws.planKey as PlanKey) ?? "STARTER",
+        effectiveAt: null,
+        status: "canceled",
+        stripeSubscriptionId: ws.stripeSubscriptionId,
+        stripeCustomerId: ws.stripeCustomerId,
+        stripeScheduleId: null,
+        code: "SUBSCRIPTION_TERMINATED",
+        message: "La suscripción anterior está en estado final y el vínculo local se ha liberado; puedes iniciar una nueva contratación.",
+      }
     }
 
     const now = new Date()
@@ -47,27 +124,66 @@ export class FakeBillingProvider implements BillingProvider {
     }
 
     if (isUpgrade) {
-      if (ws.stripeScheduleId) this.schedules.delete(ws.stripeScheduleId)
-      await prisma.workspace.update({
-        where: { id: ws.id },
-        data: {
+      const targetPriceId = params.targetPriceId ?? (process.env.STRIPE_PRICE_PRO || "fake_price_pro")
+      const subSnapshot = {
+        status: "active",
+        items: { data: [{ price: { id: targetPriceId } }] },
+      }
+      const isEligible = isSubscriptionEligibleForPlanTransition(subSnapshot, "PRO")
+      if (isEligible) {
+        if (ws.stripeScheduleId) {
+          // B3: al liberar el schedule simulado, la transición PENDING vinculada
+          // a él ya no puede ejecutarse; se cancela solo esa transición.
+          const zombie = existingSchedule?.transitionId
+            ? await prisma.planTransition.findFirst({ where: { id: existingSchedule.transitionId, workspaceId: ws.id, status: "PENDING" } })
+            : null
+          if (zombie) {
+            await prisma.planTransition.update({ where: { id: zombie.id }, data: { status: "CANCELED" } })
+            await prisma.auditLog.create({
+              data: {
+                workspaceId: ws.id,
+                userId: zombie.actorId,
+                action: "Transición de plan cancelada (schedule liberado)",
+                entityId: `plan-transition:${zombie.id}`,
+                detail: JSON.stringify({ scheduleId: ws.stripeScheduleId, motivo: "schedule DocuCore liberado por cambio a Pro" }),
+                timestamp: new Date(),
+              },
+            })
+          }
+          this.schedules.delete(ws.stripeScheduleId)
+        }
+        await prisma.workspace.update({
+          where: { id: ws.id },
+          data: {
+            planKey: "PRO",
+            stripePriceId: targetPriceId,
+            stripeScheduleId: null,
+          },
+        })
+        await prisma.planTransition.update({
+          where: { id: params.transitionId },
+          data: { stripeSessionId: ws.stripeSubscriptionId, stripeScheduleId: null },
+        })
+        return {
+          success: true,
           planKey: "PRO",
-          stripePriceId: params.targetPriceId ?? "fake_price_pro",
+          effectiveAt: now,
+          status: "active",
+          stripeSubscriptionId: ws.stripeSubscriptionId,
+          stripeCustomerId: ws.stripeCustomerId,
           stripeScheduleId: null,
-        },
-      })
-      await prisma.planTransition.update({
-        where: { id: params.transitionId },
-        data: { stripeSessionId: ws.stripeSubscriptionId, stripeScheduleId: null },
-      })
+        }
+      }
+
       return {
-        success: true,
-        planKey: "PRO",
-        effectiveAt: now,
+        success: false,
+        planKey: (ws.planKey as PlanKey) ?? "STARTER",
+        effectiveAt: null,
         status: "active",
         stripeSubscriptionId: ws.stripeSubscriptionId,
         stripeCustomerId: ws.stripeCustomerId,
         stripeScheduleId: null,
+        message: "La actualización al plan Pro no pudo completarse porque la suscripción no cumple las condiciones exactas de pago o precio.",
       }
     }
 
@@ -155,21 +271,24 @@ export class FakeBillingProvider implements BillingProvider {
         if (wsId && Number.isInteger(wsId)) {
           const targetWorkspace = await tx.workspace.findUnique({ where: { id: wsId } })
           if (targetWorkspace && targetWorkspace.billingSource !== "MANUAL") {
-            const rawPriceId = (obj.priceId as string) || (obj.price as string)
+            const rawPriceId = (obj.priceId as string) || (obj.price as string) || (obj.items as { data?: Array<{ price?: { id?: string } }> })?.data?.[0]?.price?.id
             const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
-            const resolvedPlanKey = metaPlanKey ?? planKeyFromPriceId(rawPriceId) ?? "STARTER"
+            const subStatus = (obj.subscription_status as string) || (obj.status as string) || "active"
+            const subSnapshot = {
+              status: subStatus,
+              pending_update: obj.pending_update,
+              items: { data: [{ price: { id: rawPriceId } }] },
+            }
 
-            // Trial preservation: If the workspace is currently in an active trial (trialEndsAt > now),
-            // its billingStatus remains TRIAL so it preserves trial entitlements (15 projects, 15 members)
-            // until the trial period ends. Otherwise, status becomes ACTIVE.
             const isTrialActive = targetWorkspace.billingStatus === "TRIAL" && targetWorkspace.trialEndsAt && targetWorkspace.trialEndsAt.getTime() > now.getTime()
             const mappedBillingStatus = isTrialActive ? "TRIAL" : "ACTIVE"
+            const shouldApplyPlanKey = metaPlanKey ? isSubscriptionEligibleForPlanTransition(subSnapshot, metaPlanKey) : false
 
             await tx.workspace.update({
               where: { id: wsId },
               data: {
                 billingStatus: mappedBillingStatus,
-                planKey: resolvedPlanKey,
+                ...(shouldApplyPlanKey ? { planKey: metaPlanKey } : {}),
                 stripeCustomerId: (obj.customer as string) || `fake_cus_${wsId}`,
                 stripeSubscriptionId: (obj.subscription as string) || `fake_sub_${wsId}`,
                 stripePriceId: rawPriceId ?? null,
@@ -180,9 +299,9 @@ export class FakeBillingProvider implements BillingProvider {
             // A persisted transition is loaded CANONICALLY from DB (§3).
             // It is applied only if effectiveAt <= now (§2).
             const transitionId = metadata.transitionId
-            if (transitionId && resolvedPlanKey) {
+            if (transitionId && metaPlanKey && shouldApplyPlanKey) {
               const pending = await tx.planTransition.findUnique({ where: { id: transitionId } })
-              if (pending && pending.status === "PENDING" && pending.workspaceId === wsId && pending.targetPlanKey === resolvedPlanKey) {
+              if (pending && pending.status === "PENDING" && pending.workspaceId === wsId && pending.targetPlanKey === metaPlanKey) {
                 if (!pending.effectiveAt || pending.effectiveAt.getTime() <= now.getTime()) {
                   const { applyPlanTransition } = await import("../entitlements")
                   const selectedMemberIds = pending.selectedMemberIds.length
@@ -192,7 +311,7 @@ export class FakeBillingProvider implements BillingProvider {
                     await applyPlanTransition(tx, {
                       workspaceId: wsId,
                       actorId: pending.actorId,
-                      targetPlanKey: resolvedPlanKey,
+                      targetPlanKey: metaPlanKey,
                       selectedProjectId: pending.selectedProjectId,
                       selectedMemberIds,
                       effectiveAt: now,
@@ -227,13 +346,18 @@ export class FakeBillingProvider implements BillingProvider {
               : null
 
         if (targetWorkspace && targetWorkspace.billingSource !== "MANUAL") {
-          let mappedStatus: "ACTIVE" | "PAST_DUE" | "CANCELED" | "TRIAL" = "ACTIVE"
-          if (status === "past_due" || status === "incomplete") mappedStatus = "PAST_DUE"
-          else if (status === "canceled" || status === "unpaid" || status === "incomplete_expired") mappedStatus = "CANCELED"
-          else if (status === "trialing") mappedStatus = "TRIAL"
+          const isTrialActive = Boolean(targetWorkspace.billingStatus === "TRIAL" && targetWorkspace.trialEndsAt && targetWorkspace.trialEndsAt.getTime() > now.getTime())
+          const mappedStatus = mapStripeSubscriptionStatusToBillingStatus(status, isTrialActive)
+
+          const subSnapshot = {
+            status: status || "active",
+            pending_update: obj.pending_update,
+            items: { data: [{ price: { id: rawPriceId } }] },
+          }
 
           const metaPlanKey = metadata.planKey === "STARTER" || metadata.planKey === "PRO" ? metadata.planKey : null
-          const resolvedPlanKey = metaPlanKey ?? planKeyFromPriceId(rawPriceId) ?? targetWorkspace.planKey
+          const resolvedPlanKey = (metaPlanKey ?? planKeyFromPriceId(rawPriceId) ?? targetWorkspace.planKey) as PlanKey | null
+          const shouldApplyPlanKey = resolvedPlanKey ? isSubscriptionEligibleForPlanTransition(subSnapshot, resolvedPlanKey) : false
           const currentPeriodEnd = currentPeriodEndSec ? new Date(currentPeriodEndSec * 1000) : targetWorkspace.currentPeriodEnd
           const stripeScheduleId = scheduleId ?? targetWorkspace.stripeScheduleId
 
@@ -241,7 +365,7 @@ export class FakeBillingProvider implements BillingProvider {
             where: { id: targetWorkspace.id },
             data: {
               billingStatus: mappedStatus,
-              planKey: resolvedPlanKey,
+              ...(shouldApplyPlanKey ? { planKey: resolvedPlanKey } : {}),
               stripeSubscriptionId: subId ?? targetWorkspace.stripeSubscriptionId,
               stripeCustomerId: customerId ?? targetWorkspace.stripeCustomerId,
               stripePriceId: rawPriceId ?? targetWorkspace.stripePriceId,
@@ -258,8 +382,8 @@ export class FakeBillingProvider implements BillingProvider {
             : await tx.planTransition.findFirst({ where: { workspaceId: targetWorkspace.id, status: "PENDING" }, orderBy: { createdAt: "desc" } })
 
           if (pending && pending.status === "PENDING" && pending.workspaceId === targetWorkspace.id) {
-            const effectivePlan = resolvedPlanKey ?? targetWorkspace.planKey
-            if (pending.targetPlanKey === effectivePlan && (!pending.effectiveAt || pending.effectiveAt.getTime() <= now.getTime())) {
+            const isEligible = isSubscriptionEligibleForPlanTransition(subSnapshot, pending.targetPlanKey as PlanKey)
+            if (isEligible && (!pending.effectiveAt || pending.effectiveAt.getTime() <= now.getTime())) {
               const { applyPlanTransition } = await import("../entitlements")
               try {
                 await applyPlanTransition(tx, {
@@ -312,7 +436,7 @@ export class FakeBillingProvider implements BillingProvider {
     return { handled: true, eventType, eventId, workspaceId }
   }
 
-  async reconcileWorkspace(workspaceId: number): Promise<ReconcileResult> {
+  async reconcileWorkspace(workspaceId: number, _actorId?: number): Promise<ReconcileResult> {
     const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } })
     const now = new Date()
 
@@ -321,7 +445,12 @@ export class FakeBillingProvider implements BillingProvider {
       where: { workspaceId: ws.id, status: "PENDING" },
       orderBy: { createdAt: "desc" },
     })
-    if (pending && (!pending.effectiveAt || pending.effectiveAt.getTime() <= now.getTime()) && ws.planKey === pending.targetPlanKey) {
+    const subSnapshot = {
+      status: ws.billingStatus === "TRIAL" ? "trialing" : ws.billingStatus === "ACTIVE" ? "active" : "past_due",
+      items: { data: [{ price: { id: ws.stripePriceId ?? undefined } }] },
+    }
+    const isEligible = pending ? isSubscriptionEligibleForPlanTransition(subSnapshot, pending.targetPlanKey as PlanKey) : false
+    if (pending && (!pending.effectiveAt || pending.effectiveAt.getTime() <= now.getTime()) && isEligible) {
       const { applyPlanTransition } = await import("../entitlements")
       await prisma.$transaction(async (tx) => {
         try {

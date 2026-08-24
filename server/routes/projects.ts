@@ -6,7 +6,7 @@ import { asyncHandler } from '../lib/asyncHandler'
 import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProjectConfiguration } from '../lib/projectConfiguration'
 import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
 import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace, assertWorkspaceWriteAllowed } from '../lib/workspaceScope'
-import { computeCompliance, lockWorkspaceForEntitlement, restoreProjectTransactional } from '../lib/entitlements'
+import { computeCompliance, lockWorkspaceForEntitlement, restoreProjectTransactional, fetchWorkspaceCompliance } from '../lib/entitlements'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
 
 const router = Router()
@@ -70,11 +70,15 @@ function serializeProject(project: ProjectWithSummary, currentRole?: string | nu
   }
 }
 
-async function ensureWorkspaceMembersActive(workspaceId: number, members: Array<{ userId: number }>): Promise<void> {
+async function ensureWorkspaceMembersActive(
+  client: Prisma.TransactionClient | typeof prisma,
+  workspaceId: number,
+  members: Array<{ userId: number }>,
+): Promise<void> {
   const uniqueIds = [...new Set(members.map((member) => member.userId))]
   if (uniqueIds.length !== members.length) throw Object.assign(new Error('Un miembro solo puede añadirse una vez'), { status: 409 })
   if (!uniqueIds.length) return
-  const workspaceMembers = await prisma.workspaceMember.findMany({
+  const workspaceMembers = await client.workspaceMember.findMany({
     where: {
       workspaceId,
       userId: { in: uniqueIds },
@@ -160,6 +164,15 @@ router.post('/', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const input = projectInputSchema.parse(req.body)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+
+  // Finding K: PlatformAdmin in pure support context cannot create project
+  if (wsScope.supportAccess) {
+    throw Object.assign(
+      new Error('El acceso de soporte de administración de plataforma no permite crear proyectos en un workspace sin membresía real.'),
+      { status: 403, code: 'SUPPORT_ACCESS_CANNOT_CREATE_PROJECT' },
+    )
+  }
+
   const entitlement = evaluateWorkspaceEntitlement(wsScope.workspace)
   if (!entitlement.isEntitledToWrite) {
     return res.status(402).json({
@@ -172,22 +185,35 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Validate active project capacity against workspace plan (concurrency-safe:
   // the same FOR UPDATE lock is re-acquired inside the create transaction).
-  await ensureWorkspaceMembersActive(wsScope.workspace.id, input.memberIds)
+  await ensureWorkspaceMembersActive(prisma, wsScope.workspace.id, input.memberIds)
   if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
   const created = await prisma.$transaction(async (tx) => {
     const { workspace, counts } = await lockWorkspaceForEntitlement(tx, wsScope.workspace.id)
     const snapshot = computeCompliance(workspace, counts)
-    if (!snapshot.canCreateProject) {
+    if (!snapshot.canWrite || !snapshot.canCreateProject) {
       throw Object.assign(
         new Error(
           snapshot.reason === 'PLAN_ACTION_REQUIRED'
             ? 'El workspace debe resolver primero qué proyecto conservar antes de crear otro.'
-            : `Has alcanzado el límite de ${snapshot.maxActiveProjects} proyecto(s) activo(s) para tu plan.`,
+            : snapshot.reason === 'PAST_DUE'
+              ? 'La suscripción de este workspace tiene un pago pendiente.'
+              : snapshot.reason === 'TRIAL_EXPIRED'
+                ? 'El período de prueba de este workspace ha finalizado.'
+                : `Has alcanzado el límite de ${snapshot.maxActiveProjects} proyecto(s) activo(s) para tu plan.`,
         ),
-        { status: 409, code: snapshot.reason === 'PLAN_ACTION_REQUIRED' ? 'PLAN_COMPLIANCE_REQUIRED' : 'PROJECT_LIMIT_EXCEEDED', maxActiveProjects: snapshot.maxActiveProjects, activeProjects: snapshot.activeProjectsCount },
+        {
+          status: !snapshot.canWrite && snapshot.complianceStatus !== 'COMPLIANT' ? 402 : 409,
+          code: snapshot.reason === 'PLAN_ACTION_REQUIRED' ? 'PLAN_COMPLIANCE_REQUIRED' : (snapshot.reason ?? 'PROJECT_LIMIT_EXCEEDED'),
+          maxActiveProjects: snapshot.maxActiveProjects,
+          activeProjects: snapshot.activeProjectsCount,
+        },
       )
     }
+
+    // Finding J: Validate inside the transaction after locking workspace FOR UPDATE
+    await ensureWorkspaceMembersActive(tx, wsScope.workspace.id, input.memberIds)
+    await ensureWorkspaceMembersActive(tx, wsScope.workspace.id, [{ userId: actorId }])
 
     const project = await tx.project.create({
       data: { workspaceId: wsScope.workspace.id, code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
@@ -230,7 +256,11 @@ router.patch('/:projectId', asyncHandler(async (req, res) => {
 router.post('/:projectId/archive', asyncHandler(async (req, res) => {
   const projectId = parseProjectId(req.params.projectId)
   const actorId = actorIdFromRequest(req)
-  await ensureManagementScope(projectId, actorId)
+  const scope = await ensureManagementScope(projectId, actorId)
+  const compliance = await fetchWorkspaceCompliance(scope.project.workspaceId)
+  if (!compliance.canWrite && compliance.complianceStatus !== 'PLAN_ACTION_REQUIRED') {
+    await assertWorkspaceWriteAllowed(scope.project.workspaceId)
+  }
   const project = await prisma.$transaction(async (tx) => {
     const updated = await tx.project.update({ where: { id: projectId }, data: { status: 'ARCHIVED', archivedByPlan: false }, include: projectInclude })
     await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Archivo', entityId: `project:${projectId}`, detail: `Proyecto "${updated.name}" archivado manualmente`, timestamp: new Date() } })
@@ -298,8 +328,12 @@ router.post('/:projectId/members', asyncHandler(async (req, res) => {
   if (scope.project.status === 'ARCHIVED') return res.status(409).json({ error: 'Archived projects are read-only' })
   await assertWorkspaceWriteAllowed(scope.project.workspaceId)
   const input = memberInputSchema.parse(req.body)
-  await ensureWorkspaceMembersActive(scope.project.workspaceId, [input])
+  await ensureWorkspaceMembersActive(prisma, scope.project.workspaceId, [input])
   const member = await prisma.$transaction(async (tx) => {
+    await lockWorkspaceForEntitlement(tx, scope.project.workspaceId)
+    // Finding J: Re-check under lock
+    await ensureWorkspaceMembersActive(tx, scope.project.workspaceId, [input])
+
     const created = await tx.projectMember.create({ data: { projectId, userId: input.userId, role: input.role }, include: { user: { select: { id: true, name: true, email: true, initials: true, color: true } } } })
     await tx.auditLog.create({ data: { projectId, userId: actorId, action: 'Miembro añadido', entityId: `project-member:${created.id}`, detail: `${created.user.name} añadido al proyecto`, timestamp: new Date() } })
     return created

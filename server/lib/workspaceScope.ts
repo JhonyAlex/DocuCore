@@ -1,6 +1,6 @@
 import type { BillingStatus, Workspace, WorkspaceRole } from "@prisma/client"
 import prisma from "./prisma"
-import { fetchWorkspaceCompliance } from "./entitlements"
+import { fetchWorkspaceCompliance, type ComplianceSnapshot } from "./entitlements"
 
 export interface WorkspaceEntitlement {
   isEntitledToWrite: boolean
@@ -241,13 +241,33 @@ export async function resolveWorkspaceScope(workspaceId: number, actorId: number
  * resolve which projects/members to keep first. This is the enforcement behind
  * an external Stripe downgrade that carried no prepared transition (§11).
  */
-export async function assertWorkspaceWriteAllowed(workspaceId: number): Promise<void> {
+export async function assertWorkspaceWriteAllowed(workspaceId: number): Promise<ComplianceSnapshot> {
   const snapshot = await fetchWorkspaceCompliance(workspaceId)
-  if (snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
+  if (!snapshot.canWrite) {
+    if (snapshot.complianceStatus === "PLAN_ACTION_REQUIRED") {
+      throw workspaceError(
+        "Tu workspace supera el límite de proyectos o usuarios de su plan. Resuelve qué proyectos y usuarios conservar antes de continuar.",
+        402,
+        "PLAN_ACTION_REQUIRED",
+      )
+    }
+    if (snapshot.complianceStatus === "SUSPENDED" || snapshot.reason === "WORKSPACE_SUSPENDED") {
+      throw workspaceError("Este workspace está suspendido.", 403, "WORKSPACE_SUSPENDED")
+    }
+    if (snapshot.complianceStatus === "BLOCKED_FOR_PAYMENT" || snapshot.reason === "PAST_DUE") {
+      throw workspaceError("La suscripción de este workspace tiene un pago pendiente.", 402, "PAST_DUE")
+    }
+    if (snapshot.reason === "EMAIL_UNVERIFIED") {
+      throw workspaceError("Debes verificar tu correo electrónico antes de continuar.", 403, "EMAIL_UNVERIFIED")
+    }
+    if (snapshot.reason === "TRIAL_EXPIRED") {
+      throw workspaceError("El período de prueba de este workspace ha finalizado.", 402, "TRIAL_EXPIRED")
+    }
     throw workspaceError(
-      "Tu workspace supera el límite de proyectos o usuarios de su plan. Resuelve qué proyectos y usuarios conservar antes de continuar.",
+      "La suscripción o período de prueba de tu cuenta no permite realizar cambios.",
       402,
-      "PLAN_ACTION_REQUIRED",
+      snapshot.reason ?? "SUBSCRIPTION_EXPIRED",
     )
   }
+  return snapshot
 }

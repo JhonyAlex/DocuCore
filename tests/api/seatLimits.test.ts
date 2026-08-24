@@ -619,7 +619,7 @@ describe("member seat limits (per-plan ACTIVE member capacity)", () => {
       const payload = {
         id: `evt_dup_${stamp}`,
         type: "checkout.session.completed",
-        data: { object: { customer: `cus_${stamp}`, subscription: `sub_${stamp}`, metadata: { workspaceId: String(ws.id), planKey: "STARTER", transitionId, selectedProjectId: String(projectIds[0]) } } },
+        data: { object: { customer: `cus_${stamp}`, subscription: `sub_${stamp}`, priceId: process.env.STRIPE_PRICE_STARTER || "fake_price_starter", metadata: { workspaceId: String(ws.id), planKey: "STARTER", transitionId, selectedProjectId: String(projectIds[0]) } } },
       }
       const r1 = await fetch(`${baseUrl}/api/billing/webhook`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const r2 = await fetch(`${baseUrl}/api/billing/webhook`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })

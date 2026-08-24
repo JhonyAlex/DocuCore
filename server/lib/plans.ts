@@ -10,10 +10,10 @@ export type { PlanKey }
  */
 export function getStripePriceIdForPlan(planKey: PlanKey): string | null {
   if (planKey === "STARTER") {
-    return process.env.STRIPE_PRICE_STARTER || null
+    return process.env.STRIPE_PRICE_STARTER || (process.env.BILLING_PROVIDER === "fake" || process.env.NODE_ENV === "test" ? "fake_price_starter" : null)
   }
   if (planKey === "PRO") {
-    return process.env.STRIPE_PRICE_PRO || null
+    return process.env.STRIPE_PRICE_PRO || (process.env.BILLING_PROVIDER === "fake" || process.env.NODE_ENV === "test" ? "fake_price_pro" : null)
   }
   return null
 }

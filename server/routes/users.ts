@@ -4,12 +4,12 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { authenticatedUserId, hashToken } from '../lib/auth'
-import { getUserPrimaryWorkspace, resolveWorkspaceScope } from '../lib/workspaceScope'
+import { assertWorkspaceWriteAllowed, getUserPrimaryWorkspace, resolveWorkspaceScope } from '../lib/workspaceScope'
 import {
   assertMemberSeatAvailable,
+  computeCompliance,
   lockWorkspaceForEntitlement,
   reactivateMemberTransactional,
-  resolveEntitlement,
 } from '../lib/entitlements'
 import { sendWorkspaceInvitationEmail } from '../lib/email'
 
@@ -75,6 +75,7 @@ const inviteSchema = z.object({
 router.post('/invitations', asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const scope = await requireWorkspaceAdmin(actorId)
+  await assertWorkspaceWriteAllowed(scope.workspace.id)
   const input = inviteSchema.parse(req.body)
   const email = input.email.toLowerCase()
 
@@ -177,20 +178,49 @@ router.post('/invitations/accept', asyncHandler(async (req, res) => {
     }
 
     const { workspace, counts } = await lockWorkspaceForEntitlement(tx, invitation.workspaceId)
+    const snapshot = computeCompliance(workspace, counts, { now })
+    if (!snapshot.canWrite) {
+      if (snapshot.complianceStatus === 'PLAN_ACTION_REQUIRED') {
+        throw Object.assign(new Error('El workspace debe resolver primero el exceso de proyectos o usuarios.'), { status: 402, code: 'PLAN_ACTION_REQUIRED' })
+      }
+      if (snapshot.complianceStatus === 'SUSPENDED' || snapshot.reason === 'WORKSPACE_SUSPENDED') {
+        throw Object.assign(new Error('El workspace está suspendido.'), { status: 403, code: 'WORKSPACE_SUSPENDED' })
+      }
+      if (snapshot.complianceStatus === 'BLOCKED_FOR_PAYMENT' || snapshot.reason === 'PAST_DUE') {
+        throw Object.assign(new Error('La suscripción tiene un pago pendiente.'), { status: 402, code: 'PAST_DUE' })
+      }
+      if (snapshot.reason === 'TRIAL_EXPIRED') {
+        throw Object.assign(new Error('El período de prueba ha finalizado.'), { status: 402, code: 'TRIAL_EXPIRED' })
+      }
+      throw Object.assign(new Error('La suscripción no permite aceptar invitaciones.'), { status: 402, code: snapshot.reason ?? 'SUBSCRIPTION_EXPIRED' })
+    }
+
+    // Finding L: Do NOT bypass SUSPENDED or PLAN_LOCKED
     const existingMember = await tx.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: actorId } },
     })
-    if (existingMember?.status === 'ACTIVE') {
-      throw Object.assign(new Error('Ya eres miembro de este workspace.'), { status: 409, code: 'ALREADY_MEMBER' })
+    if (existingMember) {
+      if (existingMember.status === 'ACTIVE') {
+        throw Object.assign(new Error('Ya eres miembro activo de este workspace.'), { status: 409, code: 'ALREADY_MEMBER' })
+      }
+      if (existingMember.status === 'SUSPENDED') {
+        throw Object.assign(
+          new Error('Tu cuenta en este workspace está suspendida. Contacta a un administrador para reactivar tu acceso.'),
+          { status: 409, code: 'MEMBER_SUSPENDED' },
+        )
+      }
+      if (existingMember.status === 'PLAN_LOCKED') {
+        throw Object.assign(
+          new Error('Tu cuenta en este workspace está bloqueada por el límite del plan. Contacta a un administrador para reactivar tu plaza.'),
+          { status: 409, code: 'MEMBER_PLAN_LOCKED' },
+        )
+      }
     }
 
-    const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
-    assertMemberSeatAvailable(resolution.maxActiveMembers, counts.activeMembers)
+    assertMemberSeatAvailable(snapshot.maxActiveMembers, counts.activeMembers)
 
-    const membership = await tx.workspaceMember.upsert({
-      where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: actorId } },
-      create: { workspaceId: invitation.workspaceId, userId: actorId, role: invitation.workspaceRole, status: 'ACTIVE' },
-      update: { role: invitation.workspaceRole, status: 'ACTIVE' },
+    const membership = await tx.workspaceMember.create({
+      data: { workspaceId: invitation.workspaceId, userId: actorId, role: invitation.workspaceRole, status: 'ACTIVE' },
     })
 
     for (const assignment of invitation.projectRoles) {
@@ -262,6 +292,7 @@ const memberPatchSchema = z.object({ role: roleSchema }).strict()
 router.patch('/:userId', asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const scope = await requireWorkspaceAdmin(actorId)
+  await assertWorkspaceWriteAllowed(scope.workspace.id)
   const userId = Number(req.params.userId)
   if (!Number.isInteger(userId) || userId <= 0) throw Object.assign(new Error('Identificador de usuario inválido.'), { status: 400 })
   const input = memberPatchSchema.parse(req.body)
@@ -313,6 +344,7 @@ router.patch('/:userId/status', asyncHandler(async (req, res) => {
   const userId = Number(req.params.userId)
   if (!Number.isInteger(userId) || userId <= 0) throw Object.assign(new Error('Identificador de usuario inválido.'), { status: 400 })
   const scope = await getUserPrimaryWorkspace(actorId)
+  await assertWorkspaceWriteAllowed(scope.workspace.id)
   const input = suspendSchema.parse(req.body)
 
   const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } } })
@@ -368,8 +400,23 @@ router.patch('/:userId/status', asyncHandler(async (req, res) => {
 
   const updated = await prisma.$transaction(async (tx) => {
     const { workspace, counts } = await lockWorkspaceForEntitlement(tx, scope.workspace.id)
-    const resolution = resolveEntitlement({ billingStatus: workspace.billingStatus, planKey: workspace.planKey, stripePriceId: workspace.stripePriceId, trialEndsAt: workspace.trialEndsAt })
-    assertMemberSeatAvailable(resolution.maxActiveMembers, counts.activeMembers)
+    const snapshot = computeCompliance(workspace, counts)
+    if (!snapshot.canWrite) {
+      if (snapshot.complianceStatus === 'PLAN_ACTION_REQUIRED') {
+        throw Object.assign(new Error('El workspace debe resolver primero el exceso de proyectos o usuarios.'), { status: 402, code: 'PLAN_ACTION_REQUIRED' })
+      }
+      if (snapshot.complianceStatus === 'SUSPENDED' || snapshot.reason === 'WORKSPACE_SUSPENDED') {
+        throw Object.assign(new Error('El workspace está suspendido.'), { status: 403, code: 'WORKSPACE_SUSPENDED' })
+      }
+      if (snapshot.complianceStatus === 'BLOCKED_FOR_PAYMENT' || snapshot.reason === 'PAST_DUE') {
+        throw Object.assign(new Error('La suscripción tiene un pago pendiente.'), { status: 402, code: 'PAST_DUE' })
+      }
+      if (snapshot.reason === 'TRIAL_EXPIRED') {
+        throw Object.assign(new Error('El período de prueba ha finalizado.'), { status: 402, code: 'TRIAL_EXPIRED' })
+      }
+      throw Object.assign(new Error('La suscripción no permite reactivar miembros.'), { status: 402, code: snapshot.reason ?? 'SUBSCRIPTION_EXPIRED' })
+    }
+    assertMemberSeatAvailable(snapshot.maxActiveMembers, counts.activeMembers)
     const result = await tx.workspaceMember.update({ where: { id: target.id }, data: { status: 'ACTIVE' } })
     await tx.auditLog.create({
       data: {
@@ -394,6 +441,7 @@ router.post('/:userId/reactivate', asyncHandler(async (req, res) => {
   const userId = Number(req.params.userId)
   if (!Number.isInteger(userId) || userId <= 0) throw Object.assign(new Error('Identificador de usuario inválido.'), { status: 400 })
   const scope = await getUserPrimaryWorkspace(actorId)
+  await assertWorkspaceWriteAllowed(scope.workspace.id)
 
   const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: scope.workspace.id, userId } } })
   if (!target) throw Object.assign(new Error('El usuario no pertenece a este workspace.'), { status: 404, code: 'WORKSPACE_ACCESS_DENIED' })
@@ -413,6 +461,7 @@ router.post('/:userId/reactivate', asyncHandler(async (req, res) => {
 router.delete('/:userId', asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const scope = await requireWorkspaceAdmin(actorId)
+  await assertWorkspaceWriteAllowed(scope.workspace.id)
   const userId = Number(req.params.userId)
   if (!Number.isInteger(userId) || userId <= 0) throw Object.assign(new Error('Identificador de usuario inválido.'), { status: 400 })
 
@@ -433,6 +482,44 @@ router.delete('/:userId', asyncHandler(async (req, res) => {
       })
       if (activeOwners <= 1) {
         throw Object.assign(new Error('El workspace debe conservar al menos una persona propietaria activa.'), { status: 409, code: 'LAST_ACTIVE_OWNER' })
+      }
+    }
+
+    // Finding I: Identify all projects where user is ProjectMember OWNER
+    const ownedProjects = await tx.projectMember.findMany({
+      where: {
+        userId,
+        role: 'OWNER',
+        project: { workspaceId: scope.workspace.id },
+      },
+      select: { projectId: true },
+      orderBy: { projectId: 'asc' },
+    })
+
+    if (ownedProjects.length > 0) {
+      const ownedProjectIds = ownedProjects.map((p) => p.projectId)
+      await tx.$queryRaw`
+        SELECT "id" FROM "Project"
+        WHERE "id" = ANY(${ownedProjectIds}::int[])
+        ORDER BY "id" ASC
+        FOR UPDATE
+      `
+
+      const projectsWithoutOtherOwners: number[] = []
+      for (const pid of ownedProjectIds) {
+        const ownerCount = await tx.projectMember.count({
+          where: { projectId: pid, role: 'OWNER' },
+        })
+        if (ownerCount <= 1) {
+          projectsWithoutOtherOwners.push(pid)
+        }
+      }
+
+      if (projectsWithoutOtherOwners.length > 0) {
+        throw Object.assign(
+          new Error(`No se puede eliminar el usuario porque es el único propietario de los proyectos: ${projectsWithoutOtherOwners.join(', ')}.`),
+          { status: 409, code: 'LAST_PROJECT_OWNER', projectIds: projectsWithoutOtherOwners },
+        )
       }
     }
 

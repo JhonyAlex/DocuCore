@@ -5,9 +5,10 @@ import { authenticatedUserId, requireAuth } from "../lib/auth"
 import {
   changeExistingSubscriptionPlan,
   createCustomerPortalSession,
-  createInitialSubscriptionCheckout,
+  getBillingProvider,
   handleBillingWebhook,
   reconcileWorkspace,
+  CheckoutCoordinator,
 } from "../lib/billing"
 import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from "../lib/workspaceScope"
 import { fetchWorkspaceCompliance } from "../lib/entitlements"
@@ -20,8 +21,6 @@ const router = Router()
 const checkoutInputSchema = z.object({
   planKey: z.enum(["STARTER", "PRO"]),
   transitionId: z.string().min(1).max(100),
-  selectedProjectId: z.number().int().positive().nullable().optional(),
-  selectedMemberIds: z.array(z.number().int().positive()).max(15).optional(),
 }).strict()
 
 // Webhook endpoint needs raw body for signature verification
@@ -68,6 +67,8 @@ router.get("/status", asyncHandler(async (req, res) => {
     planLockedMembersCount: compliance.planLockedMembersCount,
     suspendedMembersCount: compliance.suspendedMembersCount,
     remainingMemberSeats: compliance.remainingMemberSeats,
+    planLockedProjectsCount: compliance.planLockedProjectsCount,
+    graceEndsAt: compliance.graceEndsAt?.toISOString() ?? null,
     projectsCompliant: compliance.projectsCompliant,
     membersCompliant: compliance.membersCompliant,
     complianceStatus: compliance.complianceStatus,
@@ -103,50 +104,70 @@ router.post("/checkout", asyncHandler(async (req, res) => {
     return res.status(409).json({ error: "Esta licencia está gestionada manualmente por la plataforma. La contratación mediante Stripe no está disponible para esta cuenta." })
   }
 
-  const input = checkoutInputSchema.parse(req.body)
+  const parsed = checkoutInputSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Datos de solicitud inválidos", details: parsed.error.format() })
+  }
+  const input = parsed.data
 
-  // Every checkout/change is bound to a pending transition in this workspace.
-  const transitionRecord = await prisma.planTransition.findUnique({ where: { id: input.transitionId } })
-  if (!transitionRecord || transitionRecord.workspaceId !== wsScope.workspace.id || transitionRecord.status !== "PENDING" || transitionRecord.targetPlanKey !== input.planKey) {
-    return res.status(409).json({ error: "La transición de plan indicada no es válida para esta cuenta.", code: "INVALID_TRANSITION" })
+  // Workspace owner check
+  const member = await prisma.workspaceMember.findFirst({
+    where: { workspaceId: wsScope.workspace.id, userId: actorId, status: "ACTIVE" },
+  })
+  if (!member || member.role !== "OWNER") {
+    return res.status(403).json({ error: "Solo los propietarios del espacio pueden gestionar la facturación." })
   }
 
-  // Case B (§1): Workspace ALREADY has an active Stripe subscription.
-  // We must modify the existing subscription rather than creating a duplicate Checkout session.
-  if (wsScope.workspace.stripeSubscriptionId) {
+  // Load the persisted canonical PlanTransition from DB (§3)
+  const transitionRecord = await prisma.planTransition.findUnique({
+    where: { id: input.transitionId },
+  })
+  if (
+    !transitionRecord ||
+    transitionRecord.workspaceId !== wsScope.workspace.id ||
+    transitionRecord.status !== "PENDING" ||
+    transitionRecord.targetPlanKey !== input.planKey
+  ) {
+    return res.status(409).json({
+      error: "La transición de plan indicada no es válida para esta cuenta.",
+      code: "INVALID_TRANSITION",
+    })
+  }
+
+  // Case B (§1): Workspace HAS an existing active Stripe subscription.
+  // Plan upgrades/downgrades modify the subscription directly or schedule a change.
+  if (wsScope.workspace.stripeSubscriptionId && wsScope.workspace.billingSource === "STRIPE") {
     const result = await changeExistingSubscriptionPlan({
       workspaceId: wsScope.workspace.id,
+      actorId,
       targetPlanKey: input.planKey,
       transitionId: input.transitionId,
     })
-
-    await prisma.planTransition.update({
-      where: { id: input.transitionId },
-      data: {
-        stripeSessionId: wsScope.workspace.stripeSubscriptionId,
+    if (result.code !== "SUBSCRIPTION_TERMINATED") {
+      return res.json({
+        nextAction: "REFRESH_BILLING",
+        checkoutUrl: null,
+        success: result.success,
+        planKey: result.planKey,
+        effectiveAt: result.effectiveAt?.toISOString() ?? null,
+        message: result.message,
+        status: result.status,
         stripeScheduleId: result.stripeScheduleId ?? null,
-      },
-    })
-
-    return res.json({
-      success: result.success,
-      planKey: result.planKey,
-      effectiveAt: result.effectiveAt?.toISOString() ?? null,
-      message: result.message,
-      status: result.status,
-      stripeScheduleId: result.stripeScheduleId ?? null,
-    })
+      })
+    }
+    // B1: la suscripción anterior está en estado final y el vínculo obsoleto se
+    // liberó de forma auditable; continuar con el flujo de contratación inicial.
   }
 
   // Case A (§1): Workspace does NOT have an active subscription (initial purchase).
   // Downgrade protection: a STARTER selection with several active projects or
-  // members must come with a persisted transition; otherwise within limits.
+  // members must come with a persisted transition; uses exclusively persisted selections (§4).
   if (input.planKey === "STARTER") {
     const [activeProjectsCount, activeMembersCount] = await Promise.all([
       prisma.project.count({ where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" } }),
       prisma.workspaceMember.count({ where: { workspaceId: wsScope.workspace.id, status: "ACTIVE" } }),
     ])
-    if (activeProjectsCount > PLAN_CATALOG.STARTER.maxActiveProjects && !(transitionRecord.selectedProjectId || input.selectedProjectId)) {
+    if (activeProjectsCount > PLAN_CATALOG.STARTER.maxActiveProjects && !transitionRecord.selectedProjectId) {
       return res.status(409).json({
         error: "Para cambiar al plan Starter debes seleccionar qué proyecto conservar (transición de plan).",
         code: "DOWNGRADE_PROJECT_LIMIT_EXCEEDED",
@@ -154,7 +175,7 @@ router.post("/checkout", asyncHandler(async (req, res) => {
         maxAllowed: PLAN_CATALOG.STARTER.maxActiveProjects,
       })
     }
-    if (activeMembersCount > PLAN_CATALOG.STARTER.maxActiveMembers && !(transitionRecord.selectedMemberIds.length || input.selectedMemberIds?.length)) {
+    if (activeMembersCount > PLAN_CATALOG.STARTER.maxActiveMembers && !transitionRecord.selectedMemberIds.length) {
       return res.status(409).json({
         error: "Para cambiar al plan Starter debes seleccionar qué usuarios conservarán acceso (transición de plan).",
         code: "DOWNGRADE_MEMBER_LIMIT_EXCEEDED",
@@ -179,48 +200,23 @@ router.post("/checkout", asyncHandler(async (req, res) => {
   const priceId = getStripePriceIdForPlan(input.planKey)
   const projectLimit = input.planKey === "STARTER" ? PLAN_CATALOG.STARTER.maxActiveProjects : PLAN_CATALOG.PRO.maxActiveProjects
 
-  const checkout = await prisma.$transaction(async (tx) => {
-    // Lock the transition before calling Stripe. This serializes browser retries;
-    // the Stripe idempotency key provides a second provider-side guarantee.
-    const lockedIds = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "PlanTransition" WHERE "id" = ${input.transitionId} FOR UPDATE
-    `
-    if (lockedIds.length === 0) {
-      throw Object.assign(new Error("La transición de plan indicada no es válida para esta cuenta."), { status: 409, code: "INVALID_TRANSITION" })
-    }
-    const lockedTransition = await tx.planTransition.findUnique({ where: { id: input.transitionId } })
-    if (!lockedTransition || lockedTransition.workspaceId !== wsScope.workspace.id || lockedTransition.status !== "PENDING" || lockedTransition.targetPlanKey !== input.planKey) {
-      throw Object.assign(new Error("La transición de plan indicada no es válida para esta cuenta."), { status: 409, code: "INVALID_TRANSITION" })
-    }
-    if (lockedTransition.stripeSessionId) {
-      return { sessionId: lockedTransition.stripeSessionId, checkoutUrl: null, reused: true }
-    }
-
-    const session = await createInitialSubscriptionCheckout({
-      workspaceId: wsScope.workspace.id,
-      customerEmail: user.email,
-      customerName: user.name,
-      planKey: input.planKey,
-      priceId: priceId ?? undefined,
-      projectLimit,
-      successUrl: `${baseUrl}/account?checkout=success`,
-      cancelUrl: `${baseUrl}/account?checkout=cancel`,
-      trialEndTimestamp,
-      transitionId: input.transitionId,
-    })
-    await tx.planTransition.update({
-      where: { id: input.transitionId },
-      data: { stripeSessionId: session.sessionId },
-    })
-    return { sessionId: session.sessionId, checkoutUrl: session.checkoutUrl, reused: false }
+  const coordinator = new CheckoutCoordinator(getBillingProvider(), prisma)
+  const result = await coordinator.executeCheckout({
+    workspaceId: wsScope.workspace.id,
+    actorId,
+    planKey: input.planKey,
+    transitionId: input.transitionId,
+    customerEmail: user.email,
+    customerName: user.name,
+    customerId: wsScope.workspace.stripeCustomerId,
+    stripeCustomerId: wsScope.workspace.stripeCustomerId,
+    priceId: priceId ?? undefined,
+    projectLimit,
+    baseUrl,
+    trialEndTimestamp,
   })
 
-  res.json({
-    checkoutUrl: checkout.checkoutUrl,
-    sessionId: checkout.sessionId,
-    reused: checkout.reused,
-    status: checkout.reused ? "CHECKOUT_ALREADY_CREATED" : "CHECKOUT_CREATED",
-  })
+  return res.json(result)
 }))
 
 router.post("/portal", asyncHandler(async (req, res) => {
@@ -254,7 +250,7 @@ router.post("/reconcile", asyncHandler(async (req, res) => {
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden reconciliar la facturación.", code: "WORKSPACE_ACCESS_DENIED" })
   }
-  const result = await reconcileWorkspace(wsScope.workspace.id)
+  const result = await reconcileWorkspace(wsScope.workspace.id, actorId)
   res.json(result)
 }))
 

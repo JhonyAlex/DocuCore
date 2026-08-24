@@ -131,10 +131,12 @@ model PlanTransition {
   effectiveAt          DateTime?
   appliedAt            DateTime?
   status               PlanTransitionStatus @default(PENDING)
-  stripeSessionId      String?
-  stripeScheduleId     String?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  stripeSessionId        String?
+  stripeScheduleId       String?
+  checkoutClaimToken     String?
+  checkoutClaimExpiresAt DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   actor     User      @relation(fields: [actorId], references: [id], onDelete: Restrict)

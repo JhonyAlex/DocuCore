@@ -15,8 +15,12 @@ jobs:
     name: Lint, Typecheck & Tests
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
-      DOCUCORE_DB_PORT: "5432"
+      # Contrato P0-REM-01: el PostgreSQL efímero de CI usa el mismo entorno
+      # desechable que la suite local (127.0.0.1:5436/docucore + confirmación
+      # canónica); seed/reset de los tests nunca pueden apuntar a otro destino.
+      DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public
+      DOCUCORE_DB_PORT: "5436"
+      DOCUCORE_DESTRUCTIVE_TARGET: "127.0.0.1:5436/docucore"
       NODE_ENV: test
       CI: "true"
 
@@ -28,7 +32,7 @@ jobs:
           POSTGRES_PASSWORD: docucore
           POSTGRES_DB: docucore
         ports:
-          - 5432:5432
+          - 5436:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -66,19 +70,20 @@ jobs:
 
       - name: Deploy Database Schema (Fresh DB Migration)
         env:
-          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
+          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public
         run: pnpm db:deploy
 
       - name: Seed Database
         env:
-          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
+          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public
+          DOCUCORE_DESTRUCTIVE_TARGET: "127.0.0.1:5436/docucore"
           DOCUMENT_STORAGE_PATH: test-results/e2e-documents
           FLOOR_PLAN_STORAGE_PATH: test-results/e2e-floor-plans
         run: pnpm db:seed
 
       - name: Run Unit & API Tests
         env:
-          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
+          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public
           NODE_ENV: test
         run: pnpm test
 
@@ -87,7 +92,7 @@ jobs:
 
       - name: Run Smoke Tests
         env:
-          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5432/docucore?schema=public
+          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public
           NODE_ENV: test
         run: pnpm test:smoke
 

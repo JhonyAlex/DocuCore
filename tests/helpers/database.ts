@@ -7,10 +7,19 @@ const execAsync = promisify(exec)
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker'
 
-const testDatabasePort = process.env.DOCUCORE_DB_PORT ?? '5436'
-const composeArgs = ['--project-name', 'docucore-e2e', '--file', 'docker-compose.yml', '--file', 'tests/docker-compose.e2e.yml']
+// Único destino permitido para la suite E2E y para seed/reset (P0-REM-01):
+// canónico y fijo, nunca derivado de DATABASE_URL/DOCUCORE_DB_PORT del entorno.
+// Un valor heredado del shell o del .env no puede redirigir parte de la suite
+// hacia 5435 (BD persistente de pruebas manuales) ni a otra base. La guardia
+// fail-closed de los scripts es el respaldo, pero los helpers y Playwright no
+// deben intentar ningún otro destino.
+export const E2E_DB_PORT = '5436'
+export const E2E_DATABASE_URL = 'postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public'
 
-export const databaseUrl = process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${testDatabasePort}/docucore?schema=public`
+// Alias histórico usado por las especificaciones API (mismo destino único).
+export const databaseUrl = E2E_DATABASE_URL
+
+const composeArgs = ['--project-name', 'docucore-e2e', '--file', 'docker-compose.yml', '--file', 'tests/docker-compose.e2e.yml']
 
 /** Builds canonical project-scoped API URLs for legacy-focused API specifications. */
 export function projectApiPath(path: string, init?: RequestInit): string {
@@ -31,8 +40,12 @@ async function run(command: string, args: string[]): Promise<void> {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
-      DB_HOST_PORT: testDatabasePort,
+      DATABASE_URL: E2E_DATABASE_URL,
+      DB_HOST_PORT: E2E_DB_PORT,
+      NODE_ENV: 'test',
+      // Confirmación explícita y fija del único destino permitido (P0-REM-01):
+      // no se calcula desde DATABASE_URL para no anular la doble confirmación.
+      DOCUCORE_DESTRUCTIVE_TARGET: '127.0.0.1:5436/docucore',
       DOCUMENT_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-documents'),
       FLOOR_PLAN_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-floor-plans'),
     },

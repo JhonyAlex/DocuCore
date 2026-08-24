@@ -221,6 +221,7 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
             object: {
               customer: `cus_st_${stamp}`,
               subscription: `sub_st_${stamp}`,
+              priceId: process.env.STRIPE_PRICE_STARTER || "fake_price_starter",
               metadata: {
                 workspaceId: String(ws.id),
                 planKey: "STARTER",
@@ -235,6 +236,117 @@ describe("RMO-LAUNCH-01 Commercial Plans & Project Capacity API", () => {
       const finalWs = await prisma.workspace.findUniqueOrThrow({ where: { id: ws.id } })
       expect(finalWs.planKey).toBe("STARTER")
       expect(finalWs.billingStatus).toBe("ACTIVE")
+    } finally {
+      server.close()
+    }
+  })
+})
+
+describe("FIX-B1/B2/B3: resolución de compliance, gracia y restauración tras Pro (dirigido)", () => {
+  async function makeOwnerWorkspace(stamp: string, planKey: "STARTER" | "PRO") {
+    const user = await prisma.user.create({
+      data: {
+        name: "Fix Owner",
+        email: `fix.owner.${stamp}@docucore.test`,
+        passwordHash: await hashPassword("Password2026!"),
+        role: "Propietario",
+        initials: "FO",
+        color: "brand",
+        emailVerifiedAt: new Date(),
+      },
+    })
+    const ws = await prisma.workspace.create({
+      data: { name: `Fix WS ${stamp}`, slug: `fix-ws-${stamp}`, billingStatus: "ACTIVE", planKey },
+    })
+    await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: user.id, role: "OWNER" } })
+    return { user, ws }
+  }
+
+  it("B1: Starter en PLAN_ACTION_REQUIRED se resuelve con initiate + resolve (sin checkout)", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const stamp = Date.now()
+      const { user, ws } = await makeOwnerWorkspace(`${stamp}-b1`, "STARTER")
+      const projectIds: number[] = []
+      for (let i = 0; i < 2; i++) {
+        const p = await prisma.project.create({ data: { workspaceId: ws.id, code: `B1P${i}_${stamp}`.slice(0, 30), name: `P${i}`, description: "", status: "ACTIVE" } })
+        await prisma.projectMember.create({ data: { projectId: p.id, userId: user.id, role: "OWNER" } })
+        projectIds.push(p.id)
+      }
+      const keepId = projectIds[0]
+
+      // Estado inicial: Starter efectivo con 2 proyectos activos -> exceso detectado.
+      const statusBefore = await fetch(`${baseUrl}/api/billing/status`, { headers: { "x-docucore-test-actor-id": String(user.id) } }).then((r) => r.json())
+      expect(statusBefore.complianceStatus).toBe("PLAN_ACTION_REQUIRED")
+
+      // Secuencia exacta del modo "resolve" del wizard: initiate -> resolve(transitionId).
+      const initRes = await fetch(`${baseUrl}/api/billing/plan-change/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ targetPlanKey: "STARTER", selectedProjectId: keepId }),
+      })
+      expect(initRes.status).toBe(201)
+      const initData = await initRes.json()
+
+      const resolveRes = await fetch(`${baseUrl}/api/billing/plan-change/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ transitionId: initData.transitionId }),
+      })
+      expect(resolveRes.status).toBe(200)
+      const resolveData = await resolveRes.json()
+      expect(resolveData.keptProjectId).toBe(keepId)
+      expect(resolveData.planLockedProjectIds.sort()).toEqual([projectIds[1]].sort())
+
+      const statusAfter = await fetch(`${baseUrl}/api/billing/status`, { headers: { "x-docucore-test-actor-id": String(user.id) } }).then((r) => r.json())
+      expect(statusAfter.planKey).toBe("STARTER")
+      expect(statusAfter.activeProjectsCount).toBe(1)
+      expect(statusAfter.complianceStatus).toBe("COMPLIANT")
+    } finally {
+      server.close()
+    }
+  })
+
+  it("B2: /billing/status expone graceEndsAt y planLockedProjectsCount", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const stamp = Date.now()
+      const { user, ws } = await makeOwnerWorkspace(`${stamp}-b2`, "STARTER")
+      await prisma.workspace.update({ where: { id: ws.id }, data: { graceEndsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000) } })
+      await prisma.project.create({ data: { workspaceId: ws.id, code: `B2P_${stamp}`.slice(0, 30), name: "Locked", description: "", status: "ARCHIVED", archivedByPlan: true, planLockedAt: new Date() } })
+
+      const status = await fetch(`${baseUrl}/api/billing/status`, { headers: { "x-docucore-test-actor-id": String(user.id) } }).then((r) => r.json())
+      expect(status.planLockedProjectsCount).toBe(1)
+      expect(status.graceEndsAt).not.toBeNull()
+      expect(new Date(status.graceEndsAt).getTime()).toBeGreaterThan(Date.now())
+    } finally {
+      server.close()
+    }
+  })
+
+  it("B3: un proyecto bloqueado por plan se restaura en Pro (backend autoritativo)", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const stamp = Date.now()
+      const { user, ws } = await makeOwnerWorkspace(`${stamp}-b3`, "PRO")
+      const locked = await prisma.project.create({ data: { workspaceId: ws.id, code: `B3P_${stamp}`.slice(0, 30), name: "Locked", description: "", status: "ARCHIVED", archivedByPlan: true, planLockedAt: new Date() } })
+      await prisma.projectMember.create({ data: { projectId: locked.id, userId: user.id, role: "OWNER" } })
+
+      const res = await fetch(`${baseUrl}/api/projects/${locked.id}/restore`, {
+        method: "POST",
+        headers: { "x-docucore-test-actor-id": String(user.id) },
+      })
+      expect(res.status).toBe(200)
+      expect(await prisma.project.findUniqueOrThrow({ where: { id: locked.id } })).toMatchObject({ status: "ACTIVE", archivedByPlan: false, planLockedAt: null })
     } finally {
       server.close()
     }

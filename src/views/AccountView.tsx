@@ -10,6 +10,7 @@ import {
 import type { ApiBillingStatus, PlanKey } from "@/types"
 import { useSession } from "@/contexts/SessionContext"
 import PlanChangeWizard from "@/components/PlanChangeWizard"
+import GraceSwapCard from "@/components/GraceSwapCard"
 import { PLAN_CATALOG } from "../../shared/planCatalog"
 
 export default function AccountView() {
@@ -27,6 +28,7 @@ export default function AccountView() {
   const [profileBusy, setProfileBusy] = useState(false)
   const [initialsCustomized, setInitialsCustomized] = useState(false)
   const [wizardPlan, setWizardPlan] = useState<PlanKey | null>(null)
+  const [wizardMode, setWizardMode] = useState<'change' | 'resolve'>('change')
 
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -69,12 +71,15 @@ export default function AccountView() {
     setBillingActionBusy(true)
     setBillingError(null)
     try {
-      // Every purchase or plan change is represented by a durable transition,
-      // even when the current capacity needs no explicit selection.
       const transition = await initiatePlanChange({ targetPlanKey: planKey })
       const res = await createBillingCheckoutSession(planKey, { transitionId: transition.transitionId })
-      if (res.checkoutUrl) {
+      if (res.nextAction === "REDIRECT_TO_CHECKOUT" && res.checkoutUrl) {
         window.location.href = res.checkoutUrl
+      } else if (res.nextAction === "REFRESH_BILLING" || res.status === "CHECKOUT_ALREADY_COMPLETED") {
+        setBillingActionBusy(false)
+        loadBilling()
+      } else {
+        throw new Error("Respuesta no válida recibida desde el servidor de pagos.")
       }
     } catch (err: unknown) {
       setBillingError(err instanceof Error ? err.message : "Error al iniciar la pasarela de pago.")
@@ -317,7 +322,12 @@ export default function AccountView() {
             </p>
             <button
               type="button"
-              onClick={() => setWizardPlan("STARTER")}
+              onClick={() => {
+                // With Starter already effective, the wizard resolves compliance
+                // via initiate + resolve without a Stripe checkout.
+                setWizardMode(billing?.planKey === "STARTER" ? "resolve" : "change")
+                setWizardPlan("STARTER")
+              }}
               className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
             >
               Resolver ahora
@@ -330,10 +340,23 @@ export default function AccountView() {
             <PlanChangeWizard
               targetPlanKey={wizardPlan}
               activeProjectsCount={billing.activeProjectsCount}
+              mode={wizardMode}
               onClose={() => setWizardPlan(null)}
+              onCompleted={() => {
+                setWizardPlan(null)
+                loadBilling()
+              }}
             />
           </div>
         )}
+
+        {(billing?.role === "OWNER" || billing?.role === "ADMIN") &&
+          billing.graceEndsAt &&
+          new Date(billing.graceEndsAt).getTime() > Date.now() && (
+            <div className="mt-4">
+              <GraceSwapCard billing={billing} onSwapped={loadBilling} />
+            </div>
+          )}
 
         {downgradeNotice && (
           <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">

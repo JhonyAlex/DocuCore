@@ -1031,10 +1031,30 @@ export function fetchBillingStatus(): Promise<import('@/types').ApiBillingStatus
   return request<import('@/types').ApiBillingStatus>('/billing/status')
 }
 
-export function createBillingCheckoutSession(planKey: import('@/types').PlanKey, options: { transitionId: string; selectedProjectId?: number | null; selectedMemberIds?: number[] }): Promise<{ checkoutUrl?: string | null; sessionId?: string; reused?: boolean; success?: boolean; planKey?: string; message?: string; status?: string }> {
-  return request<{ checkoutUrl?: string | null; sessionId?: string; reused?: boolean; success?: boolean; planKey?: string; message?: string; status?: string }>('/billing/checkout', {
+export type BillingCheckoutResponse =
+  | {
+      nextAction: 'REDIRECT_TO_CHECKOUT'
+      checkoutUrl: string
+      sessionId?: string
+      status?: string
+      reused?: boolean
+      message?: string
+    }
+  | {
+      nextAction: 'REFRESH_BILLING'
+      checkoutUrl?: null
+      sessionId?: string
+      status?: string
+      reused?: boolean
+      success?: boolean
+      planKey?: string
+      message?: string
+    }
+
+export function createBillingCheckoutSession(planKey: import('@/types').PlanKey, options: { transitionId: string }): Promise<BillingCheckoutResponse> {
+  return request<BillingCheckoutResponse>('/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({ planKey, ...options }),
+    body: JSON.stringify({ planKey, transitionId: options.transitionId }),
   })
 }
 
@@ -1182,7 +1202,7 @@ export function previewPlanChange(targetPlanKey: PlanKey): Promise<PlanChangePre
 export function initiatePlanChange(input: { targetPlanKey: PlanKey; selectedProjectId?: number; selectedMemberIds?: number[]; transitionId?: string }): Promise<{ transitionId: string; status: string; targetPlanKey: string; selectedProjectId: number; selectedMemberIds?: number[]; effectiveAt: string | null }> {
   return request('/billing/plan-change/initiate', { method: 'POST', body: JSON.stringify(input) })
 }
-export function resolvePlanCompliance(input: { targetPlanKey: PlanKey; selectedProjectId: number; selectedMemberIds?: number[] }): Promise<{ transitionId: string; keptProjectId: number; planLockedProjectIds: number[]; selectedMemberIds: number[]; planLockedMemberIds: number[]; graceEndsAt: string | null }> {
+export function resolvePlanCompliance(input: { targetPlanKey?: PlanKey; selectedProjectId?: number | null; selectedMemberIds?: number[]; transitionId?: string }): Promise<{ transitionId: string; status: string; keptProjectId: number | null; planLockedProjectIds: number[]; selectedMemberIds: number[]; planLockedMemberIds: number[]; graceEndsAt: string | null }> {
   return request('/billing/plan-change/resolve', { method: 'POST', body: JSON.stringify(input) })
 }
 export function swapActiveProject(keepProjectId: number): Promise<{ keptProjectId: number; lockedProjectIds: number[]; graceEndsAt: string | null }> {

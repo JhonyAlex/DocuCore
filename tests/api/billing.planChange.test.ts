@@ -230,13 +230,13 @@ describe("plan-change API (preview / initiate / resolve / swap)", () => {
       })
       const ws = await prisma.workspace.create({ data: { name: "WS A", slug: `wsa-${stamp}`, billingStatus: "ACTIVE", planKey: "PRO" } })
       await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: user.id, role: "OWNER" } })
-      const p1 = await prisma.project.create({ data: { workspaceId: ws.id, code: `TP1_${stamp}`.slice(0, 30), name: "P1", description: "", status: "ACTIVE" } })
+      await prisma.project.create({ data: { workspaceId: ws.id, code: `TP1_${stamp}`.slice(0, 30), name: "P1", description: "", status: "ACTIVE" } })
 
       // A foreign transition id (nonexistent here) is rejected with INVALID_TRANSITION.
       const res = await fetch(`${baseUrl}/api/billing/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
-        body: JSON.stringify({ planKey: "STARTER", transitionId: "pct_foreign_workspace_000", selectedProjectId: p1.id }),
+        body: JSON.stringify({ planKey: "STARTER", transitionId: "pct_foreign_workspace_000" }),
       })
       expect(res.status).toBe(409)
       const data = await res.json()
@@ -268,7 +268,7 @@ describe("plan-change API (preview / initiate / resolve / swap)", () => {
       const checkoutRes = await fetch(`${baseUrl}/api/billing/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
-        body: JSON.stringify({ planKey: "STARTER", transitionId: initiated.transitionId, selectedProjectId: keepId }),
+        body: JSON.stringify({ planKey: "STARTER", transitionId: initiated.transitionId }),
       })
       expect(checkoutRes.status).toBe(200)
 
@@ -284,6 +284,7 @@ describe("plan-change API (preview / initiate / resolve / swap)", () => {
             object: {
               customer: `cus_dg_${Date.now()}`,
               subscription: `sub_dg_${Date.now()}`,
+              priceId: process.env.STRIPE_PRICE_STARTER || "fake_price_starter",
               metadata: { workspaceId: String(ws.id), planKey: "STARTER", transitionId: initiated.transitionId, selectedProjectId: String(keepId) },
             },
           },
@@ -303,5 +304,216 @@ describe("plan-change API (preview / initiate / resolve / swap)", () => {
     } finally {
       server.close()
     }
+  })
+
+  it("checkout for already completed session returns 200 CHECKOUT_ALREADY_COMPLETED with checkoutUrl null", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const { user, ws } = await setup("PRO", 1)
+      const stamp = Date.now() + 999
+
+      const transition = await prisma.planTransition.create({
+        data: {
+          id: `pct_comp_${stamp}`,
+          workspaceId: ws.id,
+          actorId: user.id,
+          targetPlanKey: "PRO",
+          status: "PENDING",
+          stripeSessionId: `cs_completed_${stamp}`,
+        },
+      })
+
+      const { setBillingProvider, FakeBillingProvider } = await import("../../server/lib/billing")
+      class MockCompleteProvider extends FakeBillingProvider {
+        override async retrieveCheckoutSession(sessionId: string): Promise<import("../../server/lib/billing").RetrievedCheckoutSession> {
+          return {
+            id: sessionId,
+            url: null,
+            status: "complete",
+            metadata: { workspaceId: String(ws.id), transitionId: transition.id },
+          }
+        }
+      }
+      setBillingProvider(new MockCompleteProvider())
+
+      const res = await fetch(`${baseUrl}/api/billing/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ planKey: "PRO", transitionId: transition.id }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.status).toBe("CHECKOUT_ALREADY_COMPLETED")
+      expect(data.checkoutUrl).toBeNull()
+      expect(data.reused).toBe(true)
+      expect(data.sessionId).toBe(`cs_completed_${stamp}`)
+    } finally {
+      const { setBillingProvider } = await import("../../server/lib/billing")
+      setBillingProvider(null)
+      server.close()
+    }
+  })
+
+  describe("Item 2: BILLING_PROVIDER=fake exact predicate and adversarial tests", () => {
+    it("rejects fake webhooks with missing price, foreign price, pending_update, and paused/past_due while applying exact price", async () => {
+      process.env.BILLING_PROVIDER = "fake"
+      process.env.STRIPE_PRICE_STARTER = "fake_price_starter"
+      process.env.STRIPE_PRICE_PRO = "fake_price_pro"
+
+      const server = await startServer(0)
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("Invalid test server address")
+      const baseUrl = `http://127.0.0.1:${address.port}`
+
+      try {
+        const { user, ws, projectIds } = await setup("PRO", 3)
+        const keepId = projectIds[1]
+        const stamp = Date.now() + 555
+
+        // Helper to create a PENDING transition
+        async function createTransition(tId: string) {
+          return prisma.planTransition.create({
+            data: {
+              id: tId,
+              workspaceId: ws.id,
+              actorId: user.id,
+              targetPlanKey: "STARTER",
+              selectedProjectId: keepId,
+              status: "PENDING",
+            },
+          })
+        }
+
+        // 1. Missing Price => remains PENDING, projects NOT modified
+        const tMissing = await createTransition(`pct_fake_miss_${stamp}`)
+        await fetch(`${baseUrl}/api/billing/webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `evt_fake_miss_${stamp}`,
+            type: "customer.subscription.updated",
+            data: {
+              object: {
+                id: `sub_fake_${stamp}`,
+                customer: `cus_fake_${stamp}`,
+                status: "active",
+                items: { data: [] }, // missing price
+                metadata: { workspaceId: String(ws.id), transitionId: tMissing.id },
+              },
+            },
+          }),
+        })
+        const refMissing = await prisma.planTransition.findUniqueOrThrow({ where: { id: tMissing.id } })
+        expect(refMissing.status).toBe("PENDING")
+        const activeProjects1 = await prisma.project.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+        expect(activeProjects1).toBe(3) // Unchanged!
+
+        // 2. Foreign Price (fake_price_unrelated) => remains PENDING, projects NOT modified
+        const tForeign = await createTransition(`pct_fake_foreign_${stamp}`)
+        await fetch(`${baseUrl}/api/billing/webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `evt_fake_foreign_${stamp}`,
+            type: "customer.subscription.updated",
+            data: {
+              object: {
+                id: `sub_fake_${stamp}`,
+                customer: `cus_fake_${stamp}`,
+                status: "active",
+                priceId: "fake_price_unrelated_foreign",
+                metadata: { workspaceId: String(ws.id), transitionId: tForeign.id },
+              },
+            },
+          }),
+        })
+        const refForeign = await prisma.planTransition.findUniqueOrThrow({ where: { id: tForeign.id } })
+        expect(refForeign.status).toBe("PENDING")
+        const activeProjects2 = await prisma.project.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+        expect(activeProjects2).toBe(3) // Unchanged!
+
+        // 3. pending_update present => remains PENDING, projects NOT modified
+        const tPendingUpdate = await createTransition(`pct_fake_pupd_${stamp}`)
+        await fetch(`${baseUrl}/api/billing/webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `evt_fake_pupd_${stamp}`,
+            type: "customer.subscription.updated",
+            data: {
+              object: {
+                id: `sub_fake_${stamp}`,
+                customer: `cus_fake_${stamp}`,
+                status: "active",
+                priceId: "fake_price_starter",
+                pending_update: { expires_at: 99999 },
+                metadata: { workspaceId: String(ws.id), transitionId: tPendingUpdate.id },
+              },
+            },
+          }),
+        })
+        const refPendingUpdate = await prisma.planTransition.findUniqueOrThrow({ where: { id: tPendingUpdate.id } })
+        expect(refPendingUpdate.status).toBe("PENDING")
+        const activeProjects3 = await prisma.project.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+        expect(activeProjects3).toBe(3) // Unchanged!
+
+        // 4. paused / past_due => remains PENDING, projects NOT modified
+        const tPaused = await createTransition(`pct_fake_paused_${stamp}`)
+        await fetch(`${baseUrl}/api/billing/webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `evt_fake_paused_${stamp}`,
+            type: "customer.subscription.updated",
+            data: {
+              object: {
+                id: `sub_fake_${stamp}`,
+                customer: `cus_fake_${stamp}`,
+                status: "paused",
+                priceId: "fake_price_starter",
+                metadata: { workspaceId: String(ws.id), transitionId: tPaused.id },
+              },
+            },
+          }),
+        })
+        const refPaused = await prisma.planTransition.findUniqueOrThrow({ where: { id: tPaused.id } })
+        expect(refPaused.status).toBe("PENDING")
+        const activeProjects4 = await prisma.project.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+        expect(activeProjects4).toBe(3) // Unchanged!
+
+        // 5. Exact price + active => applies transition and updates projects
+        const tExact = await createTransition(`pct_fake_exact_${stamp}`)
+        await fetch(`${baseUrl}/api/billing/webhook`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `evt_fake_exact_${stamp}`,
+            type: "customer.subscription.updated",
+            data: {
+              object: {
+                id: `sub_fake_${stamp}`,
+                customer: `cus_fake_${stamp}`,
+                status: "active",
+                priceId: "fake_price_starter",
+                metadata: { workspaceId: String(ws.id), transitionId: tExact.id },
+              },
+            },
+          }),
+        })
+        const refExact = await prisma.planTransition.findUniqueOrThrow({ where: { id: tExact.id } })
+        expect(refExact.status).toBe("APPLIED")
+
+        // Kept project is active, others archived
+        const activeProjectsFinal = await prisma.project.findMany({ where: { workspaceId: ws.id, status: "ACTIVE" } })
+        expect(activeProjectsFinal).toHaveLength(1)
+        expect(activeProjectsFinal[0].id).toBe(keepId)
+      } finally {
+        server.close()
+      }
+    })
   })
 })

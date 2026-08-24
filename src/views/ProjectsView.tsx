@@ -15,8 +15,7 @@ type ProjectCardProps = {
 }
 
 function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps, 'onOpen'>) {
-  const planLocked = project.status === 'ARCHIVED' && project.archivedByPlan
-  const archiveLabel = project.status === 'ACTIVE' ? 'Archivar' : planLocked ? 'Plan requerido' : 'Reactivar'
+  const archiveLabel = project.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'
   return (
     <div className="flex items-center gap-1.5">
       <button
@@ -31,13 +30,11 @@ function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps,
       </button>
       <button
         type="button"
-        disabled={planLocked}
         onClick={(event) => {
           event.stopPropagation()
           onArchive()
         }}
-        title={planLocked ? 'Actualiza a Pro para reactivar este proyecto bloqueado por el límite del plan.' : undefined}
-        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-white"
+        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-white"
       >
         {archiveLabel}
       </button>
@@ -249,9 +246,11 @@ export default function ProjectsView() {
       setError(
         code === 'PLAN_LOCKED_PROJECT'
           ? 'Este proyecto está bloqueado por el límite del plan Starter. Actualiza a Pro para reactivarlo.'
-          : code === 'GRACE_PERIOD_EXPIRED'
-            ? 'La ventana de 30 días para seleccionar el proyecto activo ha finalizado.'
-            : 'No se pudo actualizar el estado del proyecto.'
+          : code === 'PROJECT_LIMIT_EXCEEDED'
+            ? 'Has alcanzado el límite de proyectos activos para tu plan. Archiva uno o actualiza tu plan.'
+            : code === 'GRACE_PERIOD_EXPIRED'
+              ? 'La ventana de 30 días para seleccionar el proyecto activo ha finalizado.'
+              : 'No se pudo actualizar el estado del proyecto.'
       )
     } finally {
       setArchiving(false)

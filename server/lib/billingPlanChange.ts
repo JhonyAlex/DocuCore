@@ -76,10 +76,12 @@ export async function buildPreview(workspaceId: number, targetPlanKey: PlanKey) 
     prisma.project.findMany({
       where: { workspaceId },
       select: { id: true, code: true, name: true, status: true, archivedByPlan: true, planLockedAt: true },
+      orderBy: { id: 'asc' },
     }),
     prisma.workspaceMember.findMany({
       where: { workspaceId },
       select: { id: true, role: true, status: true, user: { select: { id: true, name: true, email: true } } },
+      orderBy: { id: 'asc' },
     }),
   ])
   const counts = { ...countProjects(rows), ...countMembers(members) }
@@ -214,18 +216,24 @@ router.post("/initiate", asyncHandler(async (req, res) => {
 
   // Idempotency and binding check
   let transitionId = input.transitionId ?? deterministicTransitionId(workspace.id, input.targetPlanKey)
+  const existing = await prisma.planTransition.findUnique({ where: { id: transitionId } })
+
   if (input.transitionId) {
-    const existing = await prisma.planTransition.findUnique({ where: { id: input.transitionId } })
     if (!existing || existing.workspaceId !== workspace.id || existing.status !== "PENDING") {
       return res.status(409).json({ error: "La transición indicada no es válida o ya fue aplicada.", code: "INVALID_TRANSITION" })
     }
-  } else {
-    const existing = await prisma.planTransition.findUnique({ where: { id: transitionId } })
+  }
+
+  if (existing) {
     // A completed transition (APPLIED/CANCELED) is history: mint a fresh id so
     // a later downgrade never overwrites the previous one.
-    if (existing && existing.status !== "PENDING") {
+    if (existing.status !== "PENDING") {
       transitionId = `pct_${workspace.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    } else if (existing && existing.status === "PENDING" && existing.stripeSessionId) {
+    } else if (
+      existing.stripeSessionId ||
+      existing.stripeScheduleId ||
+      (existing.checkoutClaimToken && existing.checkoutClaimExpiresAt && existing.checkoutClaimExpiresAt > now)
+    ) {
       // Transition is already frozen/bound to a Stripe operation (§4).
       const sameTarget = existing.targetPlanKey === input.targetPlanKey
       const sameProject = existing.selectedProjectId === selectedProjectId
