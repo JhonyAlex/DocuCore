@@ -72,6 +72,7 @@ router.get("/status", asyncHandler(async (req, res) => {
     projectsCompliant: compliance.projectsCompliant,
     membersCompliant: compliance.membersCompliant,
     complianceStatus: compliance.complianceStatus,
+    canCreateProject: compliance.canCreateProject,
     canDowngradeToStarter: compliance.activeProjectsCount <= PLAN_CATALOG.STARTER.maxActiveProjects && compliance.activeMembersCount <= PLAN_CATALOG.STARTER.maxActiveMembers,
     canInviteMember: compliance.canInviteMember,
     canActivateMember: compliance.canActivateMember,

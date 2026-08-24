@@ -25,6 +25,18 @@ function multiPagePdf(): Buffer {
 }
 
 test.describe.serial('floor plans', () => {
+  test('collapses the left panel without losing its controls', async ({ page, consoleIssues }) => {
+    await page.goto('/plans')
+    const collapse = page.getByLabel('Plegar panel de planos')
+    await expect(collapse).toBeVisible()
+    await collapse.click()
+    await expect(page.getByLabel('Desplegar panel de planos')).toBeVisible()
+    await expect(page.locator('aside select').first()).toBeHidden()
+    await page.getByLabel('Desplegar panel de planos').click()
+    await expect(page.locator('aside select').first()).toBeVisible()
+    expect(consoleIssues).toEqual([])
+  })
+
   test('uses direct contextual placement, marker interaction and PDF creation without an edit mode', async ({ page, consoleIssues }) => {
     const locationsResponse = await page.request.get('/api/locations')
     const locations = await locationsResponse.json() as { locations: Array<{ id: number; parentId: number | null }> }

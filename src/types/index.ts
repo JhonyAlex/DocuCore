@@ -61,6 +61,7 @@ export interface ApiBillingStatus {
   projectsCompliant: boolean
   membersCompliant: boolean
   complianceStatus: string
+  canCreateProject: boolean
   canDowngradeToStarter: boolean
   canInviteMember: boolean
   canActivateMember: boolean

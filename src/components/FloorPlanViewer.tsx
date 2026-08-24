@@ -186,5 +186,8 @@ export default function FloorPlanViewer({ dziUrl, width, height, markers, action
     syncFloorPlanMarkerOverlays({ viewer, overlays: overlaysRef.current, markers, width, height, lod, highlightedAssetId, latest })
   }, [height, highlightedAssetId, lod, markers, ready, width])
 
-  return <div ref={hostRef} data-testid="floor-plan-viewer" data-floor-plan-loaded={fullyLoaded ? 'true' : 'false'} data-background-dimmed={backgroundDimmed ? 'true' : 'false'} className={`relative h-[600px] bg-slate-100 dark:bg-slate-950 ${backgroundDimmed ? '[&_.openseadragon-canvas]:brightness-[0.58]' : ''} ${className ?? ''}`} />
+  // The HTML drawer keeps image tiles in <img> elements while marker overlays
+  // are sibling <div>s. Dim tiles only: filtering the canvas also dims the
+  // asset markers and defeats the contrast control.
+  return <div ref={hostRef} data-testid="floor-plan-viewer" data-floor-plan-loaded={fullyLoaded ? 'true' : 'false'} data-background-dimmed={backgroundDimmed ? 'true' : 'false'} className={`relative h-[600px] bg-slate-100 dark:bg-slate-950 ${backgroundDimmed ? '[&_.openseadragon-canvas_img]:brightness-[0.58]' : ''} ${className ?? ''}`} />
 }

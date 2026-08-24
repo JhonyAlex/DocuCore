@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ProjectFormModal from '@/components/ProjectFormModal'
-import { archiveProject, ApiError, createProject, deleteProject, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
+import { archiveProject, ApiError, createProject, deleteProject, fetchBillingStatus, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
 import { projectThemeClass } from '../../shared/projectThemes'
 
 const PAGE_SIZE = 12
@@ -203,6 +203,7 @@ export default function ProjectsView() {
   const [archiving, setArchiving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ApiProjectSummary | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [checkingCapacity, setCheckingCapacity] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -243,6 +244,30 @@ export default function ProjectsView() {
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const startCreate = async () => {
+    setError(null)
+    setFormError(null)
+    setCheckingCapacity(true)
+    try {
+      const billing = await fetchBillingStatus()
+      if (!billing.canCreateProject) {
+        setError(
+          billing.maxActiveProjects > 0 && billing.activeProjectsCount >= billing.maxActiveProjects
+            ? 'Has alcanzado el límite de proyectos activos de tu plan. Archiva uno o actualiza tu plan.'
+            : 'Tu plan actual no permite crear más proyectos.'
+        )
+        return
+      }
+      setEditing(null)
+    } catch {
+      // The server repeats this check when submitting. Do not deny access just
+      // because the preflight status could not be read.
+      setEditing(null)
+    } finally {
+      setCheckingCapacity(false)
     }
   }
 
@@ -297,17 +322,15 @@ export default function ProjectsView() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            setFormError(null)
-            setEditing(null)
-          }}
-          className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"
+          disabled={checkingCapacity}
+          onClick={() => void startCreate()}
+          className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          Nuevo proyecto
+          {checkingCapacity ? 'Comprobando…' : 'Nuevo proyecto'}
         </button>
       </div>
       {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -350,11 +373,9 @@ export default function ProjectsView() {
         )}
         <button
           type="button"
-          onClick={() => {
-            setFormError(null)
-            setEditing(null)
-          }}
-          className="group flex items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-white transition hover:border-brand-500 dark:border-slate-700 dark:bg-slate-900"
+          disabled={checkingCapacity}
+          onClick={() => void startCreate()}
+          className="group flex items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-white transition hover:border-brand-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
         >
           <div className="p-8 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-400 transition group-hover:bg-brand-50 group-hover:text-brand-600 dark:bg-slate-800 dark:group-hover:bg-brand-900/30">
