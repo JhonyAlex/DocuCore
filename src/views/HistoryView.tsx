@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from '@/contexts/ProjectContext'
+import SectionActions from '@/components/SectionActions'
 import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import { downloadHistoryCsv, fetchHistory, type ApiHistoryEntry } from '@/lib/api'
 import { formatApiDateTime, getHistoryActionChipClass, responsibleColorMap } from '@/lib/assetMappers'
@@ -48,12 +49,7 @@ export default function HistoryView() {
 
   return (
     <section className="fade-in">
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Historial y auditoría</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Trazabilidad completa de cambios en ítems, documentos y eventos</p>
-        </div>
-        <div className="flex items-center gap-3">
+      <SectionActions><div className="flex items-center gap-3">
           <select id="history-action-filter" aria-label="Filtrar por tipo de acción" value={selectedAction} onChange={(event) => setSelectedAction(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
             <option value="">Todas las acciones</option>
             {availableActions.map((action) => <option key={action} value={action}>{action}</option>)}
@@ -61,8 +57,7 @@ export default function HistoryView() {
           <button id="history-export-btn" type="button" onClick={() => void handleExport()} disabled={exporting} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
             {exporting ? 'Exportando…' : 'Exportar'}
           </button>
-        </div>
-      </div>
+        </div></SectionActions>
 
       {error && (
         <div role="alert" className="mb-4 flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">

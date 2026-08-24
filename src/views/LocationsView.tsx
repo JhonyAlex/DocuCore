@@ -26,6 +26,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useSession } from '@/contexts/SessionContext'
 import { useProject } from '@/contexts/ProjectContext'
+import SectionActions from '@/components/SectionActions'
 
 interface TreeNode {
   location: ApiLocation
@@ -359,16 +360,12 @@ export default function LocationsView() {
 
   return (
     <section className="fade-in">
-      <div className="flex items-end justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Ubicaciones</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Estructura jerárquica de centros, edificios, plantas y áreas</p>
-        </div>
+      <SectionActions>
         <button type="button" onClick={() => setFormMode('create')} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Nueva ubicación
         </button>
-      </div>
+      </SectionActions>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">

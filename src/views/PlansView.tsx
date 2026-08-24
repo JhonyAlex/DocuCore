@@ -18,6 +18,7 @@ import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPla
 import { type NormalizedPoint } from '@/lib/floorPlanCoordinates'
 import { filterFloorPlanAssets } from '@/lib/floorPlanPresentation'
 import { useProject } from '@/contexts/ProjectContext'
+import SectionActions from '@/components/SectionActions'
 
 function sizeLabel(bytes: number): string { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB` }
 function rootLocationId(locationId: number, locations: ApiLocation[]): number {
@@ -225,13 +226,10 @@ export default function PlansView() {
   }
 
   return <section className="fade-in">
-    <div className="flex items-end justify-between mb-6">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Planos interactivos</h1><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Visualiza y gestiona la ubicación de los activos sobre los planos</p></div>
-      <div className="flex items-center gap-2">
+    <SectionActions><div className="flex items-center gap-2">
         <button type="button" disabled={!plan} onClick={() => setPdfImportOpen(true)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Importar desde PDF</button>
         <label className={`px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm ${!plan || uploading ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>{uploading ? 'Subiendo…' : 'Subir nueva versión'}<input aria-label="Subir nueva versión" disabled={!plan || uploading} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void uploadVersion(event.target.files?.[0] ?? null).catch(() => undefined); event.currentTarget.value = '' }} /></label>
-      </div>
-    </div>
+      </div></SectionActions>
     {error && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
     <div className={`grid grid-cols-1 gap-5 ${sidebarCollapsed ? 'xl:grid-cols-[2.5rem_minmax(0,1fr)]' : 'xl:grid-cols-4'}`}>
       <aside className={`overflow-hidden rounded-xl border border-slate-200 bg-white transition-[width,padding] duration-200 dark:border-slate-800 dark:bg-slate-900 ${sidebarCollapsed ? 'p-4 xl:p-2' : 'p-4'}`}>
