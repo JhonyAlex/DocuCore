@@ -29,6 +29,7 @@ interface FloorPlanViewerProps {
   readOnly?: boolean
   initialFocusMarker?: EditableFloorPlanMarker | null
   highlightedAssetId?: number | null
+  backgroundDimmed?: boolean
   className?: string
 }
 
@@ -68,7 +69,7 @@ function clearViewerPointerCaptures(viewer: OpenSeadragon.Viewer) {
   }
 }
 
-export default function FloorPlanViewer({ dziUrl, width, height, markers, actionsRef, onReady = noopReady, onEmptyQuickClick = noopEmptyQuickClick, onSelectMarker = noopSelectMarker, onMarkerDragStart = noopMarkerDragStart, onMarkerDrag = noopMarkerDrag, onMarkerDragEnd = noopMarkerDragEnd, readOnly = false, initialFocusMarker = null, highlightedAssetId = null, className }: FloorPlanViewerProps) {
+export default function FloorPlanViewer({ dziUrl, width, height, markers, actionsRef, onReady = noopReady, onEmptyQuickClick = noopEmptyQuickClick, onSelectMarker = noopSelectMarker, onMarkerDragStart = noopMarkerDragStart, onMarkerDrag = noopMarkerDrag, onMarkerDragEnd = noopMarkerDragEnd, readOnly = false, initialFocusMarker = null, highlightedAssetId = null, backgroundDimmed = true, className }: FloorPlanViewerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const homeZoomRef = useRef(1)
@@ -185,5 +186,5 @@ export default function FloorPlanViewer({ dziUrl, width, height, markers, action
     syncFloorPlanMarkerOverlays({ viewer, overlays: overlaysRef.current, markers, width, height, lod, highlightedAssetId, latest })
   }, [height, highlightedAssetId, lod, markers, ready, width])
 
-  return <div ref={hostRef} data-testid="floor-plan-viewer" data-floor-plan-loaded={fullyLoaded ? 'true' : 'false'} className={`relative h-[600px] bg-slate-100 dark:bg-slate-950 ${className ?? ''}`} />
+  return <div ref={hostRef} data-testid="floor-plan-viewer" data-floor-plan-loaded={fullyLoaded ? 'true' : 'false'} data-background-dimmed={backgroundDimmed ? 'true' : 'false'} className={`relative h-[600px] bg-slate-100 dark:bg-slate-950 ${backgroundDimmed ? '[&_.openseadragon-canvas]:brightness-[0.58]' : ''} ${className ?? ''}`} />
 }

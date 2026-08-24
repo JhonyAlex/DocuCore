@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ProjectFormModal from '@/components/ProjectFormModal'
-import { archiveProject, ApiError, createProject, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
+import { archiveProject, ApiError, createProject, deleteProject, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
 import { projectThemeClass } from '../../shared/projectThemes'
 
 const PAGE_SIZE = 12
@@ -12,9 +12,10 @@ type ProjectCardProps = {
   onOpen: () => void
   onEdit: () => void
   onArchive: () => void
+  onDelete: () => void
 }
 
-function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps, 'onOpen'>) {
+function CardAdminActions({ project, onEdit, onArchive, onDelete }: Omit<ProjectCardProps, 'onOpen'>) {
   const archiveLabel = project.status === 'ACTIVE' ? 'Archivar' : 'Reactivar'
   return (
     <div className="flex items-center gap-1.5">
@@ -38,11 +39,21 @@ function CardAdminActions({ project, onEdit, onArchive }: Omit<ProjectCardProps,
       >
         {archiveLabel}
       </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onDelete()
+        }}
+        className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-50 dark:border-red-900/70 dark:bg-slate-800 dark:text-red-400 dark:hover:border-red-800 dark:hover:bg-red-950/30"
+      >
+        Eliminar
+      </button>
     </div>
   )
 }
 
-function ProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
+function ProjectCard({ project, onOpen, onEdit, onArchive, onDelete }: ProjectCardProps) {
   const status = project.status === 'ACTIVE' ? 'Activo' : project.archivedByPlan ? 'Bloqueado por plan' : 'Archivo'
   const statusClassName = project.archivedByPlan ? 'bg-amber-600/30 text-white' : 'bg-white/20 text-white'
   return (
@@ -91,14 +102,14 @@ function ProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
               </div>
             )}
           </div>
-          <CardAdminActions project={project} onEdit={onEdit} onArchive={onArchive} />
+          <CardAdminActions project={project} onEdit={onEdit} onArchive={onArchive} onDelete={onDelete} />
         </div>
       </div>
     </div>
   )
 }
 
-function FeaturedProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCardProps) {
+function FeaturedProjectCard({ project, onOpen, onEdit, onArchive, onDelete }: ProjectCardProps) {
   const status = project.status === 'ACTIVE' ? 'Activo' : project.archivedByPlan ? 'Bloqueado por plan' : 'Archivo'
   return (
     <div
@@ -171,7 +182,7 @@ function FeaturedProjectCard({ project, onOpen, onEdit, onArchive }: ProjectCard
               </div>
             )}
           </div>
-          <CardAdminActions project={project} onEdit={onEdit} onArchive={onArchive} />
+          <CardAdminActions project={project} onEdit={onEdit} onArchive={onArchive} onDelete={onDelete} />
         </div>
       </div>
     </div>
@@ -190,6 +201,8 @@ export default function ProjectsView() {
   const [formError, setFormError] = useState<string | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<ApiProjectSummary | null>(null)
   const [archiving, setArchiving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<ApiProjectSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -257,6 +270,20 @@ export default function ProjectsView() {
     }
   }
 
+  const remove = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteProject(deleteTarget.id)
+      setDeleteTarget(null)
+      await load()
+    } catch {
+      setError('No se pudo completar la eliminación del proyecto.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const first = projects[0]
 
   return (
@@ -303,6 +330,7 @@ export default function ProjectsView() {
                   setEditing(first)
                 }}
                 onArchive={() => setArchiveTarget(first)}
+                onDelete={() => setDeleteTarget(first)}
               />
             )}
             {projects.slice(1).map((project) => (
@@ -315,6 +343,7 @@ export default function ProjectsView() {
                   setEditing(project)
                 }}
                 onArchive={() => setArchiveTarget(project)}
+                onDelete={() => setDeleteTarget(project)}
               />
             ))}
           </>
@@ -394,6 +423,22 @@ export default function ProjectsView() {
         onCancel={() => setArchiveTarget(null)}
         onConfirm={() => void archive()}
         variant={archiveTarget?.status === 'ACTIVE' ? 'danger' : 'primary'}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Eliminar proyecto definitivamente"
+        message={
+          <>
+            El proyecto <span className="font-medium">{deleteTarget?.name}</span> y todos sus activos, documentos, planos,
+            ubicaciones, configuración e historial se eliminarán definitivamente. Esta acción no se puede deshacer.
+          </>
+        }
+        confirmLabel="Eliminar definitivamente"
+        busy={deleting}
+        busyLabel="Eliminando…"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => void remove()}
+        variant="danger"
       />
     </section>
   )

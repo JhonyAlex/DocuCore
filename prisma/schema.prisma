@@ -236,6 +236,7 @@ model User {
   sessions                AuthSession[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
+  floorPlanPreferences    FloorPlanUserPreference[]
 
   @@index([isActive])
   @@index([isPlatformAdmin])
@@ -760,9 +761,27 @@ model FloorPlan {
   location Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
   versions FloorPlanVersion[]
   markers  FloorPlanMarker[]
+  userPreferences FloorPlanUserPreference[]
 
   @@unique([locationId, name])
   @@index([projectId, locationId])
+}
+
+// Personal presentation setting. Absence of a row intentionally means that
+// the default contrast layer remains enabled for the user.
+model FloorPlanUserPreference {
+  id                Int      @id @default(autoincrement())
+  floorPlanId       Int
+  userId            Int
+  backgroundDimmed  Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([floorPlanId, userId])
+  @@index([userId, updatedAt])
 }
 
 model FloorPlanVersion {

@@ -14,7 +14,7 @@ import PlanEditorControls from '@/components/PlanEditorControls'
 import type { LocationFormValues } from '@/components/LocationFormModal'
 import { useAssetFicha } from '@/hooks/useAssetFicha'
 import { useFloorPlanEditor } from '@/hooks/useFloorPlanEditor'
-import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlanAssets, fetchFloorPlanFacets, fetchFloorPlanMarkers, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiFloorPlanFacet, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
+import { createFloorPlan, createFloorPlanVersion, createLocation, deleteFloorPlan, fetchAssetTypes, fetchFloorPlan, fetchFloorPlanAssets, fetchFloorPlanFacets, fetchFloorPlanMarkers, fetchFloorPlanPreference, fetchFloorPlans, fetchLocations, fetchStatuses, fetchUsers, floorPlanDziUrl, updateFloorPlanPreference, type ApiAssetType, type ApiFloorPlan, type ApiFloorPlanAsset, type ApiFloorPlanFacet, type ApiLocation, type ApiLocationsResponse, type ApiStatus, type ApiUserRef, type FloorPlanWriteInput } from '@/lib/api'
 import { type NormalizedPoint } from '@/lib/floorPlanCoordinates'
 import { filterFloorPlanAssets } from '@/lib/floorPlanPresentation'
 import { useProject } from '@/contexts/ProjectContext'
@@ -64,6 +64,8 @@ export default function PlansView() {
   const [markerPopover, setMarkerPopover] = useState<MarkerPopover | null>(null)
   const [markerRemovalId, setMarkerRemovalId] = useState<number | null>(null)
   const [confirmPlanDelete, setConfirmPlanDelete] = useState(false)
+  const [backgroundDimmed, setBackgroundDimmed] = useState(true)
+  const [backgroundPreferenceSaving, setBackgroundPreferenceSaving] = useState(false)
   const [viewerActionState, setViewerActionState] = useState<FloorPlanViewerActions | null>(null)
   const viewerActions = useRef<FloorPlanViewerActions | null>(null)
   const preferredPlanIdRef = useRef<number | null>(requestedPlanId)
@@ -115,6 +117,19 @@ export default function PlansView() {
     if (!activePlanId) { setFacets([]); return }
     let current = true
     void fetchFloorPlanFacets(projectId, activePlanId).then((result) => { if (current) setFacets(result.types) }).catch(() => { if (current) setFacets([]) })
+    return () => { current = false }
+  }, [activePlanId, projectId])
+
+  useEffect(() => {
+    if (!activePlanId) {
+      setBackgroundDimmed(true)
+      return
+    }
+    let current = true
+    setBackgroundDimmed(true)
+    void fetchFloorPlanPreference(projectId, activePlanId)
+      .then((preference) => { if (current) setBackgroundDimmed(preference.backgroundDimmed) })
+      .catch(() => { if (current) setError('No se pudo cargar la preferencia de contraste del plano.') })
     return () => { current = false }
   }, [activePlanId, projectId])
 
@@ -193,6 +208,20 @@ export default function PlansView() {
     setPlacementPopover(null); setPlacementTarget(null); setAssetSearch('')
   }
   const markViewerReady = useCallback((actions: FloorPlanViewerActions) => setViewerActionState(actions), [])
+  const toggleBackgroundLayer = async () => {
+    if (!plan || backgroundPreferenceSaving) return
+    const next = !backgroundDimmed
+    setBackgroundDimmed(next)
+    setBackgroundPreferenceSaving(true)
+    try {
+      await updateFloorPlanPreference(projectId, plan.id, next)
+    } catch {
+      setBackgroundDimmed(!next)
+      setError('No se pudo guardar la preferencia de contraste del plano.')
+    } finally {
+      setBackgroundPreferenceSaving(false)
+    }
+  }
 
   return <section className="fade-in">
     <div className="flex items-end justify-between mb-6">
@@ -213,9 +242,9 @@ export default function PlansView() {
         {plan && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
       </aside>
       <div className="xl:col-span-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Pan y zoom siempre disponibles · Coordenadas normalizadas (0–1)</span></div></div>
+        <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Pan y zoom siempre disponibles · Coordenadas normalizadas (0–1)</span></div>{plan && <button type="button" aria-pressed={backgroundDimmed} disabled={backgroundPreferenceSaving} onClick={() => void toggleBackgroundLayer()} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">{backgroundDimmed ? 'Quitar capa de fondo' : 'Aplicar capa de fondo'}</button>}</div>
         {loading ? <div className="h-[600px] flex items-center justify-center text-sm text-slate-500">Cargando planos…</div> : plan && currentVersion ? <div className="relative">
-          <FloorPlanViewer dziUrl={floorPlanDziUrl(projectId, plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} highlightedAssetId={focusedAssetId} actionsRef={viewerActions} onReady={markViewerReady} onEmptyQuickClick={(point, anchor) => { setMarkerPopover(null); if (placementTarget && !editor.markers.some((marker) => marker.assetId === placementTarget.id)) { placeAsset(placementTarget, point); return } setPlacementPopover({ point, anchor }) }} onSelectMarker={(marker, anchor) => { setPlacementTarget(null); setPlacementPopover(null); setFocusedAssetId(marker.assetId); setMarkerPopover({ markerId: marker.id, anchor }) }} onMarkerDragStart={(markerId) => { setMarkerPopover(null); editor.beginMove(markerId) }} onMarkerDrag={(markerId, point) => editor.previewMove(markerId, point)} onMarkerDragEnd={() => editor.endMove()} />
+          <FloorPlanViewer dziUrl={floorPlanDziUrl(projectId, plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} highlightedAssetId={focusedAssetId} backgroundDimmed={backgroundDimmed} actionsRef={viewerActions} onReady={markViewerReady} onEmptyQuickClick={(point, anchor) => { setMarkerPopover(null); if (placementTarget && !editor.markers.some((marker) => marker.assetId === placementTarget.id)) { placeAsset(placementTarget, point); return } setPlacementPopover({ point, anchor }) }} onSelectMarker={(marker, anchor) => { setPlacementTarget(null); setPlacementPopover(null); setFocusedAssetId(marker.assetId); setMarkerPopover({ markerId: marker.id, anchor }) }} onMarkerDragStart={(markerId) => { setMarkerPopover(null); editor.beginMove(markerId) }} onMarkerDrag={(markerId, point) => editor.previewMove(markerId, point)} onMarkerDragEnd={() => editor.endMove()} />
           <FloorPlanAssetSearch search={assetSearch} assets={searchedAssets} markers={editor.markers} onSearchChange={setAssetSearch} onFocusMarker={(marker) => { setMarkerPopover(null); viewerActions.current?.focus(marker) }} onStartPlacement={(asset) => { setAssetSearch(''); setPlacementPopover(null); setMarkerPopover(null); setPlacementTarget(asset) }} />
           {placementTarget && <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-brand-200 bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:border-brand-800 dark:bg-slate-900/95"><span>Elige una zona para <strong>{placementTarget.name}</strong></span><button type="button" onClick={() => setPlacementTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancelar</button></div>}
           {placementPopover && <FloorPlanPlacementPopover anchor={placementPopover.anchor} searchAssets={async (query) => (await fetchFloorPlanAssets(projectId, plan.id, query)).data.filter((asset) => !editor.markers.some((marker) => marker.assetId === asset.id))} onChoose={(asset) => placeAsset(asset, placementPopover.point)} onClose={() => setPlacementPopover(null)} />}

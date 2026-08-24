@@ -443,6 +443,11 @@ export interface ApiFloorPlan {
   markersTruncated?: boolean
 }
 
+export interface ApiFloorPlanPreference {
+  floorPlanId: number
+  backgroundDimmed: boolean
+}
+
 export interface ApiAssetFloorPlanPlacement {
   planId: number
   planName: string
@@ -918,6 +923,14 @@ export function deleteFloorPlan(projectId: number, id: number): Promise<void> {
   return request<void>(projectPath(projectId, `/floor-plans/${id}`), { method: 'DELETE' })
 }
 
+export function fetchFloorPlanPreference(projectId: number, floorPlanId: number): Promise<ApiFloorPlanPreference> {
+  return request(projectPath(projectId, `/floor-plan-preferences/${floorPlanId}`))
+}
+
+export function updateFloorPlanPreference(projectId: number, floorPlanId: number, backgroundDimmed: boolean): Promise<ApiFloorPlanPreference> {
+  return request(projectPath(projectId, `/floor-plan-preferences/${floorPlanId}`), { method: 'PUT', body: JSON.stringify({ backgroundDimmed }) })
+}
+
 export function createFloorPlanVersion(projectId: number, id: number, file: File): Promise<ApiFloorPlan> {
   const form = new FormData()
   form.set('file', file)
@@ -1128,6 +1141,10 @@ export function archiveProject(projectId: number): Promise<ApiProjectSummary> {
 
 export function restoreProject(projectId: number): Promise<ApiProjectSummary> {
   return request<ApiProjectSummary>(`/projects/${projectId}/restore`, { method: 'POST' })
+}
+
+export function deleteProject(projectId: number): Promise<void> {
+  return request<void>(`/projects/${projectId}`, { method: 'DELETE' })
 }
 export function copyProjectConfiguration(targetProjectId: number, sourceProjectId: number): Promise<{ success: boolean }> {
   return request<{ success: boolean }>(`/projects/${targetProjectId}/copy-configuration`, { method: 'POST', body: JSON.stringify({ sourceProjectId }) })
