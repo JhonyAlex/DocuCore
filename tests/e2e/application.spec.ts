@@ -89,12 +89,12 @@ test.describe('DocuCore application', () => {
   test('collapses and restores the global sidebar', async ({ page, consoleIssues }) => {
     await page.goto('/dashboard')
 
-    const toggle = page.getByLabel('Plegar panel lateral')
+    const toggle = page.locator('aside').getByLabel('Plegar panel lateral')
     await toggle.click()
     await expect(page.locator('aside')).toHaveClass(/w-16/)
     await expect(page.getByLabel('Desplegar panel lateral')).toBeVisible()
 
-    await page.getByLabel('Desplegar panel lateral').click()
+    await page.locator('aside').click({ position: { x: 8, y: 180 } })
     await expect(page.locator('aside')).toHaveClass(/w-64/)
     expect(consoleIssues).toEqual([])
   })
