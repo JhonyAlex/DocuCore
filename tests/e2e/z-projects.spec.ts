@@ -1,6 +1,56 @@
 import { expect, test } from './fixtures'
 
 test.describe('PROJ-01 proyectos', () => {
+  test('shows the project plan limit before opening the creation form', async ({ page, consoleIssues }) => {
+    await page.route('**/api/billing/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          workspaceId: 1,
+          name: 'Workspace Starter',
+          slug: 'workspace-starter',
+          billingStatus: 'ACTIVE',
+          billingSource: 'MANUAL',
+          planKey: 'STARTER',
+          planName: 'Starter',
+          maxActiveProjects: 1,
+          activeProjectsCount: 1,
+          archivedProjectsCount: 0,
+          maxActiveMembers: 3,
+          activeMembersCount: 1,
+          planLockedMembersCount: 0,
+          suspendedMembersCount: 0,
+          planLockedProjectsCount: 0,
+          remainingMemberSeats: 2,
+          projectsCompliant: true,
+          membersCompliant: true,
+          complianceStatus: 'COMPLIANT',
+          canCreateProject: false,
+          canDowngradeToStarter: true,
+          canInviteMember: true,
+          canActivateMember: true,
+          trialStartedAt: null,
+          trialEndsAt: null,
+          trialDaysLeft: 0,
+          isEntitledToWrite: true,
+          entitlementReason: null,
+          hasSubscription: true,
+          currentPeriodEnd: null,
+          graceEndsAt: null,
+          cancelAtPeriodEnd: false,
+          role: 'OWNER',
+          isOwner: true,
+        }),
+      })
+    })
+    await page.goto('/projects')
+    await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveText('Has alcanzado el límite de proyectos activos de tu plan. Archiva uno o actualiza tu plan.')
+    await expect(page.getByRole('dialog', { name: 'Nuevo proyecto' })).toHaveCount(0)
+    expect(consoleIssues).toEqual([])
+  })
+
   test('creates, opens, archives and restores a project from the portfolio', async ({ page, consoleIssues }) => {
     const code = `E2E-PROJ-${Date.now()}`
     const name = `Proyecto aislado ${Date.now()}`
