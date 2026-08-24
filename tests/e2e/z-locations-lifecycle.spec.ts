@@ -464,9 +464,17 @@ test.describe('Locations lifecycle', () => {
     await goToLocations(page)
     const grandchildLink = page.locator('a', { hasText: grandchild.name })
     // The bootstrap already opens root → child because child is the relevant
-    // branch; only expand further when the leaf has not yet been requested.
+    // branch in the canonical seed. Con los controles P0 puede seleccionar
+    // otra raíz, así que abre primero Raíz E2E cuando Hijo E2E aún no existe.
     if (!await grandchildLink.isVisible()) {
-      await page.locator('summary', { hasText: child.name }).click()
+      const childSummary = page.locator('summary', { hasText: child.name })
+      if (!await childSummary.isVisible()) {
+        const rootSummary = page.locator('summary', { hasText: root.name })
+        await expect(rootSummary).toBeVisible()
+        await rootSummary.click()
+        await expect(childSummary).toBeVisible()
+      }
+      await childSummary.click()
       await expect(grandchildLink).toBeVisible()
     }
     await grandchildLink.click()
