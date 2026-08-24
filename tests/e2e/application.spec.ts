@@ -86,6 +86,19 @@ test.describe('DocuCore application', () => {
     expect(consoleIssues).toEqual([])
   })
 
+  test('collapses and restores the global sidebar', async ({ page, consoleIssues }) => {
+    await page.goto('/dashboard')
+
+    const toggle = page.getByLabel('Plegar panel lateral')
+    await toggle.click()
+    await expect(page.locator('aside')).toHaveClass(/w-16/)
+    await expect(page.getByLabel('Desplegar panel lateral')).toBeVisible()
+
+    await page.getByLabel('Desplegar panel lateral').click()
+    await expect(page.locator('aside')).toHaveClass(/w-64/)
+    expect(consoleIssues).toEqual([])
+  })
+
   test('switches project without leaving the current operational section', async ({ page, consoleIssues }) => {
     await page.goto('/projects/1/assets')
     await expect(page.getByText('Torno CNC Haas ST-20', { exact: true })).toBeVisible()

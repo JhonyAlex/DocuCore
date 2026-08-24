@@ -4,6 +4,7 @@ import KpiCard from '@/components/KpiCard'
 import DashboardChart from '@/components/DashboardChart'
 import { fetchDashboard, downloadDashboardExport, type ApiDashboardResponse } from '@/lib/api'
 import { useProject } from '@/contexts/ProjectContext'
+import SectionActions from '@/components/SectionActions'
 
 const expirationIcons: Record<string, ReactNode> = {
   file: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
@@ -11,20 +12,9 @@ const expirationIcons: Record<string, ReactNode> = {
   grid: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3z" /><path d="M3 9h18M9 21V9" /></svg>,
 }
 
-function formatSpanishDate(isoDateString: string): string {
-  const date = new Date(isoDateString)
-  const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
-  return new Intl.DateTimeFormat('es-ES', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(utcDate)
-}
-
 export default function DashboardView() {
   const navigate = useNavigate()
-  const { project, projectId } = useProject()
+  const { projectId } = useProject()
   if (projectId === null) throw new Error('DashboardView requires a project scope')
   const [range, setRange] = useState<'30d' | '7d' | 'year'>('30d')
   const [dashboardData, setDashboardData] = useState<ApiDashboardResponse | null>(null)
@@ -67,9 +57,6 @@ export default function DashboardView() {
   const bars = dashboardData?.chartBars ?? []
   const activity = dashboardData?.activityFeed ?? []
 
-  const projectName = dashboardData?.project.name ?? project?.name ?? 'Proyecto'
-  const formattedDate = dashboardData ? formatSpanishDate(dashboardData.referenceDate) : 'Cargando datos…'
-
   // Enlazar navegación a KPIs
   const interactiveKpis = kpis.map((kpi) => {
     let onClick: (() => void) | undefined
@@ -87,14 +74,7 @@ export default function DashboardView() {
 
   return (
     <section className="fade-in">
-      <div className="flex items-end justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Panel general</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Resumen del proyecto <span className="font-medium text-slate-700 dark:text-slate-300">{projectName}</span> · {formattedDate}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <SectionActions><div className="flex items-center gap-2">
           <select
             value={range}
             onChange={(e) => setRange(e.target.value as '30d' | '7d' | 'year')}
@@ -113,8 +93,7 @@ export default function DashboardView() {
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
             {exporting ? 'Exportando…' : 'Exportar'}
           </button>
-        </div>
-      </div>
+        </div></SectionActions>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         {loading && !dashboardData

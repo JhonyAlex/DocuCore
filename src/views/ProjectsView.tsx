@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ProjectFormModal from '@/components/ProjectFormModal'
+import SectionActions from '@/components/SectionActions'
 import { archiveProject, ApiError, createProject, deleteProject, fetchBillingStatus, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
 import { projectThemeClass } from '../../shared/projectThemes'
 
@@ -313,13 +314,7 @@ export default function ProjectsView() {
 
   return (
     <section className="fade-in">
-      <div className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Proyectos</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Organiza instalaciones, plantas, clientes o proyectos documentales
-          </p>
-        </div>
+      <SectionActions>
         <button
           type="button"
           disabled={checkingCapacity}
@@ -332,7 +327,7 @@ export default function ProjectsView() {
           </svg>
           {checkingCapacity ? 'Comprobando…' : 'Nuevo proyecto'}
         </button>
-      </div>
+      </SectionActions>
       {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         {loading ? (

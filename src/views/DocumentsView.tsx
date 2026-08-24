@@ -9,6 +9,7 @@ import { useSelection } from '@/hooks/useSelection'
 import { deleteDocument, downloadDocument, fetchDocument, fetchDocumentKpis, fetchDocuments, type ApiDocument } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { useProject } from '@/contexts/ProjectContext'
+import SectionActions from '@/components/SectionActions'
 
 const LIMIT = 5
 
@@ -125,7 +126,7 @@ export default function DocumentsView() {
 
   return (
     <section className="fade-in">
-      <div className="flex items-end justify-between mb-6"><div><h1 className="text-2xl font-semibold tracking-tight">Documentos</h1><p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Fichas técnicas, certificados, manuales y contratos</p></div><div className="flex items-center gap-2"><DocumentsFilters filters={filters} onChange={(next) => { setFilters(next); setPage(1); selection.clear() }} page={page} total={total} totalPages={totalPages} onPageChange={(next) => { setPage(next); selection.clear() }} /><button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>Subir documento</button></div></div>
+      <SectionActions><div className="flex items-center gap-2"><DocumentsFilters filters={filters} onChange={(next) => { setFilters(next); setPage(1); selection.clear() }} page={page} total={total} totalPages={totalPages} onPageChange={(next) => { setPage(next); selection.clear() }} /><button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>Subir documento</button></div></SectionActions>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">{cards.map((card) => <div key={card.label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex items-center gap-3"><div className={`w-10 h-10 rounded-lg ${card.className} flex items-center justify-center text-lg font-semibold`}>{card.value}</div><div><div className="text-sm font-medium">{card.label}</div><div className="text-xs text-slate-500">{card.sublabel}</div></div></div>)}</div>
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
         <button type="button" onClick={() => void handleBulkDownload()} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Descargar</button>

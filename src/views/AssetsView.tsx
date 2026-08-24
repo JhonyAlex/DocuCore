@@ -15,6 +15,7 @@ import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
 import { useAssetCreateRequest } from '@/contexts/AssetCreateContext'
+import SectionActions from '@/components/SectionActions'
 import { useProject } from '@/contexts/ProjectContext'
 
 const LIMIT = 6
@@ -387,12 +388,7 @@ export default function AssetsView() {
 
   return (
     <section className="fade-in">
-      <div className="flex items-end justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Activos</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{trashMode ? 'Activos eliminados · recuperables hasta 30 días' : 'Inventario completo del proyecto activo'}</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <SectionActions><div className="flex items-center gap-2">
           <button type="button" onClick={trashMode ? leaveTrash : enterTrash} className={`px-3 py-2 rounded-lg border text-sm flex items-center gap-1.5 ${trashMode ? 'border-brand-600 text-brand-600 bg-brand-50 dark:bg-brand-900/20 dark:border-brand-500 dark:text-brand-300' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
             {trashMode ? 'Volver a activos' : 'Papelera'}
@@ -404,8 +400,7 @@ export default function AssetsView() {
               Exportar CSV
             </button>
           )}
-        </div>
-      </div>
+        </div></SectionActions>
 
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
         {trashMode ? (
