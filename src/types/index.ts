@@ -23,6 +23,7 @@ export interface Pagination {
 export type BillingStatus = 'PENDING_VERIFICATION' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'SUSPENDED'
 export type BillingSource = 'STRIPE' | 'MANUAL'
 export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER'
+export type WorkspaceMemberStatus = 'ACTIVE' | 'SUSPENDED' | 'PLAN_LOCKED'
 export type PlanKey = 'STARTER' | 'PRO'
 
 export interface ApiWorkspaceSummary {
@@ -51,7 +52,18 @@ export interface ApiBillingStatus {
   maxActiveProjects: number
   activeProjectsCount: number
   archivedProjectsCount: number
+  maxActiveMembers: number
+  activeMembersCount: number
+  planLockedMembersCount: number
+  suspendedMembersCount: number
+  planLockedProjectsCount: number
+  remainingMemberSeats: number
+  projectsCompliant: boolean
+  membersCompliant: boolean
+  complianceStatus: string
   canDowngradeToStarter: boolean
+  canInviteMember: boolean
+  canActivateMember: boolean
   trialStartedAt: string | null
   trialEndsAt: string | null
   trialDaysLeft: number
@@ -59,6 +71,7 @@ export interface ApiBillingStatus {
   entitlementReason: string | null
   hasSubscription: boolean
   currentPeriodEnd: string | null
+  graceEndsAt: string | null
   cancelAtPeriodEnd: boolean
   stripeCustomerId?: string | null
   stripeSubscriptionId?: string | null

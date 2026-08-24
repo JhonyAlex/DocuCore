@@ -1,13 +1,18 @@
-import { readdir, mkdir, writeFile, rm } from 'node:fs/promises'
+import { readdir, mkdir, writeFile, rm, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { runDbScript } from '../helpers/dbScripts'
+import { E2E_DATABASE_URL } from '../helpers/database'
 
 type LocationRow = { id: number; name: string; code: string; parentId: number | null }
 
+// Entorno del script destructivo: solo el destino E2E canónico (P0-REM-01).
+// DATABASE_URL es la constante fija, nunca derivada del shell/.env; los
+// storages los fija dbScripts.ts bajo test-results (no se permiten rutas
+// alternativas).
 const e2eEnv = {
-  DATABASE_URL: process.env.DATABASE_URL ?? `postgresql://docucore:docucore@127.0.0.1:${process.env.DOCUCORE_DB_PORT ?? '5436'}/docucore?schema=public`,
+  DATABASE_URL: E2E_DATABASE_URL,
   DOCUMENT_STORAGE_PATH: `${process.cwd()}/test-results/e2e-documents`,
   FLOOR_PLAN_STORAGE_PATH: `${process.cwd()}/test-results/e2e-floor-plans`,
 }
@@ -42,6 +47,13 @@ async function goToLocations(page: Page): Promise<void> {
 test.describe('Locations lifecycle', () => {
   test.describe.configure({ mode: 'serial' })
 
+  // Esta spec modifica deliberadamente el dataset E2E. Restaura siempre el
+  // seed canónico, incluso si un caso serial falla y Playwright omite los
+  // restantes, para no contaminar notificaciones, sugerencias ni visuales.
+  test.afterAll(async () => {
+    await runDbScript('db:seed', e2eEnv)
+  })
+
   test('reset leaves zero assets, documents, locations and empty storage', async ({ page }) => {
     await runDbScript('db:reset:manual-test', e2eEnv)
 
@@ -59,53 +71,177 @@ test.describe('Locations lifecycle', () => {
     expect((await locsRes.json() as { locations: unknown[] }).locations.length).toBe(0)
   })
 
-  test('reset fails with an error when the storage cannot be safely cleaned', async ({ page }) => {
-    // Un marcador corrupto debe hacer que la limpieza segura falle y que el
-    // script termine con error, aunque el reset de BD ya se haya completado
-    // (reset parcial: nunca se silencia una limpieza no garantizada).
-    const corruptDir = path.join(process.cwd(), 'test-results', 'corrupt-storage')
-    await rm(corruptDir, { recursive: true, force: true })
-    await mkdir(corruptDir, { recursive: true })
-    await writeFile(path.join(corruptDir, '.docucore-storage.json'), '{marcador corrupto', 'utf8')
-    await writeFile(path.join(corruptDir, 'f81f42c8-0000-4000-8000-000000000000.pdf'), 'contenido', 'utf8')
+  test('reset is rejected before mutating the database when the storage marker is corrupt', async ({ page }) => {
+    // Activo de control: con la prevalidación READ-ONLY, el reset muere antes
+    // del TRUNCATE y este activo debe seguir existiendo tras el rechazo.
+    const [typesRes, statusesRes, usersRes] = await Promise.all([
+      page.request.get('/api/asset-types'),
+      page.request.get('/api/statuses'),
+      page.request.get('/api/users'),
+    ])
+    const types = await typesRes.json() as Array<{ id: number; name: string }>
+    const statuses = await statusesRes.json() as Array<{ id: number; name: string }>
+    const users = await usersRes.json() as Array<{ id: number }>
+    const controlLocation = await page.request.post('/api/locations', {
+      data: { name: 'Control P1', code: 'KEEP-LOC', surface: '1 m²', parentId: null, responsibleId: users[0].id, projectId: 1 },
+    })
+    expect(controlLocation.status()).toBe(201)
+    const controlAsset = await page.request.post('/api/assets', {
+      data: {
+        code: 'KEEP-ME',
+        name: 'Activo de control P1',
+        serialNumber: 'KEEP-ME',
+        installDate: '2026-07-15',
+        typeId: types[0].id,
+        statusId: statuses[0].id,
+        locationId: ((await controlLocation.json()) as { id: number }).id,
+        projectId: 1,
+        responsibleId: users[0].id,
+        initials: 'KP',
+      },
+    })
+    expect(controlAsset.status()).toBe(201)
+
+    // El marcador se corrompe dentro del storage E2E canónico: dbScripts.ts
+    // fija el contrato P0-REM-01 y no permite rutas alternativas.
+    const storageDir = path.join(process.cwd(), 'test-results', 'e2e-documents')
+    const markerPath = path.join(storageDir, '.docucore-storage.json')
+    const markerBackup = await readFile(markerPath, 'utf8').catch(() => null)
+    const probeName = 'f81f42c8-0000-4000-8000-000000000000.pdf'
+    const probePath = path.join(storageDir, probeName)
+
+    await writeFile(markerPath, '{marcador corrupto', 'utf8')
+    await writeFile(probePath, 'contenido', 'utf8')
 
     try {
-      const result = await runDbScript('db:reset:manual-test', { ...e2eEnv, DOCUMENT_STORAGE_PATH: corruptDir })
+      const result = await runDbScript('db:reset:manual-test', e2eEnv)
       expect(result.code).not.toBe(0)
 
-      // El reset de BD sí se completó (parcial) y el storage quedó intacto.
-      const assetsRes = await page.request.get('/api/assets')
-      expect((await assetsRes.json() as { total: number }).total).toBe(0)
-      expect((await readdir(corruptDir))).toContain('f81f42c8-0000-4000-8000-000000000000.pdf')
+      // La BD NO fue mutada: la prevalidación ocurre antes del TRUNCATE y el
+      // activo de control sigue existiendo; el storage tampoco se tocó.
+      const assetsRes = await page.request.get('/api/assets?search=KEEP-ME')
+      expect((await assetsRes.json() as { total: number }).total).toBe(1)
+      expect((await readdir(storageDir))).toContain(probeName)
     } finally {
-      await rm(corruptDir, { recursive: true, force: true })
+      // Restaurar el marcador válido y retirar el fichero de prueba para no
+      // contaminar las pruebas siguientes.
+      await rm(probePath, { force: true })
+      await writeFile(markerPath, markerBackup ?? JSON.stringify({ owner: 'docucore-document-storage', createdAt: new Date().toISOString() }), 'utf8')
     }
   })
 
-  test('reset fails when a managed file cannot be removed (rm error reaches the script)', async ({ page }) => {
-    // Marcador válido y una "clave gestionada" que no puede eliminarse: un
-    // directorio con ese nombre y contenido dentro. `rm` sin recursive falla
-    // con ENOTEMPTY de forma determinista en Windows y POSIX, y el script debe
-    // terminar con error en vez de silenciar la limpieza.
-    const blockedDir = path.join(process.cwd(), 'test-results', 'blocked-rm-storage')
-    await rm(blockedDir, { recursive: true, force: true })
-    await mkdir(blockedDir, { recursive: true })
-    await writeFile(path.join(blockedDir, '.docucore-storage.json'), JSON.stringify({ owner: 'docucore-document-storage', createdAt: new Date().toISOString() }), 'utf8')
+  test('reset is rejected before mutating the database when a managed key is a directory', async ({ page }) => {
+    // Activo de control PROPIO de esta prueba: la prevalidación READ-ONLY debe
+    // rechazar la estructura inválida antes del TRUNCATE y este activo debe
+    // seguir existiendo tras el rechazo. No depende del control del test
+    // anterior (cada prueba crea y verifica su propio registro de control).
+    const [typesRes, statusesRes, usersRes] = await Promise.all([
+      page.request.get('/api/asset-types'),
+      page.request.get('/api/statuses'),
+      page.request.get('/api/users'),
+    ])
+    const types = await typesRes.json() as Array<{ id: number; name: string }>
+    const statuses = await statusesRes.json() as Array<{ id: number; name: string }>
+    const users = await usersRes.json() as Array<{ id: number }>
+    const controlLocation = await page.request.post('/api/locations', {
+      data: { name: 'Control P1 dir', code: 'KEEP-DIR-LOC', surface: '1 m²', parentId: null, responsibleId: users[0].id, projectId: 1 },
+    })
+    expect(controlLocation.status()).toBe(201)
+    const controlAsset = await page.request.post('/api/assets', {
+      data: {
+        code: 'KEEP-DIR',
+        name: 'Activo de control P1 dir',
+        serialNumber: 'KEEP-DIR',
+        installDate: '2026-07-15',
+        typeId: types[0].id,
+        statusId: statuses[0].id,
+        locationId: ((await controlLocation.json()) as { id: number }).id,
+        projectId: 1,
+        responsibleId: users[0].id,
+        initials: 'KD',
+      },
+    })
+    expect(controlAsset.status()).toBe(201)
+
+    const storageDir = path.join(process.cwd(), 'test-results', 'e2e-documents')
     const managedName = 'f81f42c8-0000-4000-8000-000000000000.pdf'
-    const managedEntry = path.join(blockedDir, managedName)
+    const managedEntry = path.join(storageDir, managedName)
+    await rm(managedEntry, { recursive: true, force: true })
     await mkdir(managedEntry, { recursive: true })
     await writeFile(path.join(managedEntry, 'contenido-interno.txt'), 'no vacío', 'utf8')
 
     try {
-      const result = await runDbScript('db:reset:manual-test', { ...e2eEnv, DOCUMENT_STORAGE_PATH: blockedDir })
+      const result = await runDbScript('db:reset:manual-test', e2eEnv)
       expect(result.code).not.toBe(0)
 
-      // Reset parcial: la BD quedó vacía pero la entrada gestionada sigue ahí.
-      const assetsRes = await page.request.get('/api/assets')
-      expect((await assetsRes.json() as { total: number }).total).toBe(0)
-      expect((await readdir(blockedDir))).toContain(managedName)
+      // BD intacta tras el rechazo: el activo de control de ESTA prueba no se
+      // ha perdido y la entrada problemática sigue en el storage.
+      const assetsRes = await page.request.get('/api/assets?search=KEEP-DIR')
+      expect((await assetsRes.json() as { total: number }).total).toBe(1)
+      expect((await readdir(storageDir))).toContain(managedName)
     } finally {
-      await rm(blockedDir, { recursive: true, force: true })
+      await rm(managedEntry, { recursive: true, force: true })
+    }
+  })
+
+  test('seed is rejected before mutating the database when the storage marker is corrupt', async ({ page }) => {
+    // Activo de control propio: el seed ejecuta un TRUNCATE que borraría todo;
+    // con la prevalidación READ-ONLY, un marcador corrupto lo bloquea antes de
+    // mutar nada y este activo debe seguir existiendo tras el rechazo.
+    const [typesRes, statusesRes, usersRes] = await Promise.all([
+      page.request.get('/api/asset-types'),
+      page.request.get('/api/statuses'),
+      page.request.get('/api/users'),
+    ])
+    const types = await typesRes.json() as Array<{ id: number; name: string }>
+    const statuses = await statusesRes.json() as Array<{ id: number; name: string }>
+    const users = await usersRes.json() as Array<{ id: number }>
+    const controlLocation = await page.request.post('/api/locations', {
+      data: { name: 'Control seed', code: 'KEEP-SEED-LOC', surface: '1 m²', parentId: null, responsibleId: users[0].id, projectId: 1 },
+    })
+    expect(controlLocation.status()).toBe(201)
+    const controlAsset = await page.request.post('/api/assets', {
+      data: {
+        code: 'KEEP-SEED',
+        name: 'Activo de control seed',
+        serialNumber: 'KEEP-SEED',
+        installDate: '2026-07-15',
+        typeId: types[0].id,
+        statusId: statuses[0].id,
+        locationId: ((await controlLocation.json()) as { id: number }).id,
+        projectId: 1,
+        responsibleId: users[0].id,
+        initials: 'KS',
+      },
+    })
+    expect(controlAsset.status()).toBe(201)
+
+    // El marcador se corrompe dentro del storage E2E canónico: dbScripts.ts
+    // fija el contrato P0-REM-01 y no permite rutas alternativas.
+    const storageDir = path.join(process.cwd(), 'test-results', 'e2e-documents')
+    const markerPath = path.join(storageDir, '.docucore-storage.json')
+    const markerBackup = await readFile(markerPath, 'utf8').catch(() => null)
+    const probeName = 'f81f42c8-0000-4000-8000-000000000000.pdf'
+    const probePath = path.join(storageDir, probeName)
+
+    await writeFile(markerPath, '{marcador corrupto', 'utf8')
+    await writeFile(probePath, 'contenido', 'utf8')
+
+    try {
+      const result = await runDbScript('db:seed', e2eEnv)
+      expect(result.code).not.toBe(0)
+
+      // La BD NO fue mutada: la prevalidación ocurre antes del TRUNCATE (y
+      // antes de conectar Prisma) y el activo de control sigue existiendo; el
+      // storage tampoco se tocó.
+      const assetsRes = await page.request.get('/api/assets?search=KEEP-SEED')
+      expect((await assetsRes.json() as { total: number }).total).toBe(1)
+      expect((await readdir(storageDir))).toContain(probeName)
+    } finally {
+      // Restaurar el marcador válido y retirar el fichero de prueba para no
+      // contaminar las pruebas siguientes.
+      await rm(probePath, { force: true })
+      await writeFile(markerPath, markerBackup ?? JSON.stringify({ owner: 'docucore-document-storage', createdAt: new Date().toISOString() }), 'utf8')
     }
   })
 
@@ -255,10 +391,17 @@ test.describe('Locations lifecycle', () => {
 
   test('tree and detail show the same count for a branch', async ({ page }) => {
     await goToLocations(page)
-    // PERF-01 has already opened the root path to the relevant initial leaf.
-    // Opening the selected branch itself remains an explicit lazy action.
-    await expect(page.locator('summary', { hasText: 'Hijo E2E' })).toBeVisible()
-    await page.locator('summary', { hasText: 'Hijo E2E' }).click()
+    // El bootstrap abre el camino de la primera hoja relevante, que puede ser
+    // otra raíz cuando los controles P0 existen. Expande Raíz E2E solo cuando
+    // su hijo todavía no ha sido cargado.
+    const childSummary = page.locator('summary', { hasText: 'Hijo E2E' })
+    if (!await childSummary.isVisible()) {
+      const rootSummary = page.locator('summary', { hasText: 'Raíz E2E' })
+      await expect(rootSummary).toBeVisible()
+      await rootSummary.click()
+      await expect(childSummary).toBeVisible()
+    }
+    await childSummary.click()
 
     // Hijo E2E tiene el activo ACT-E2E en su subrama (nieto vacío).
     const treeCount = await page.locator('summary', { hasText: /Hijo E2E/ }).locator('span.ml-auto').textContent()
@@ -321,9 +464,17 @@ test.describe('Locations lifecycle', () => {
     await goToLocations(page)
     const grandchildLink = page.locator('a', { hasText: grandchild.name })
     // The bootstrap already opens root → child because child is the relevant
-    // branch; only expand further when the leaf has not yet been requested.
+    // branch in the canonical seed. Con los controles P0 puede seleccionar
+    // otra raíz, así que abre primero Raíz E2E cuando Hijo E2E aún no existe.
     if (!await grandchildLink.isVisible()) {
-      await page.locator('summary', { hasText: child.name }).click()
+      const childSummary = page.locator('summary', { hasText: child.name })
+      if (!await childSummary.isVisible()) {
+        const rootSummary = page.locator('summary', { hasText: root.name })
+        await expect(rootSummary).toBeVisible()
+        await rootSummary.click()
+        await expect(childSummary).toBeVisible()
+      }
+      await childSummary.click()
       await expect(grandchildLink).toBeVisible()
     }
     await grandchildLink.click()
@@ -345,14 +496,19 @@ test.describe('Locations lifecycle', () => {
     // PERF-01 precarga el camino de la primera hoja relevante; el resto del
     // árbol sigue diferido y no exige una descarga completa al entrar.
     const child = project1.find((location) => location.code === 'H-E2E')!
-    await expect(page.locator('summary, a', { hasText: child.name }).first()).toBeVisible()
+    const childNode = page.locator('summary, a', { hasText: child.name }).first()
+    if (!await childNode.isVisible()) {
+      const root = project1.find((location) => location.code === 'R-E2E')!
+      const rootSummary = page.locator('summary', { hasText: root.name })
+      await expect(rootSummary).toBeVisible()
+      await rootSummary.click()
+    }
+    await expect(childNode).toBeVisible()
 
     // Persistencia: el nieto borrado ya no aparece y el resto sigue.
     await page.reload()
     await expect(page.getByText('Nieto E2E', { exact: true })).toHaveCount(0)
     await expect(page.locator('summary', { hasText: 'Raíz E2E' })).toBeVisible()
 
-    // Restaurar el seed canónico para el resto de la suite.
-    await runDbScript('db:seed', e2eEnv)
   })
 })

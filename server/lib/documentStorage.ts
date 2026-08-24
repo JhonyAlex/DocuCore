@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -31,6 +31,25 @@ export class StorageMarkerError extends Error {
     super(message)
     this.name = 'StorageMarkerError'
   }
+}
+
+// Error de prevalidación READ-ONLY: la estructura del almacenamiento haría
+// fallar cleanDocumentStorage() (p. ej. un directorio con nombre de clave
+// gestionada). Se lanza antes de cualquier mutación de BD.
+export class StoragePrevalidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StoragePrevalidationError'
+  }
+}
+
+// Opciones de prevalidación READ-ONLY. `allowProvisionable` distingue las dos
+// operaciones destructivas: el reset exige un almacenamiento ya gestionado
+// (marcador válido), mientras que el seed admite además un storage inexistente
+// o vacío sin marcador, únicamente si la provisión posterior (mkdir +
+// marcador) podrá completarse de forma segura.
+export interface StoragePrevalidationOptions {
+  allowProvisionable: boolean
 }
 
 export function documentStoragePath(): string {
@@ -77,10 +96,29 @@ async function ensureStorageMarker(): Promise<void> {
 export async function assertValidStorage(): Promise<string> {
   const base = documentStoragePath()
   assertSafeStorageRoot(base)
+  // El marcador debe ser un archivo NORMAL (P0-REM-01, P1 #4): un
+  // symlink/junction —válido o roto— o un directorio no es un marcador de
+  // DocuCore y se bloquea antes de confiar en su contenido. Solo la ausencia
+  // real (ENOENT) es provisionable; el resto de errores de lstat
+  // (EACCES/EPERM/I/O) se propagan (fail-closed).
+  try {
+    const markerLstat = await lstat(storageMarkerPath())
+    if (markerLstat.isSymbolicLink() || !markerLstat.isFile()) {
+      throw new StorageMarkerError('INVALID_MARKER', 'Invalid document storage path: DocuCore marker is not a regular file (symlink/junction or directory)')
+    }
+  } catch (error) {
+    if (error instanceof StorageMarkerError) throw error
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    throw new StorageMarkerError('MISSING_MARKER', 'Invalid document storage path: missing DocuCore marker')
+  }
   let marker: string
   try {
     marker = await readFile(storageMarkerPath(), 'utf8')
-  } catch {
+  } catch (error) {
+    // Carrera posterior al lstat: solo la ausencia real del marcador (ENOENT)
+    // es provisionable. Un fallo de permisos (EACCES/EPERM) o de I/O no puede
+    // tratarse como «sin marcador»: se propaga y bloquea (fail-closed).
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     throw new StorageMarkerError('MISSING_MARKER', 'Invalid document storage path: missing DocuCore marker')
   }
   let parsed: unknown
@@ -141,6 +179,106 @@ export async function readDocumentFile(storageKey: string): Promise<Buffer> {
 
 export async function removeDocumentFile(storageKey: string): Promise<void> {
   await rm(safeStoragePath(storageKey), { force: true })
+}
+
+/**
+ * Prevalidación READ-ONLY del almacenamiento de documentos para operaciones
+ * destructivas: verifica que la ruta es válida, que el marcador existe y
+ * pertenece a DocuCore (o, con `allowProvisionable`, que el storage puede
+ * provisionarse de forma segura) y que el marcador y las entradas con nombre
+ * de clave gestionada son objetos NORMALES —archivos regulares, sin
+ * symlinks/junctions (válidos o rotos); un directorio con ese nombre haría
+ * fallar el `rm` sin `recursive`— que cleanDocumentStorage() podrá eliminar. Las
+ * entradas no gestionadas se ignoran, igual que hará la limpieza. No escribe
+ * ni borra nada: se invoca antes de mutar la BD. No garantiza atomicidad
+ * BD/filesystem frente a carreras o fallos I/O posteriores al precheck
+ * (TOCTOU).
+ *
+ * - `{ allowProvisionable: false }` (reset): el marcador válido es
+ *   obligatorio; un storage inexistente o sin marcador se rechaza.
+ * - `{ allowProvisionable: true }` (seed): un storage inexistente o vacío sin
+ *   marcador se admite si la provisión posterior (mkdir recursivo + marcador)
+ *   podrá completarse de forma segura; un directorio no vacío sin marcador, un
+ *   marcador corrupto o de otro propietario, o una entrada gestionada con
+ *   estructura incompatible se rechazan igualmente antes de mutar la BD.
+ */
+export async function prevalidateDocumentStorage({ allowProvisionable }: StoragePrevalidationOptions): Promise<string> {
+  let base: string
+  try {
+    base = await assertValidStorage()
+  } catch (error) {
+    if (!(error instanceof StorageMarkerError) || error.code !== 'MISSING_MARKER') throw error
+    if (!allowProvisionable) {
+      throw new StorageMarkerError('MISSING_MARKER', 'Invalid document storage path: missing DocuCore marker (prevalidación estricta: el reset exige un marcador válido)')
+    }
+    await prevalidateProvisionableDocumentStorage()
+    return documentStoragePath()
+  }
+  const entries = await readdir(base)
+  for (const entry of entries) {
+    if (entry === STORAGE_MARKER_FILE) continue
+    if (!isManagedStorageKey(entry)) continue
+    let entryLstat
+    try {
+      // lstat no sigue el componente final: un symlink/junction (válido o
+      // roto) se reporta como enlace, no como el objeto al que apunta
+      // (P0-REM-01, P1 #4). Las entradas no gestionadas se ignoran sin
+      // inspección, igual que hará la limpieza.
+      entryLstat = await lstat(safeStoragePath(entry))
+    } catch {
+      throw new StoragePrevalidationError(`La entrada "${entry}" parece una clave de documento gestionada pero no se puede inspeccionar; la limpieza posterior no está garantizada.`)
+    }
+    if (entryLstat.isSymbolicLink()) {
+      throw new StoragePrevalidationError(`La entrada "${entry}" parece una clave de documento gestionada pero es un symlink/junction; cleanDocumentStorage() no podría eliminarla de forma segura.`)
+    }
+    if (!entryLstat.isFile()) {
+      throw new StoragePrevalidationError(`La entrada "${entry}" parece una clave de documento gestionada pero no es un archivo; cleanDocumentStorage() no podría eliminarla.`)
+    }
+  }
+  return base
+}
+
+// Comprobación READ-ONLY de que la provisión del marcador (mkdir recursivo +
+// readdir vacío + writeFile) podrá completarse sin conflicto estructural
+// previsible: la base no existe y su ancestro existente más cercano es un
+// directorio NORMAL (un archivo en el camino haría fallar el `mkdir`
+// posterior; un symlink/junction —válido o roto— haría que la provisión
+// atravesara un enlace, prohibido por P0-REM-01), o existe y es un directorio
+// vacío. Los componentes se inspeccionan con lstat, que NO sigue el componente
+// final: un enlace roto se detecta al alcanzar el propio enlace, y en Windows
+// los junction/reparse point se reportan como symlink. Un error de lstat
+// distinto de ENOENT (EACCES/EPERM/I/O) se propaga: nunca se trata como
+// inexistencia. No crea ni escribe nada.
+async function prevalidateProvisionableDocumentStorage(): Promise<void> {
+  const base = documentStoragePath()
+  assertSafeStorageRoot(base)
+  let current = base
+  for (;;) {
+    try {
+      const currentLstat = await lstat(current)
+      if (currentLstat.isSymbolicLink()) {
+        throw new StorageMarkerError('NOT_EMPTY', 'Invalid document storage path: not provisionable (an existing component of the path is a symlink/junction)')
+      }
+      if (!currentLstat.isDirectory()) {
+        throw new StorageMarkerError('NOT_EMPTY', 'Invalid document storage path: not provisionable (an existing ancestor is not a directory)')
+      }
+      const entries = await readdir(current)
+      if (current === base && entries.length > 0) {
+        throw new StorageMarkerError('NOT_EMPTY', 'Invalid document storage path: directory is not empty (no DocuCore marker)')
+      }
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      const parent = path.dirname(current)
+      if (parent === current) {
+        // Ni la base ni ningún ancestro existen hasta la raíz: el mkdir
+        // recursivo podrá crear la cadena completa (permisos aparte, no
+        // previsibles de forma read-only).
+        return
+      }
+      current = parent
+    }
+  }
 }
 
 // Elimina únicamente los ficheros gestionados (claves de almacenamiento

@@ -4,10 +4,14 @@ import {
   createBillingCheckoutSession,
   createBillingPortalSession,
   fetchBillingStatus,
+  initiatePlanChange,
   updateProfile,
 } from "@/lib/api"
 import type { ApiBillingStatus, PlanKey } from "@/types"
 import { useSession } from "@/contexts/SessionContext"
+import PlanChangeWizard from "@/components/PlanChangeWizard"
+import GraceSwapCard from "@/components/GraceSwapCard"
+import { PLAN_CATALOG } from "../../shared/planCatalog"
 
 export default function AccountView() {
   const { user, setSession } = useSession()
@@ -23,6 +27,8 @@ export default function AccountView() {
   const [profileError, setProfileError] = useState<string | null>(null)
   const [profileBusy, setProfileBusy] = useState(false)
   const [initialsCustomized, setInitialsCustomized] = useState(false)
+  const [wizardPlan, setWizardPlan] = useState<PlanKey | null>(null)
+  const [wizardMode, setWizardMode] = useState<'change' | 'resolve'>('change')
 
   const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
@@ -54,10 +60,10 @@ export default function AccountView() {
   }, [])
 
   const handleCheckout = async (planKey: PlanKey) => {
-    if (planKey === "STARTER" && billing && billing.activeProjectsCount > 1) {
-      setDowngradeNotice(
-        `Tienes actualmente ${billing.activeProjectsCount} proyectos activos. Para cambiar al plan Starter debes dejar únicamente 1 proyecto activo. Puedes archivar los demás sin perder sus datos.`,
-      )
+    if (planKey === "STARTER" && billing && (billing.activeProjectsCount > PLAN_CATALOG.STARTER.maxActiveProjects || billing.activeMembersCount > PLAN_CATALOG.STARTER.maxActiveMembers)) {
+      // Downgrade with multiple active projects or members: guided wizard
+      // instead of a blocking notice (§17). The selections are persisted.
+      setWizardPlan("STARTER")
       return
     }
 
@@ -65,9 +71,15 @@ export default function AccountView() {
     setBillingActionBusy(true)
     setBillingError(null)
     try {
-      const res = await createBillingCheckoutSession(planKey)
-      if (res.checkoutUrl) {
+      const transition = await initiatePlanChange({ targetPlanKey: planKey })
+      const res = await createBillingCheckoutSession(planKey, { transitionId: transition.transitionId })
+      if (res.nextAction === "REDIRECT_TO_CHECKOUT" && res.checkoutUrl) {
         window.location.href = res.checkoutUrl
+      } else if (res.nextAction === "REFRESH_BILLING" || res.status === "CHECKOUT_ALREADY_COMPLETED") {
+        setBillingActionBusy(false)
+        loadBilling()
+      } else {
+        throw new Error("Respuesta no válida recibida desde el servidor de pagos.")
       }
     } catch (err: unknown) {
       setBillingError(err instanceof Error ? err.message : "Error al iniciar la pasarela de pago.")
@@ -300,6 +312,52 @@ export default function AccountView() {
           </p>
         )}
 
+        {billing?.complianceStatus === "PLAN_ACTION_REQUIRED" && (
+          <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            <p className="font-semibold">⚠️ Tu plan supera el límite de proyectos o usuarios activos</p>
+            <p className="mt-1">
+              Tienes {billing.activeProjectsCount} proyecto(s) activo(s) (máximo {billing.maxActiveProjects}) y{' '}
+              {billing.activeMembersCount} usuario(s) activo(s) (máximo {billing.maxActiveMembers}). Resuelve qué
+              proyecto y qué usuarios conservar; los demás datos no se eliminarán.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                // With Starter already effective, the wizard resolves compliance
+                // via initiate + resolve without a Stripe checkout.
+                setWizardMode(billing?.planKey === "STARTER" ? "resolve" : "change")
+                setWizardPlan("STARTER")
+              }}
+              className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              Resolver ahora
+            </button>
+          </div>
+        )}
+
+        {wizardPlan && billing && (
+          <div className="mt-4">
+            <PlanChangeWizard
+              targetPlanKey={wizardPlan}
+              activeProjectsCount={billing.activeProjectsCount}
+              mode={wizardMode}
+              onClose={() => setWizardPlan(null)}
+              onCompleted={() => {
+                setWizardPlan(null)
+                loadBilling()
+              }}
+            />
+          </div>
+        )}
+
+        {(billing?.role === "OWNER" || billing?.role === "ADMIN") &&
+          billing.graceEndsAt &&
+          new Date(billing.graceEndsAt).getTime() > Date.now() && (
+            <div className="mt-4">
+              <GraceSwapCard billing={billing} onSwapped={loadBilling} />
+            </div>
+          )}
+
         {downgradeNotice && (
           <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
             <p className="font-semibold">⚠️ No es posible cambiar al plan Starter todavía</p>
@@ -315,7 +373,7 @@ export default function AccountView() {
               <strong className="text-sm">Período de prueba gratuito de 14 días activo</strong>
             </div>
             <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
-              Dispones de acceso completo con <strong>hasta 15 proyectos activos</strong> durante tu prueba.
+              Dispones de acceso completo con <strong>hasta 15 proyectos activos y 15 usuarios activos</strong> durante tu prueba.
               {billing.trialDaysLeft > 0 ? (
                 <> Te quedan <strong className="text-brand-600 dark:text-brand-400">{billing.trialDaysLeft} {billing.trialDaysLeft === 1 ? "día" : "días"}</strong> para elegir tu plan mensual.</>
               ) : (
@@ -340,7 +398,11 @@ export default function AccountView() {
                 Report Map Online — {billing.planName}
               </p>
               <p className="mt-0.5 text-slate-500 dark:text-slate-400">
-                Límite: {billing.maxActiveProjects} {billing.maxActiveProjects === 1 ? "proyecto activo" : "proyectos activos"} simultáneos
+                Límite: {billing.maxActiveProjects} {billing.maxActiveProjects === 1 ? "proyecto activo" : "proyectos activos"} · {billing.maxActiveMembers} {billing.maxActiveMembers === 1 ? "usuario activo" : "usuarios activos"}
+              </p>
+              <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+                En uso: {billing.activeProjectsCount} {billing.activeProjectsCount === 1 ? "proyecto" : "proyectos"} · {billing.activeMembersCount} {billing.activeMembersCount === 1 ? "usuario" : "usuarios"}
+                {billing.remainingMemberSeats > 0 && ` (${billing.remainingMemberSeats} ${billing.remainingMemberSeats === 1 ? "plaza disponible" : "plazas disponibles"})`}
               </p>
             </div>
 
@@ -402,6 +464,10 @@ export default function AccountView() {
                 <li className="flex items-center gap-2">
                   <span className="text-emerald-500 font-bold">✓</span>
                   <strong>1 proyecto activo</strong>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  <strong>Hasta 3 usuarios activos</strong>
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-emerald-500 font-bold">✓</span>
@@ -483,6 +549,10 @@ export default function AccountView() {
                 <li className="flex items-center gap-2">
                   <span className="text-emerald-500 font-bold">✓</span>
                   <strong>Hasta 15 proyectos activos simultáneos</strong>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-emerald-500 font-bold">✓</span>
+                  <strong>Hasta 15 usuarios activos</strong>
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-emerald-500 font-bold">✓</span>

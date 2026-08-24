@@ -15,9 +15,14 @@ export async function runDbScript(script: 'db:seed' | 'db:reset:manual-test', en
       cwd: process.cwd(),
       env: {
         ...process.env,
+        ...env,
+        // Contrato fijo P0-REM-01: el objeto env recibido no puede sobrescribir
+        // el entorno desechable (NODE_ENV, confirmación canónica y storages bajo
+        // test-results). DATABASE_URL queda gobernada por la guardia fail-closed.
+        NODE_ENV: 'test',
+        DOCUCORE_DESTRUCTIVE_TARGET: '127.0.0.1:5436/docucore',
         DOCUMENT_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-documents'),
         FLOOR_PLAN_STORAGE_PATH: path.resolve(process.cwd(), 'test-results', 'e2e-floor-plans'),
-        ...env,
       },
       timeout: 120_000,
     }, (error, stdout) => {

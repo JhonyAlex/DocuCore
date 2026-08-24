@@ -1,10 +1,20 @@
 import { FakeBillingProvider } from "./fakeProvider"
 import { StripeBillingProvider } from "./stripeProvider"
-import type { BillingProvider, CheckoutSessionParams, CustomerPortalParams, ReconcileResult, WebhookEventResult } from "./types"
+import type {
+  BillingProvider,
+  ChangePlanResult,
+  ChangeSubscriptionPlanParams,
+  CheckoutSessionParams,
+  CustomerPortalParams,
+  InitialCheckoutParams,
+  ReconcileResult,
+  WebhookEventResult,
+} from "./types"
 
 export * from "./types"
 export { FakeBillingProvider } from "./fakeProvider"
-export { StripeBillingProvider } from "./stripeProvider"
+export { StripeBillingProvider, getStableTransitionSuffix, isSubscriptionEligibleForPlanTransition } from "./stripeProvider"
+export { CheckoutCoordinator, isStripeNotFoundError, validateSessionOwnership, CHECKOUT_LEASE_TTL_MS } from "./checkoutCoordinator"
 
 let billingProviderInstance: BillingProvider | null = null
 
@@ -63,8 +73,20 @@ export function setBillingProvider(provider: BillingProvider | null): void {
   billingProviderInstance = provider
 }
 
+export async function createInitialSubscriptionCheckout(params: InitialCheckoutParams): Promise<{ checkoutUrl: string; sessionId: string }> {
+  return getBillingProvider().createInitialSubscriptionCheckout(params)
+}
+
 export async function createCheckoutSession(params: CheckoutSessionParams): Promise<{ checkoutUrl: string; sessionId: string }> {
   return getBillingProvider().createCheckoutSession(params)
+}
+
+export async function retrieveCheckoutSession(sessionId: string): Promise<import("./types").RetrievedCheckoutSession> {
+  return getBillingProvider().retrieveCheckoutSession(sessionId)
+}
+
+export async function changeExistingSubscriptionPlan(params: ChangeSubscriptionPlanParams): Promise<ChangePlanResult> {
+  return getBillingProvider().changeExistingSubscriptionPlan(params)
 }
 
 export async function createCustomerPortalSession(params: CustomerPortalParams): Promise<{ portalUrl: string }> {
@@ -75,6 +97,6 @@ export async function handleBillingWebhook(rawBody: Buffer | string, signature?:
   return getBillingProvider().handleWebhook(rawBody, signature)
 }
 
-export async function reconcileWorkspace(workspaceId: number): Promise<ReconcileResult> {
-  return getBillingProvider().reconcileWorkspace(workspaceId)
+export async function reconcileWorkspace(workspaceId: number, actorId?: number): Promise<ReconcileResult> {
+  return getBillingProvider().reconcileWorkspace(workspaceId, actorId)
 }

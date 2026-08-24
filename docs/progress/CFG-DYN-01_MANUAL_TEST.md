@@ -7,7 +7,7 @@ Entorno/URL: _____________________________
 
 ## Preparación
 
-1. Ejecutar `pnpm db:seed`.
+1. Ejecutar `pnpm db:seed` — solo contra el entorno desechable (P0-REM-01): `127.0.0.1:5436/docucore`, storages bajo `<workspace>\test-results\`, `NODE_ENV=test` y `DOCUCORE_DESTRUCTIVE_TARGET=127.0.0.1:5436/docucore`; el puerto `5435` está prohibido (ver «Guardia destructiva» en el README).
 2. Iniciar DocuCore con `docker compose up --build -d` o `pnpm dev` + `pnpm server`.
 3. Entrar en **Configuración → Campos dinámicos**.
 

@@ -47,4 +47,91 @@ test.describe.serial("SAAS-07 SaaS User Journey", () => {
     await expect(page.getByText("Plan Pro").first()).toBeVisible()
     await expect(page.getByText("Garantía de preservación de datos")).toBeVisible()
   })
+
+  test("PlanChangeWizard and AccountView handle CHECKOUT_ALREADY_COMPLETED: releases busy, invokes onCompleted, closes wizard, reloads billing, and does not navigate to Stripe", async ({ page }) => {
+    let checkoutCalls = 0
+    let billingStatusCalls = 0
+
+    await page.route("**/api/billing/checkout", async (route) => {
+      checkoutCalls++
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          nextAction: "REFRESH_BILLING",
+          checkoutUrl: null,
+          sessionId: "cs_test_already_completed",
+          status: "CHECKOUT_ALREADY_COMPLETED",
+          reused: true,
+        }),
+      })
+    })
+
+    await page.route("**/api/billing/status", async (route) => {
+      billingStatusCalls++
+      await route.continue()
+    })
+
+    // 1. Navigate to Account
+    await page.goto("/account")
+    await expect(page.getByRole("heading", { name: "Mi cuenta" })).toBeVisible()
+
+    const initialStatusCalls = billingStatusCalls
+
+    // 2. Click Plan button to initiate plan change / checkout
+    const starterBtn = page.getByRole("button", { name: /Cambiar a Starter|Elegir Starter/i })
+    const proBtn = page.getByRole("button", { name: /Actualizar a Pro|Elegir Pro/i })
+
+    if (await starterBtn.isVisible()) {
+      await starterBtn.click()
+
+      // If guided wizard opened due to capacity
+      const wizardHeading = page.getByRole("heading", { name: /Cambio a (Starter|Pro)/i })
+      try {
+        await wizardHeading.waitFor({ state: "visible", timeout: 2000 })
+
+        // Wait for preview to load in overview
+        await page.getByText(/proyecto\(s\) activo\(s\)/i).waitFor({ state: "visible", timeout: 4000 })
+
+        // Step 1: Overview -> click Continuar
+        await page.getByRole("button", { name: "Continuar" }).click()
+
+        // Step 2: Selection (projects + members)
+        const projectRadio = page.locator("input[name='keep-project']").first()
+        await projectRadio.waitFor({ state: "visible", timeout: 3000 })
+        await projectRadio.click()
+        await expect(projectRadio).toBeChecked({ timeout: 2000 })
+
+        const memberCheckboxes = page.locator("input[type='checkbox']")
+        const count = await memberCheckboxes.count()
+        for (let i = 0; i < Math.min(count, 3); i++) {
+          await memberCheckboxes.nth(i).click()
+          await expect(memberCheckboxes.nth(i)).toBeChecked()
+        }
+
+        const continueBtn = page.getByRole("button", { name: "Continuar" })
+        await expect(continueBtn).toBeEnabled({ timeout: 5000 })
+        await continueBtn.click()
+
+        // Step 3: Confirm -> calls proceed() which triggers createBillingCheckoutSession
+        const confirmBtn = page.getByRole("button", { name: /Confirmar y continuar a Stripe/i })
+        await confirmBtn.waitFor({ state: "visible", timeout: 3000 })
+        await confirmBtn.click()
+      } catch (err) {
+        console.log("[WIZARD_ERROR]", err)
+      }
+
+      await expect.poll(() => checkoutCalls).toBe(1)
+      await expect(wizardHeading).not.toBeVisible()
+      await expect.poll(() => billingStatusCalls).toBeGreaterThan(initialStatusCalls)
+      expect(page.url()).toContain("/account")
+      await expect(page.getByRole("heading", { name: "Mi cuenta" })).toBeVisible()
+    } else if (await proBtn.isVisible()) {
+      await proBtn.click()
+      await expect.poll(() => checkoutCalls).toBe(1)
+      await expect.poll(() => billingStatusCalls).toBeGreaterThan(initialStatusCalls)
+      expect(page.url()).toContain("/account")
+      await expect(page.getByRole("heading", { name: "Mi cuenta" })).toBeVisible()
+    }
+  })
 })

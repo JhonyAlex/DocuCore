@@ -24,7 +24,7 @@ type VisualTarget = {
 
 const targets: VisualTarget[] = [
   { name: 'dashboard', route: '/projects/1/dashboard', referenceView: 'dashboard', heading: 'Panel general' },
-  { name: 'projects', route: '/projects/1/portfolio', referenceView: 'projects', heading: 'Proyectos' },
+  { name: 'projects', route: '/projects/1/portfolio', referenceView: 'projects', heading: 'Proyectos', evolvedContract: true },
   { name: 'items', route: '/projects/1/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems', evolvedContract: true },
   { name: 'documents', route: '/projects/1/docs', referenceView: 'docs', heading: 'Documentos', evolvedContract: true },
   { name: 'calendar', route: '/projects/1/calendar', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
@@ -152,6 +152,11 @@ async function compareTarget(context: BrowserContext, testInfo: TestInfo, target
     if (referencePage) await openReferenceTarget(referencePage, target, variant.theme)
 
     const appPath = await visualOutputPath(name, 'app')
+    // El clic en la fila deja el ratón sobre el AssetImageBox del modal; su
+    // overlay de hover (opacity por transición) se captura de forma no
+    // determinista con `animations: 'disabled'`. Aléjalo para que la ficha se
+    // renderice siempre en su estado de reposo (determinista).
+    if (target.modal) await appPage.mouse.move(2, 2)
     await appPage.screenshot({ path: appPath, animations: 'disabled' })
     const source = target.evolvedContract ? 'baseline' : 'reference'
     const referencePath = target.evolvedContract

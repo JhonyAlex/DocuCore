@@ -18,7 +18,7 @@ Las contraseñas se derivan con `crypto.scrypt` nativo (`N=32768`, `r=8`, `p=1`,
 
 ## Operación
 
-- Desarrollo: ejecutar `pnpm db:seed` e iniciar sesión con `maria@docucore.local` / `DocuCore!2026`. Son credenciales públicas de desarrollo; el seed incluye editor, viewer, admin por proyecto e inactiva.
+- Desarrollo: ejecutar `pnpm db:seed` — solo contra el entorno desechable (P0-REM-01): `127.0.0.1:5436/docucore`, storages bajo `<workspace>\test-results\`, `NODE_ENV=test` y `DOCUCORE_DESTRUCTIVE_TARGET=127.0.0.1:5436/docucore`; el puerto `5435` está prohibido (ver «Guardia destructiva» en el README) — e iniciar sesión con `maria@docucore.local` / `DocuCore!2026`. Son credenciales públicas de desarrollo; el seed incluye editor, viewer, admin por proyecto e inactiva.
 - Producción: definir `BOOTSTRAP_ADMIN_EMAIL` y `BOOTSTRAP_ADMIN_PASSWORD` (12+ caracteres) antes del primer `docker compose up`. El contenedor ejecuta `pnpm db:bootstrap-admin` sólo si `User` está vacío; después elimina esas variables. La primera cuenta crea su primer proyecto desde la cartera y es OWNER de él.
 - Revocación: logout elimina la sesión actual; desactivar un usuario elimina todas; un cambio de contraseña revoca las restantes.
 

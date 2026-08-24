@@ -1,6 +1,10 @@
 import { afterEach, beforeAll, vi } from 'vitest'
+import { E2E_DATABASE_URL } from './helpers/database'
 
-process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public'
+// La suite Vitest (unit/API) usa SIEMPRE el destino E2E canónico (P0-REM-01):
+// un DATABASE_URL/DOCUCORE_DB_PORT heredado del shell o del .env no puede
+// redirigir las especificaciones API hacia 5435 u otra base.
+process.env.DATABASE_URL = E2E_DATABASE_URL
 
 const nativeFetch = globalThis.fetch
 

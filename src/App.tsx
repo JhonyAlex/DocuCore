@@ -29,6 +29,7 @@ const AccountView = lazy(() => import('@/views/AccountView'))
 const UsersConfigView = lazy(() => import('@/views/UsersConfigView'))
 const RegisterView = lazy(() => import('@/views/RegisterView'))
 const VerifyEmailView = lazy(() => import('@/views/VerifyEmailView'))
+const AcceptInvitationView = lazy(() => import('@/views/AcceptInvitationView'))
 const ForgotPasswordView = lazy(() => import('@/views/ForgotPasswordView'))
 const ResetPasswordView = lazy(() => import('@/views/ResetPasswordView'))
 const PlatformAdminView = lazy(() => import('@/views/PlatformAdminView'))
@@ -64,7 +65,7 @@ function LoginRoute() {
   const location = useLocation()
   if (loading) return <div className="flex min-h-screen items-center justify-center text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">Comprobando sesión…</div>
   const destination = (location.state as { from?: unknown } | null)?.from
-  if (authenticated) return <Navigate to={typeof destination === 'string' && destination.startsWith('/projects') ? destination : '/projects'} replace />
+  if (authenticated) return <Navigate to={typeof destination === 'string' && (destination.startsWith('/projects') || destination.startsWith('/accept-invitation')) ? destination : '/projects'} replace />
   return <DeferredRoute><LoginView /></DeferredRoute>
 }
 
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="/verify-email" element={<DeferredRoute><VerifyEmailView /></DeferredRoute>} />
         <Route path="/forgot-password" element={<DeferredRoute><ForgotPasswordView /></DeferredRoute>} />
         <Route path="/reset-password" element={<DeferredRoute><ResetPasswordView /></DeferredRoute>} />
+        <Route path="/accept-invitation" element={<DeferredRoute><AcceptInvitationView /></DeferredRoute>} />
         <Route element={<AuthenticatedOutlet />}>
           <Route element={<ProjectsSelectionLayout />}>
             <Route path="/projects" element={<DeferredRoute><ProjectsView /></DeferredRoute>} />

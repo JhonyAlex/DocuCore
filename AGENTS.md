@@ -85,8 +85,8 @@ pnpm test:e2e        # Playwright E2E
 pnpm test:visual     # Playwright regresión visual
 pnpm server          # Servidor Express (tsx watch)
 pnpm db:migrate      # Prisma migrate dev
-pnpm db:seed         # Seed canónico (142 activos, compatible con el HTML de referencia)
-pnpm db:reset:manual-test  # Reset a cero para pruebas manuales (0 activos/docs/ubicaciones)
+pnpm db:seed         # Seed canónico (142 activos, compatible con el HTML de referencia); SOLO contra 127.0.0.1:5436 desechable (P0-REM-01)
+pnpm db:reset:manual-test  # Reset a cero para pruebas manuales (0 activos/docs/ubicaciones); SOLO contra 127.0.0.1:5436 desechable (P0-REM-01)
 docker compose up    # Levantar todo (DB + app)
 ```
 

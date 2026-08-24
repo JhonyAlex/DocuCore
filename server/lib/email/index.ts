@@ -132,9 +132,9 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
   })
 }
 
-export async function sendVerificationEmail(options: { to: string; name: string; token: string }): Promise<void> {
+export async function sendVerificationEmail(options: { to: string; name: string; token: string; returnTo?: string }): Promise<void> {
   const baseUrl = (process.env.APP_PUBLIC_URL || "https://app.report-map.online").replace(/\/+$/, "")
-  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(options.token)}`
+  const verifyUrl = `${baseUrl}/verify-email?token=${encodeURIComponent(options.token)}${options.returnTo ? `&returnTo=${encodeURIComponent(options.returnTo)}` : ""}`
 
   const subject = "Verifica tu cuenta en Report Map Online"
   const text = `Hola ${options.name},
@@ -228,5 +228,37 @@ Si necesitas ayuda durante tu prueba, estamos a tu disposición en ${supportEmai
   <p style="font-size: 12px; color: #94a3b8;">¿Tienes dudas? Escríbenos en cualquier momento a <a href="mailto:${supportEmail}" style="color: #3b82f6;">${supportEmail}</a> respondiendo a este correo.</p>
 </div>`
 
+  await sendEmail({ to: options.to, subject, text, html })
+}
+
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+export async function sendWorkspaceInvitationEmail(options: { to: string; workspaceName: string; inviterName: string; inviteUrl: string }): Promise<void> {
+  const supportEmail = process.env.SUPPORT_EMAIL || "admin@report-map.online"
+  const workspaceName = escapeHtml(options.workspaceName)
+  const inviterName = escapeHtml(options.inviterName)
+  const inviteUrl = escapeHtml(options.inviteUrl)
+  const subject = `Invitación a ${options.workspaceName.replace(/[\r\n]+/g, " ")}`
+  const text = `Hola,
+
+${options.inviterName} te ha invitado a unirte al espacio "${options.workspaceName}" en Report Map Online.
+
+Acepta la invitación aquí:
+${options.inviteUrl}
+
+El enlace es de un solo uso y caduca en 7 días. Si necesitas ayuda, escríbenos a ${supportEmail}.`
+  const html = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; color: #1e293b; background: #ffffff; border-radius: 8px;">
+  <h2 style="margin: 0; color: #0f172a; font-size: 20px;">Report Map Online</h2>
+  <p style="font-size: 15px; line-height: 1.5;"><strong>${inviterName}</strong> te ha invitado a unirte al espacio <strong>${workspaceName}</strong>.</p>
+  <div style="margin: 28px 0;"><a href="${inviteUrl}" style="background-color: #3b82f6; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; display: inline-block;">Aceptar invitación</a></div>
+  <p style="font-size: 12px; color: #94a3b8;">El enlace es de un solo uso y caduca en 7 días.</p>
+</div>`
   await sendEmail({ to: options.to, subject, text, html })
 }

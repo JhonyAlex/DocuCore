@@ -6,10 +6,10 @@ DocuCore es una plataforma de gestión documental y activos industriales. La int
 
 1. Copia `.env.example` a `.env` y conserva `DATABASE_URL` con el puerto host `5435`.
 2. Inicia PostgreSQL con `docker compose up -d db`.
-3. Ejecuta `pnpm install`, `pnpm db:migrate`, `pnpm db:seed` y `pnpm dev`.
+3. Ejecuta `pnpm install`, `pnpm db:migrate` y `pnpm dev`.
 4. En otra terminal ejecuta `pnpm server` para la API en `http://localhost:3001`.
 
-Después del seed, inicia sesión con `maria@docucore.local` y `DocuCore!2026` (sólo desarrollo). La arquitectura y el bootstrap de producción se documentan en [AUTH-01.md](./docs/progress/AUTH-01.md).
+El puerto `5435` es la BD persistente de desarrollo/pruebas manuales: **nunca** debe sembrarse ni resetearse (ver «Guardia destructiva» más abajo). En el entorno desechable ya sembrado (el que usan los flujos Playwright), inicia sesión con `maria@docucore.local` y `DocuCore!2026` (sólo desarrollo). La arquitectura y el bootstrap de producción se documentan en [AUTH-01.md](./docs/progress/AUTH-01.md).
 
 ## Arquitectura
 
@@ -36,10 +36,22 @@ El servicio Docker de desarrollo publica PostgreSQL en el puerto `5435`, no en `
 ```bash
 docker compose up -d db
 pnpm db:migrate
-pnpm db:seed
 ```
 
-`pnpm db:seed` es determinista: reinicia las identidades, restaura los activos/eventos/documentos canónicos y crea ficheros locales mínimos para sus versiones. En este entorno pre-release puede regenerarse la base y los datos temporales.
+### Guardia destructiva (P0-REM-01)
+
+`pnpm db:seed` y `pnpm db:reset:manual-test` son **operaciones destructivas** y solo se admiten contra el **entorno desechable de pruebas**: PostgreSQL local `127.0.0.1:5436/docucore` y rutas de almacenamiento **dentro de `test-results\`**. Ambas exigen, simultáneamente:
+
+- `NODE_ENV` que, tras `trim().toLowerCase()`, sea exactamente `test` (la ausencia también deniega);
+- `DATABASE_URL` válida con host `127.0.0.1` o `localhost`, puerto **exactamente `5436`** y base **`docucore`** con schema efectivo `public` (`?schema=public` explícito o ausente, el valor por defecto de PostgreSQL; se rechazan otros schemas, parámetros `schema` duplicados, `currentSchema` y `options` con `search_path`);
+- `DOCUCORE_DESTRUCTIVE_TARGET=127.0.0.1:5436/docucore` — confirmación explícita e independiente de la URL, nunca calculada automáticamente;
+- `DOCUMENT_STORAGE_PATH` y `FLOOR_PLAN_STORAGE_PATH` explícitas y realmente dentro de `<workspace>\test-results\`, sin escapes `..` ni enlaces simbólicos (la propia raíz `test-results` debe ser la ruta real del workspace: un symlink/junction que escape se rechaza).
+
+El puerto `5435` —la BD persistente de desarrollo/pruebas manuales— está **terminantemente prohibido**: **nunca debe sembrarse ni resetearse**, ni siquiera con la confirmación presente. Playwright proporciona automáticamente estas variables para su PostgreSQL aislado en `:5436` y sus storages bajo `test-results/`.
+
+`pnpm db:reset:manual-test` y `pnpm db:seed` ejecutan además una **prevalidación READ-ONLY de ambos storages** (ruta, marcador, owner y estructura de las entradas gestionadas) **antes de tocar la base de datos**: un marcador corrupto o de otro propietario, o una entrada con nombre de clave gestionada que no sea un archivo (p. ej. un directorio), bloquean la operación sin ejecutar el TRUNCATE. El reset es el modo estricto: exige un storage ya gestionado con marcador válido. El seed admite también un storage **nuevo** (inexistente o directorio vacío sin marcador) únicamente cuando la provisión posterior (creación del directorio y del marcador al guardar el primer fichero) puede completarse de forma segura; un directorio no vacío sin marcador se rechaza igualmente. La prevalidación elimina los errores de limpieza previsibles, pero **no garantiza atomicidad entre PostgreSQL y el filesystem**: una carrera o un fallo I/O tardío posterior al precheck (TOCTOU) puede dejar un seed/reset parcial.
+
+La inspección de rutas es **estricta (fail-closed)**: los errores de permisos o de I/O (EACCES/EPERM y similares) en la lectura del marcador o en la inspección de los componentes del camino se propagan y bloquean la operación; **nunca** se tratan como «storage nuevo». Los storages destructivos **no atraviesan enlaces**: si cualquier componente existente del camino es un symlink/junction —válido o roto, incluso apuntando dentro del workspace— la operación se bloquea (en Windows los junction/reparse point se reportan como symlink). Una ruta inexistente solo es provisionable cuando sus ancestros existentes son **directorios normales y verificables**. La misma regla aplica a los objetos gestionados: el marcador `.docucore-storage.json` y cada clave gestionada deben ser **archivos normales** (los directorios de teselas `*_files` de planos, **directorios normales**); un symlink/junction —válido o roto— o un directorio en cualquiera de ellos bloquea la prevalidación antes de tocar la base de datos.
 
 ## Documentos
 
@@ -60,7 +72,8 @@ pnpm test:e2e        # Playwright: aplicación y CRUD contra PostgreSQL Docker
 pnpm test:visual     # Playwright: app vs. HTML protegido, sin baselines mutables
 pnpm db:migrate      # Migraciones de desarrollo
 pnpm db:deploy       # Migraciones pendientes, apto para despliegue
-pnpm db:seed         # Datos canónicos reproducibles
+pnpm db:seed         # Datos canónicos, SOLO contra 127.0.0.1:5436 (desechable)
+pnpm db:reset:manual-test # Reset a cero, SOLO contra 127.0.0.1:5436 (desechable)
 pnpm db:bootstrap-admin # Crea el primer usuario sólo en una BD sin usuarios
 ```
 

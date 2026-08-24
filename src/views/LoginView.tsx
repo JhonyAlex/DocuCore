@@ -4,7 +4,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useSession } from '@/contexts/SessionContext'
 
 function safeDestination(value: unknown): string {
-  return typeof value === 'string' && value.startsWith('/projects') ? value : '/projects'
+  return typeof value === 'string' && (value.startsWith('/projects') || value.startsWith('/accept-invitation')) ? value : '/projects'
 }
 
 export default function LoginView() {

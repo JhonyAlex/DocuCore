@@ -16,6 +16,7 @@ Estado inicial: DOC-01 es funcional y su E2E está verde. La regresión visual s
 
 2. Abre `http://localhost:5173/docs`.
 3. Ten dos ficheros PDF pequeños y distintos, por ejemplo `prueba-v1.pdf` y `prueba-v2.pdf`.
+4. P0-REM-01: `pnpm db:seed` solo se ejecuta contra el entorno desechable `127.0.0.1:5436/docucore` con `NODE_ENV=test`, `DOCUCORE_DESTRUCTIVE_TARGET=127.0.0.1:5436/docucore` y storages bajo `<workspace>\test-results\` (ver «Guardia destructiva» en el README); el puerto `5435` está prohibido.
 
 ## Checklist
 

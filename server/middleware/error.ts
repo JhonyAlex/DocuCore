@@ -21,7 +21,17 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
 
   if (err instanceof Error && 'status' in err && typeof err.status === 'number') {
-    res.status(err.status).json({ error: err.message })
+    const extra = err as Error & { status: number; code?: string; metadata?: Record<string, unknown> }
+    // Whitelist metadata keys explicitly: never echo arbitrary internals.
+    const allowedMetadataKeys = new Set(["affectedProjectIds", "maxAllowed", "activeProjects", "activeMembers", "maxActiveProjects", "maxActiveMembers", "planLockedProjectIds", "planLockedMemberIds", "selectedMemberIds"])
+    const metadata = extra.metadata
+      ? Object.fromEntries(Object.entries(extra.metadata).filter(([key]) => allowedMetadataKeys.has(key)))
+      : undefined
+    res.status(err.status).json({
+      error: err.message,
+      ...(extra.code ? { code: extra.code } : {}),
+      ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
+    })
     return
   }
 

@@ -16,7 +16,7 @@ Estado inicial: la implementación y la matriz automática están completas, per
 
 2. Abrir `http://localhost:5173/locations`.
 3. Mantener abierto también `http://localhost:5173/assets` para comprobar la relación Activo ↔ Ubicación.
-4. El seed y el reset son destructivos por la regla pre-release vigente. Restaurar siempre el seed canónico al finalizar.
+4. El seed y el reset son destructivos y, desde P0-REM-01, solo se ejecutan contra el entorno desechable: PostgreSQL `127.0.0.1:5436/docucore`, storages bajo `<workspace>\test-results\`, `NODE_ENV=test` y `DOCUCORE_DESTRUCTIVE_TARGET=127.0.0.1:5436/docucore` (ver «Guardia destructiva» en el README). El puerto `5435` —BD persistente— está prohibido para seed/reset. Restaurar siempre el seed canónico al finalizar.
 
 ## Checklist funcional con seed canónico
 

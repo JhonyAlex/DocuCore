@@ -65,3 +65,7 @@ data/
 
 # Local agent workspace
 .zcode/
+
+# Incidentes: los dumps forenses nunca entran en Git
+docs/incidents/**/*.sql
+docs/incidents/**/*.dump
