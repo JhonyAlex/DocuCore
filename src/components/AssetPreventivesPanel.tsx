@@ -86,7 +86,12 @@ export default function AssetPreventivesPanel({ asset, onChanged, focusExecution
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div><h4 className="font-medium text-slate-900 dark:text-slate-100">Preventivos y planes periódicos</h4><p className="text-xs text-slate-500 dark:text-slate-400">Planes asignados, ejecución de tareas e integración unificada en eventos.</p></div>
-        {!showAssignForm && <button type="button" onClick={() => setShowAssignForm(true)} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">＋ Asignar plan desde plantilla</button>}
+        {!showAssignForm && (
+          <button type="button" onClick={() => setShowAssignForm(true)} className="flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Asignar plan desde plantilla
+          </button>
+        )}
       </div>
 
       {error && <div role="alert" className="rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">{error}</div>}

@@ -513,6 +513,14 @@ export interface ApiDocumentVersion {
   issueDate: string
   expiryDate: string | null
   uploadedAt: string
+  attachments?: ApiDocumentVersionAttachment[]
+}
+
+export interface ApiDocumentVersionAttachment {
+  id: number
+  originalName: string
+  mimeType: string
+  sizeBytes: number
 }
 
 export interface ApiDocument {
@@ -1294,15 +1302,15 @@ export function fetchDocument(projectId: number, id: number): Promise<ApiDocumen
   return request(projectPath(projectId, `/documents/${id}`))
 }
 
-export function createDocument(projectId: number, input: Omit<DocumentMetadataInput, 'projectId'>, file: File): Promise<ApiDocument> {
-  return request(projectPath(projectId, '/documents'), { method: 'POST', body: documentFormData({ ...input, projectId }, file) })
+export function createDocument(projectId: number, input: Omit<DocumentMetadataInput, 'projectId'>, files: File | File[]): Promise<ApiDocument> {
+  return request(projectPath(projectId, '/documents'), { method: 'POST', body: documentFormData({ ...input, projectId }, files) })
 }
 
-export function createDocumentVersion(projectId: number, id: number, input: Pick<DocumentMetadataInput, 'issueDate' | 'expiryDate'>, file: File): Promise<ApiDocument> {
+export function createDocumentVersion(projectId: number, id: number, input: Pick<DocumentMetadataInput, 'issueDate' | 'expiryDate'>, files: File | File[]): Promise<ApiDocument> {
   const body = new FormData()
   body.set('issueDate', input.issueDate)
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
-  body.set('file', file)
+  for (const file of Array.isArray(files) ? files : [files]) body.append('files', file)
   return request(projectPath(projectId, `/documents/${id}/versions`), { method: 'POST', body })
 }
 
@@ -1334,7 +1342,19 @@ export async function downloadDocument(projectId: number, id: number, version?: 
   URL.revokeObjectURL(url)
 }
 
-function documentFormData(input: DocumentMetadataInput, file: File): FormData {
+export async function downloadDocumentAttachment(projectId: number, id: number, version: number, attachmentId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}${projectPath(projectId, `/documents/${id}/versions/${version}/files/${attachmentId}/download`)}`)
+  if (!response.ok) throw new Error(`API ${response.status}: download failed`)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = window.document.createElement('a')
+  link.href = url
+  link.download = ''
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function documentFormData(input: DocumentMetadataInput, files: File | File[]): FormData {
   const body = new FormData()
   body.set('name', input.name)
   if (input.type) body.set('type', input.type)
@@ -1345,7 +1365,7 @@ function documentFormData(input: DocumentMetadataInput, file: File): FormData {
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
   if (input.periodicity) body.set('periodicity', input.periodicity)
   if (input.periodicityMode) body.set('periodicityMode', input.periodicityMode)
-  body.set('file', file)
+  for (const file of Array.isArray(files) ? files : [files]) body.append('files', file)
   return body
 }
 

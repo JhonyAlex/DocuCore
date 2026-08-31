@@ -52,12 +52,14 @@ test.describe('PROJ-01 proyectos', () => {
   })
 
   test('creates, opens, archives and restores a project from the portfolio', async ({ page, consoleIssues }) => {
-    const code = `E2E-PROJ-${Date.now()}`
-    const name = `Proyecto aislado ${Date.now()}`
+    const stamp = Date.now()
+    const code = `e2e-proj-${stamp}`
+    const name = `Proyecto aislado ${stamp}`
     await page.goto('/projects')
 
     await page.getByRole('button', { name: 'Nuevo proyecto', exact: true }).click()
-    await page.getByLabel('Código').fill(code)
+    await page.getByLabel('Código').fill(`E2E PROJ ${stamp}`)
+    await expect(page.getByLabel('Código')).toHaveValue(code)
     await page.getByLabel('Nombre').fill(name)
     await page.getByLabel('Descripción').fill('Creado desde el flujo de cartera multi-proyecto')
     const created = page.waitForResponse((response) => response.url().endsWith('/api/projects') && response.request().method() === 'POST')

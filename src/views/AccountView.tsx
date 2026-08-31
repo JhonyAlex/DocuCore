@@ -435,6 +435,9 @@ export default function AccountView() {
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">
             Planes comerciales disponibles
           </h3>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            Ambos planes incluyen las funciones operativas indicadas; el límite cambia por proyectos y usuarios activos.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* STARTER PLAN */}
             <div

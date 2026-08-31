@@ -237,10 +237,14 @@ export default function ProjectsView() {
       setFormError(
         code === 'PROJECT_LIMIT_EXCEEDED'
           ? 'Has alcanzado el límite de proyectos activos de tu plan. Archiva uno o actualiza tu plan.'
+          : code === 'PROJECT_CODE_ALREADY_EXISTS'
+            ? 'Ya existe un proyecto con ese código. Elige otro código.'
           : code === 'PLAN_COMPLIANCE_REQUIRED'
             ? 'Debes resolver primero qué proyecto conservar para tu plan antes de crear otro.'
-            : reason instanceof Error && reason.message.includes('409')
+            : reason instanceof ApiError && reason.status === 409
               ? 'Ya existe un proyecto con ese código.'
+              : reason instanceof ApiError && reason.status === 400
+                ? 'Revisa los datos del proyecto. El código debe tener entre 2 y 40 caracteres y solo usar letras, números, guiones o guiones bajos.'
               : 'No se pudo guardar el proyecto.'
       )
     } finally {

@@ -78,7 +78,7 @@ export default function Topbar() {
           </button>
 
           <button type="button" onClick={openAssetForm} disabled={!project || project.status === 'ARCHIVED'} title={project?.status === 'ARCHIVED' ? 'Los proyectos archivados no permiten altas' : undefined} className="flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50">
-            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" /></svg>
+            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             <span>Nuevo activo</span>
           </button>
         </div>

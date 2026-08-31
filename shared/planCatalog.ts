@@ -19,6 +19,11 @@ export interface PlanDefinition {
   maxActiveMembers: number
 }
 
+// These are the only commercial capacity limits currently defined by the
+// product. The operational features described in the plan cards are available
+// in both plans; plan enforcement must not invent additional caps without a
+// corresponding product rule here.
+
 export const PLAN_CATALOG: Record<PlanKey, PlanDefinition> = {
   STARTER: {
     key: 'STARTER',

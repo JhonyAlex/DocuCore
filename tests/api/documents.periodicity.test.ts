@@ -144,6 +144,32 @@ describe('document periodicity API', () => {
     expect(document.currentVersion.expiryDate).toBe('2026-07-20T00:00:00.000Z')
   })
 
+  it('uses Subida by default and treats several files as one periodic delivery', async () => {
+    const id = await createDocument({ issueDate: '2026-03-15', periodicity: 'Trimestral' })
+    const first = await (await api(`/api/documents/${id}`)).json() as { periodicityMode: string | null }
+    expect(first.periodicityMode).toBe('Subida')
+
+    const form = new FormData()
+    form.set('issueDate', '2026-04-20')
+    form.append('files', new Blob([new Uint8Array(PDF_BYTES)], { type: 'application/pdf' }), 'certificado.pdf')
+    form.append('files', new Blob([new Uint8Array(Buffer.from('ANEXO QA'))], { type: 'text/plain' }), 'anexo.txt')
+    const version = await api(`/api/documents/${id}/versions`, { method: 'POST', body: form })
+    expect(version.status).toBe(201)
+
+    const document = await (await api(`/api/documents/${id}`)).json() as {
+      currentVersion: { version: number; expiryDate: string | null; attachments: Array<{ id: number; originalName: string }> }
+    }
+    expect(document.currentVersion.version).toBe(2)
+    expect(document.currentVersion.expiryDate).toBe('2026-07-20T00:00:00.000Z')
+    expect(document.currentVersion.attachments).toEqual([expect.objectContaining({ originalName: 'anexo.txt' })])
+
+    const attachment = document.currentVersion.attachments[0]!
+    const downloaded = await api(`/api/documents/${id}/versions/2/files/${attachment.id}/download`)
+    expect(downloaded.status).toBe(200)
+    expect(downloaded.headers.get('content-disposition')).toContain('attachment')
+    expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(Buffer.from('ANEXO QA'))
+  })
+
   it('respects a manual expiry when uploading a new version', async () => {
     const id = await createDocument({ issueDate: '2026-03-15', periodicity: 'Trimestral', periodicityMode: 'Calendario' })
     const version = await uploadVersion(id, '2026-04-20', '2026-11-30')

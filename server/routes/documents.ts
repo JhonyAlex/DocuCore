@@ -3,7 +3,7 @@ import multer from 'multer'
 import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentUpload } from '../lib/documentStorage'
+import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentUpload, type StoredDocumentUpload } from '../lib/documentStorage'
 import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
@@ -12,12 +12,14 @@ import { normalizeFileName } from '../lib/textEncoding'
 
 const router: Router = Router({ mergeParams: true })
 
+const MAX_DOCUMENT_FILES_PER_VERSION = 20
+
 const upload = multer({
   storage: multer.memoryStorage(),
   // Browsers send multipart filenames as UTF-8. Multer defaults to Latin-1,
-  // which turns “–” into “â” before the document reaches our storage layer.
+  // which turns “–” into “â€“” before the document reaches our storage layer.
   defParamCharset: 'utf8',
-  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: 1 },
+  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: MAX_DOCUMENT_FILES_PER_VERSION },
   fileFilter: (_req, file, callback) => {
     if (!ALLOWED_DOCUMENT_MIME_TYPES.has(file.mimetype)) return callback(new Error('Unsupported document type'))
     callback(null, true)
@@ -34,7 +36,11 @@ const documentInclude = {
   project: { select: { id: true, code: true, name: true } },
   location: { select: { id: true, code: true, name: true, label: true } },
   documentType: { select: { id: true, name: true, iconKey: true } },
-  versions: { orderBy: { version: 'desc' as const }, take: 1 },
+  versions: {
+    orderBy: { version: 'desc' as const },
+    take: 1,
+    include: { attachments: { orderBy: { sortOrder: 'asc' as const } } },
+  },
 } satisfies Prisma.DocumentInclude
 
 type DocumentWithCurrentVersion = Prisma.DocumentGetPayload<{ include: typeof documentInclude }>
@@ -107,6 +113,12 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
       issueDate: currentVersion.issueDate.toISOString(),
       expiryDate: currentVersion.expiryDate?.toISOString() ?? null,
       uploadedAt: currentVersion.uploadedAt.toISOString(),
+      attachments: currentVersion.attachments.map((attachment) => ({
+        id: attachment.id,
+        originalName: attachment.originalName,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      })),
     } : null,
     status: documentStatus(currentVersion?.expiryDate ?? null),
   }
@@ -168,8 +180,26 @@ async function sendDocumentVersion(
   res.send(bytes)
 }
 
-function uploadSingle(req: Request, res: Response): Promise<void> {
-  return new Promise((resolve, reject) => upload.single('file')(req, res, (error) => error ? reject(error) : resolve()))
+function uploadFiles(req: Request, res: Response): Promise<Express.Multer.File[]> {
+  return new Promise((resolve, reject) => upload.fields([
+    { name: 'file', maxCount: 1 }, // compatibilidad con clientes anteriores
+    { name: 'files', maxCount: MAX_DOCUMENT_FILES_PER_VERSION },
+  ])(req, res, (error) => {
+    if (error) return reject(error)
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined
+    resolve([...(files?.file ?? []), ...(files?.files ?? [])])
+  }))
+}
+
+async function storeDocumentUploads(files: Express.Multer.File[]): Promise<StoredDocumentUpload[]> {
+  const stored: StoredDocumentUpload[] = []
+  try {
+    for (const file of files) stored.push(await storeDocumentUpload(file))
+    return stored
+  } catch (error) {
+    await Promise.all(stored.map((upload) => removeDocumentFile(upload.storageKey).catch(() => undefined)))
+    throw error
+  }
 }
 
 async function assertDocumentExists(id: number, projectId: number): Promise<DocumentWithCurrentVersion> {
@@ -357,17 +387,22 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
   const document = await assertDocumentExists(id, scopedProjectId(req))
-  const versions = await prisma.documentVersion.findMany({ where: { documentId: id }, orderBy: { version: 'desc' } })
+  const versions = await prisma.documentVersion.findMany({
+    where: { documentId: id },
+    orderBy: { version: 'desc' },
+    include: { attachments: { orderBy: { sortOrder: 'asc' } } },
+  })
   res.json({ ...serializeDocument(document), versions: versions.map((version) => ({
     id: version.id, version: version.version, originalName: version.originalName, mimeType: version.mimeType,
     sizeBytes: version.sizeBytes, issueDate: version.issueDate.toISOString(), expiryDate: version.expiryDate?.toISOString() ?? null,
     uploadedAt: version.uploadedAt.toISOString(),
+    attachments: version.attachments.map((attachment) => ({ id: attachment.id, originalName: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })),
   })) })
 }))
 
 router.post('/', asyncHandler(async (req, res) => {
-  await uploadSingle(req, res)
-  if (!req.file) return res.status(400).json({ error: 'A document file is required' })
+  const files = await uploadFiles(req, res)
+  if (files.length === 0) return res.status(400).json({ error: 'A document file is required' })
   const input = createDocumentMetadataSchema.parse(req.body)
   const projectId = scopedProjectId(req)
   if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
@@ -379,13 +414,14 @@ router.post('/', asyncHandler(async (req, res) => {
   // DOC-03: con periodicidad y sin vencimiento explícito, la primera versión
   // nace con el vencimiento calculado desde la emisión (no hay vencimiento previo).
   const periodicity = input.periodicity ?? null
-  const periodicityMode = input.periodicityMode ?? 'Calendario'
+  const periodicityMode = input.periodicityMode ?? 'Subida'
   const expiryDate = input.expiryDate
     ? new Date(input.expiryDate)
     : periodicity
       ? calculateNextExpiry(null, new Date(input.issueDate), periodicityMode, periodicity)
       : null
-  const storedUpload = await storeDocumentUpload(req.file)
+  const storedUploads = await storeDocumentUploads(files)
+  const primaryUpload = storedUploads[0]!
   try {
     const created = await prisma.$transaction(async (tx) => {
       const document = await tx.document.create({
@@ -401,14 +437,24 @@ router.post('/', asyncHandler(async (req, res) => {
         },
       })
       await tx.documentVersion.create({
-          data: { documentId: document.id, version: 1, originalName: storedUpload.originalName, storageKey: storedUpload.storageKey, mimeType: storedUpload.mimeType, sizeBytes: storedUpload.sizeBytes, issueDate: new Date(input.issueDate), expiryDate },
+          data: {
+            documentId: document.id,
+            version: 1,
+            originalName: primaryUpload.originalName,
+            storageKey: primaryUpload.storageKey,
+            mimeType: primaryUpload.mimeType,
+            sizeBytes: primaryUpload.sizeBytes,
+            issueDate: new Date(input.issueDate),
+            expiryDate,
+            attachments: { create: storedUploads.slice(1).map((upload, sortOrder) => ({ ...upload, sortOrder })) },
+          },
       })
-      await tx.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action: 'Documento subido', entityId: String(document.id), detail: `${input.name} · v1` } })
+      await tx.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action: 'Documento subido', entityId: String(document.id), detail: `${input.name} · v1 · ${storedUploads.length} archivo(s)` } })
       return tx.document.findUniqueOrThrow({ where: { id: document.id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(created))
   } catch (error) {
-    await removeDocumentFile(storedUpload.storageKey)
+    await Promise.all(storedUploads.map((upload) => removeDocumentFile(upload.storageKey).catch(() => undefined)))
     throw error
   }
 }))
@@ -416,8 +462,8 @@ router.post('/', asyncHandler(async (req, res) => {
 router.post('/:id/versions', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
-  await uploadSingle(req, res)
-  if (!req.file) return res.status(400).json({ error: 'A document file is required' })
+  const files = await uploadFiles(req, res)
+  if (files.length === 0) return res.status(400).json({ error: 'A document file is required' })
   const input = documentVersionMetadataSchema.parse(req.body)
   const before = await assertDocumentExists(id, scopedProjectId(req))
   // DOC-03: con periodicidad y sin vencimiento explícito, el nuevo vencimiento
@@ -430,19 +476,32 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
     : periodicity && periodicityMode
       ? calculateNextExpiry(before.versions[0]?.expiryDate ?? null, new Date(input.issueDate), periodicityMode, periodicity)
       : null
-  const storedUpload = await storeDocumentUpload(req.file)
+  const storedUploads = await storeDocumentUploads(files)
+  const primaryUpload = storedUploads[0]!
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const lastVersion = await tx.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' }, select: { version: true } })
       const version = (lastVersion?.version ?? 0) + 1
-      await tx.documentVersion.create({ data: { documentId: id, version, originalName: storedUpload.originalName, storageKey: storedUpload.storageKey, mimeType: storedUpload.mimeType, sizeBytes: storedUpload.sizeBytes, issueDate: new Date(input.issueDate), expiryDate } })
+      await tx.documentVersion.create({
+        data: {
+          documentId: id,
+          version,
+          originalName: primaryUpload.originalName,
+          storageKey: primaryUpload.storageKey,
+          mimeType: primaryUpload.mimeType,
+          sizeBytes: primaryUpload.sizeBytes,
+          issueDate: new Date(input.issueDate),
+          expiryDate,
+          attachments: { create: storedUploads.slice(1).map((upload, sortOrder) => ({ ...upload, sortOrder })) },
+        },
+      })
       await tx.document.update({ where: { id }, data: {} })
-      await tx.auditLog.create({ data: { projectId: before.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida` } })
+      await tx.auditLog.create({ data: { projectId: before.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida · ${storedUploads.length} archivo(s)` } })
       return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(updated))
   } catch (error) {
-    await removeDocumentFile(storedUpload.storageKey)
+    await Promise.all(storedUploads.map((upload) => removeDocumentFile(upload.storageKey).catch(() => undefined)))
     throw error
   }
 }))
@@ -570,16 +629,52 @@ router.get('/:id/versions/:version/download', asyncHandler(async (req, res) => {
   await sendDocumentVersion(res, version, 'attachment')
 }))
 
+async function sendVersionAttachment(req: Request, res: Response, disposition: 'inline' | 'attachment'): Promise<void> {
+  const id = parseId(req.params.id)
+  const versionNumber = parseId(req.params.version)
+  const attachmentId = parseId(req.params.attachmentId)
+  if (!id || !versionNumber || !attachmentId) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
+  await requireDocumentInProject(id, scopedProjectId(req))
+  const version = await prisma.documentVersion.findUnique({
+    where: { documentId_version: { documentId: id, version: versionNumber } },
+    select: { id: true },
+  })
+  if (!version) {
+    res.status(404).json({ error: 'Document version not found' })
+    return
+  }
+  const attachment = await prisma.documentVersionAttachment.findFirst({ where: { id: attachmentId, documentVersionId: version.id } })
+  if (!attachment) {
+    res.status(404).json({ error: 'Document attachment not found' })
+    return
+  }
+  await sendDocumentVersion(res, attachment, disposition)
+}
+
+router.get('/:id/versions/:version/files/:attachmentId/preview', asyncHandler(async (req, res) => {
+  await sendVersionAttachment(req, res, 'inline')
+}))
+
+router.get('/:id/versions/:version/files/:attachmentId/download', asyncHandler(async (req, res) => {
+  await sendVersionAttachment(req, res, 'attachment')
+}))
+
 router.delete('/:id', asyncHandler(async (req, res) => {
   const id = parseId(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid id' })
-  const document = await prisma.document.findFirst({ where: { id, projectId: scopedProjectId(req) }, include: { versions: true } })
+  const document = await prisma.document.findFirst({ where: { id, projectId: scopedProjectId(req) }, include: { versions: { include: { attachments: true } } } })
   if (!document) return res.status(404).json({ error: 'Not found' })
   await prisma.$transaction([
     prisma.document.delete({ where: { id } }),
     prisma.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action: 'Documento eliminado', entityId: String(id), detail: document.name } }),
   ])
-  await Promise.all(document.versions.map((version) => removeDocumentFile(version.storageKey)))
+  await Promise.all(document.versions.flatMap((version) => [
+    removeDocumentFile(version.storageKey),
+    ...version.attachments.map((attachment) => removeDocumentFile(attachment.storageKey)),
+  ]))
   res.status(204).end()
 }))
 

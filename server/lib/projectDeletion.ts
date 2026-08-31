@@ -24,7 +24,7 @@ export async function permanentlyDeleteProject(input: {
       select: {
         id: true,
         name: true,
-        documents: { select: { versions: { select: { storageKey: true } } } },
+        documents: { select: { versions: { select: { storageKey: true, attachments: { select: { storageKey: true } } } } } },
         assets: { select: { images: { select: { storageKey: true } } } },
         floorPlans: { select: { versions: { select: { storageKey: true, dziKey: true } } } },
       },
@@ -32,7 +32,7 @@ export async function permanentlyDeleteProject(input: {
     if (!project) throw Object.assign(new Error("Proyecto no encontrado."), { status: 404 })
 
     const files: ProjectFiles = {
-      documentStorageKeys: project.documents.flatMap((document) => document.versions.map((version) => version.storageKey)),
+      documentStorageKeys: project.documents.flatMap((document) => document.versions.flatMap((version) => [version.storageKey, ...version.attachments.map((attachment) => attachment.storageKey)])),
       assetImageStorageKeys: project.assets.flatMap((asset) => asset.images.map((image) => image.storageKey)),
       floorPlanVersions: project.floorPlans.flatMap((plan) => plan.versions),
     }

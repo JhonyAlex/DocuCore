@@ -3,7 +3,7 @@ import type { SearchableOption } from '@/components/SearchablePicker'
 import SearchablePicker from '@/components/SearchablePicker'
 import SearchableMultiPicker, { type SelectedValue } from '@/components/SearchableMultiPicker'
 import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
-import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
+import { createDocument, createDocumentVersion, downloadDocument, downloadDocumentAttachment, fetchAssets, fetchDocument, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
 import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
 import { useProject } from '@/contexts/ProjectContext'
 
@@ -48,10 +48,10 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   // una edición manual del vencimiento (deja de recalcularse) y mountedRef evita
   // saltar el vencimiento vigente al abrir el modal de gestión.
   const [periodicity, setPeriodicity] = useState<DocumentPeriodicity | null>(document?.periodicity ?? null)
-  const [periodicityMode, setPeriodicityMode] = useState<DocumentPeriodicityMode>(document?.periodicityMode ?? 'Calendario')
+  const [periodicityMode, setPeriodicityMode] = useState<DocumentPeriodicityMode>(document?.periodicityMode ?? 'Subida')
   const [expiryTouched, setExpiryTouched] = useState(false)
   const mountedRef = useRef(false)
-  const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -246,10 +246,10 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
 
   const save = async () => {
     setError(null)
-    if (isNew && !file) return setError('Selecciona un fichero para subir el documento.')
+    if (isNew && files.length === 0) return setError('Selecciona al menos un fichero para subir el documento.')
     setSaving(true)
     try {
-      if (isNew && file) await createDocument(projectId, metadata(), file)
+      if (isNew && files.length > 0) await createDocument(projectId, metadata(), files)
       if (!isNew && document) await updateDocument(projectId, document.id, { name, type, typeId: typeId ?? undefined, assetIds: assets.map((asset) => asset.id), locationId, issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
       await onChanged()
       onClose()
@@ -261,8 +261,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }
 
   const uploadNewVersion = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextFile = event.target.files?.[0]
-    if (!document || !nextFile) return
+    const nextFiles = Array.from(event.target.files ?? [])
+    if (!document || nextFiles.length === 0) return
     setError(null)
     setSaving(true)
     try {
@@ -273,7 +273,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
         nextExpiry = calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10)
       }
-      await createDocumentVersion(projectId, document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFile)
+      await createDocumentVersion(projectId, document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFiles)
       const next = await fetchDocument(projectId, document.id)
       setCurrent(next)
       setDetail(next)
@@ -322,7 +322,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
             <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => { setExpiryDate(event.target.value); setExpiryTouched(true) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" />{periodicity && !expiryTouched && <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}</span>}</label>
             <label className="text-sm">Periodicidad<select value={periodicity ?? ''} onChange={(event) => { setPeriodicity(event.target.value === '' ? null : event.target.value as DocumentPeriodicity); setExpiryTouched(false) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{periodicityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             {periodicity && <label className="text-sm">Modo<select value={periodicityMode} onChange={(event) => { setPeriodicityMode(event.target.value as DocumentPeriodicityMode); setExpiryTouched(false) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"><option value="Calendario">Según calendario</option><option value="Subida">Según subida</option></select></label>}
-            {isNew && <label className="text-sm">Fichero<input type="file" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setFile(event.target.files?.[0] ?? null)} disabled={saving} className="mt-1 block w-full text-xs" /></label>}
+            {isNew && <label className="text-sm">Fichero<input type="file" multiple accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} disabled={saving} className="mt-1 block w-full text-xs" /><span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Puedes seleccionar varios archivos para una misma entrega.</span>{files.length > 1 && <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{files.length} archivos seleccionados</span>}</label>}
           </div>
           {!isNew && current?.currentVersion && <div>
             <h3 className="font-medium text-sm mb-2">Vista previa</h3>
@@ -340,8 +340,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               <div className="select-none cursor-not-allowed rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-6 text-center text-sm text-slate-400">Sin vista previa para este formato. Descarga el archivo para visualizarlo.</div>
             )}
           </div>}
-          {!isNew && document && <div className="flex flex-wrap items-center gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => void uploadNewVersion(event)} disabled={saving} className="sr-only" /></label><button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar versión actual</button></div>}
-          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 px-3 py-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingVersion !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingVersion === historyVersion.version ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></li>)}</ul></div>}
+          {!isNew && current?.currentVersion && current.currentVersion.attachments && current.currentVersion.attachments.length > 0 && <div><h3 className="mb-2 text-sm font-medium">Archivos complementarios de la entrega</h3><ul className="space-y-1 text-sm">{current.currentVersion.attachments.map((attachment) => <li key={attachment.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><span className="min-w-0 truncate" title={attachment.originalName}>{attachment.originalName}</span><button type="button" className="shrink-0 text-brand-600" onClick={() => void downloadDocumentAttachment(projectId, current.id, current.currentVersion!.version, attachment.id)}>Descargar</button></li>)}</ul></div>}
+          {!isNew && document && <div className="flex flex-wrap items-center gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" multiple aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { void uploadNewVersion(event); event.currentTarget.value = '' }} disabled={saving} className="sr-only" /></label><button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar archivo principal</button></div>}
+          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}{historyVersion.attachments && historyVersion.attachments.length > 0 ? ` + ${historyVersion.attachments.length} adjunto(s)` : ''}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingVersion !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingVersion === historyVersion.version ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></div>{historyVersion.attachments && historyVersion.attachments.length > 0 && <ul className="mt-1 space-y-1 border-t border-slate-200 pt-1 text-xs dark:border-slate-700">{historyVersion.attachments.map((attachment) => <li key={attachment.id} className="flex items-center justify-between gap-2"><span className="min-w-0 truncate">{attachment.originalName}</span><button type="button" className="shrink-0 text-brand-600" onClick={() => void downloadDocumentAttachment(projectId, document.id, historyVersion.version, attachment.id)}>Descargar</button></li>)}</ul>}</li>)}</ul></div>}
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cancelar</button><button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button></div>

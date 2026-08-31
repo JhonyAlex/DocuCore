@@ -366,15 +366,28 @@ router.post("/workspaces/:workspaceId/reactivate", asyncHandler(async (req, res)
   const ws = await prisma.workspace.findUnique({ where: { id: workspaceId } })
   if (!ws) return res.status(404).json({ error: "Workspace no encontrado." })
 
+  const owner = await prisma.workspaceMember.findFirst({
+    where: { workspaceId, role: "OWNER" },
+    orderBy: { id: "asc" },
+    select: { user: { select: { emailVerifiedAt: true } } },
+  })
+
   let nextStatus: BillingStatus = "ACTIVE"
-  if (ws.billingSource === "MANUAL") {
+  if (!owner?.user.emailVerifiedAt) {
+    nextStatus = "PENDING_VERIFICATION"
+  } else if (ws.billingSource === "MANUAL") {
     nextStatus = "ACTIVE"
   } else if (ws.stripeSubscriptionId) {
     nextStatus = "ACTIVE"
   } else if (ws.trialEndsAt && ws.trialEndsAt.getTime() > Date.now()) {
     nextStatus = "TRIAL"
   } else {
-    nextStatus = "ACTIVE"
+    // Reactivating an administrative suspension is not a way to grant a
+    // commercial entitlement. Without an active Stripe subscription, an
+    // active trial, or an explicit MANUAL license, the workspace remains
+    // read-only until its owner completes checkout or the platform assigns a
+    // manual plan.
+    nextStatus = "CANCELED"
   }
 
   const updated = await prisma.$transaction(async (tx) => {

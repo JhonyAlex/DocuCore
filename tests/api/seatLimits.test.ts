@@ -71,6 +71,37 @@ describe("member seat limits (per-plan ACTIVE member capacity)", () => {
     expect(await prisma.workspaceMember.count({ where: { workspaceId: ws.id, status: "ACTIVE" } })).toBe(1)
   })
 
+  it("blocks new invitations when every active seat is already occupied", async () => {
+    const stamp = `${Date.now()}-invite-capacity`
+    const owner = await makeUser(stamp, "Owner Invite Capacity")
+    const ws = await makeWorkspace(stamp, "STARTER", owner.id)
+    for (let index = 1; index <= 2; index++) {
+      const member = await makeUser(`${stamp}-${index}`, `Seat Member ${index}`)
+      await prisma.workspaceMember.create({ data: { workspaceId: ws.id, userId: member.id, role: "MEMBER" } })
+    }
+
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const response = await fetch(`${baseUrl}/api/users/invitations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(owner.id) },
+        body: JSON.stringify({
+          email: `invitee.${stamp}@docucore.test`,
+          workspaceRole: "MEMBER",
+          projectAssignments: [],
+        }),
+      })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ code: "WORKSPACE_MEMBER_LIMIT_REACHED" })
+      expect(await prisma.workspaceInvitation.count({ where: { workspaceId: ws.id } })).toBe(0)
+    } finally {
+      server.close()
+    }
+  })
+
   it("SUSPENDED does not consume a seat and can be reactivated when capacity exists", async () => {
     const stamp = `${Date.now()}-susp`
     const owner = await makeUser(stamp, "Owner Susp")

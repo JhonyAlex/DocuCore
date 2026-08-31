@@ -102,6 +102,20 @@ router.post('/invitations', asyncHandler(async (req, res) => {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
   const invitation = await prisma.$transaction(async (tx) => {
+    // A pending invitation does not consume a seat, but sending new invites
+    // while there are no seats left only creates a dead-end for the recipient.
+    // Take the same workspace lock used when accepting/reactivating so this
+    // check remains correct if two administrators invite at once.
+    const { workspace, counts } = await lockWorkspaceForEntitlement(tx, scope.workspace.id)
+    const snapshot = computeCompliance(workspace, counts)
+    if (!snapshot.canWrite) {
+      throw Object.assign(new Error('La suscripción no permite enviar invitaciones en este momento.'), {
+        status: 402,
+        code: snapshot.reason ?? 'SUBSCRIPTION_EXPIRED',
+      })
+    }
+    assertMemberSeatAvailable(snapshot.maxActiveMembers, counts.activeMembers)
+
     const created = await tx.workspaceInvitation.create({
       data: {
         id: `inv_${Date.now()}_${randomBytes(4).toString('hex')}`,

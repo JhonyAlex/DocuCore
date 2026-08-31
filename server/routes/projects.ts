@@ -9,12 +9,18 @@ import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace, assertWorkspaceW
 import { computeCompliance, lockWorkspaceForEntitlement, restoreProjectTransactional, fetchWorkspaceCompliance } from '../lib/entitlements'
 import { permanentlyDeleteProject } from '../lib/projectDeletion'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
+import { normalizeProjectCode } from '../../shared/projectCode'
 
 const router = Router()
 const projectRoleSchema = z.enum(['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'])
 const memberInputSchema = z.object({ userId: z.number().int().positive(), role: projectRoleSchema }).strict()
+const projectCodeSchema = z.string()
+  .max(120)
+  .transform(normalizeProjectCode)
+  .pipe(z.string().min(2).max(40).regex(/^[a-z0-9][a-z0-9_-]*$/, 'El código solo admite letras, números, guiones y guiones bajos'))
+
 const projectInputSchema = z.object({
-  code: z.string().trim().min(2).max(40).regex(/^[A-Z0-9][A-Z0-9_-]*$/i, 'El código solo admite letras, números, guiones y guiones bajos').transform((value) => value.toUpperCase()),
+  code: projectCodeSchema,
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(500).default(''),
   themeKey: z.string().refine(isProjectThemeKey, `themeKey debe ser uno de: ${projectThemeKeys.join(', ')}`).default('blue'),
@@ -189,45 +195,56 @@ router.post('/', asyncHandler(async (req, res) => {
   await ensureWorkspaceMembersActive(prisma, wsScope.workspace.id, input.memberIds)
   if (input.copyConfigurationFromProjectId) await ensureManagementScope(input.copyConfigurationFromProjectId, actorId, 'MANAGE_CONFIGURATION')
 
-  const created = await prisma.$transaction(async (tx) => {
-    const { workspace, counts } = await lockWorkspaceForEntitlement(tx, wsScope.workspace.id)
-    const snapshot = computeCompliance(workspace, counts)
-    if (!snapshot.canWrite || !snapshot.canCreateProject) {
-      throw Object.assign(
-        new Error(
-          snapshot.reason === 'PLAN_ACTION_REQUIRED'
-            ? 'El workspace debe resolver primero qué proyecto conservar antes de crear otro.'
-            : snapshot.reason === 'PAST_DUE'
-              ? 'La suscripción de este workspace tiene un pago pendiente.'
-              : snapshot.reason === 'TRIAL_EXPIRED'
-                ? 'El período de prueba de este workspace ha finalizado.'
-                : `Has alcanzado el límite de ${snapshot.maxActiveProjects} proyecto(s) activo(s) para tu plan.`,
-        ),
-        {
-          status: !snapshot.canWrite && snapshot.complianceStatus !== 'COMPLIANT' ? 402 : 409,
-          code: snapshot.reason === 'PLAN_ACTION_REQUIRED' ? 'PLAN_COMPLIANCE_REQUIRED' : (snapshot.reason ?? 'PROJECT_LIMIT_EXCEEDED'),
-          maxActiveProjects: snapshot.maxActiveProjects,
-          activeProjects: snapshot.activeProjectsCount,
-        },
-      )
-    }
+  let created: number
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const { workspace, counts } = await lockWorkspaceForEntitlement(tx, wsScope.workspace.id)
+      const snapshot = computeCompliance(workspace, counts)
+      if (!snapshot.canWrite || !snapshot.canCreateProject) {
+        throw Object.assign(
+          new Error(
+            snapshot.reason === 'PLAN_ACTION_REQUIRED'
+              ? 'El workspace debe resolver primero qué proyecto conservar antes de crear otro.'
+              : snapshot.reason === 'PAST_DUE'
+                ? 'La suscripción de este workspace tiene un pago pendiente.'
+                : snapshot.reason === 'TRIAL_EXPIRED'
+                  ? 'El período de prueba de este workspace ha finalizado.'
+                  : `Has alcanzado el límite de ${snapshot.maxActiveProjects} proyecto(s) activo(s) para tu plan.`,
+          ),
+          {
+            status: !snapshot.canWrite && snapshot.complianceStatus !== 'COMPLIANT' ? 402 : 409,
+            code: snapshot.reason === 'PLAN_ACTION_REQUIRED' ? 'PLAN_COMPLIANCE_REQUIRED' : (snapshot.reason ?? 'PROJECT_LIMIT_EXCEEDED'),
+            maxActiveProjects: snapshot.maxActiveProjects,
+            activeProjects: snapshot.activeProjectsCount,
+          },
+        )
+      }
 
-    // Finding J: Validate inside the transaction after locking workspace FOR UPDATE
-    await ensureWorkspaceMembersActive(tx, wsScope.workspace.id, input.memberIds)
-    await ensureWorkspaceMembersActive(tx, wsScope.workspace.id, [{ userId: actorId }])
+      // Finding J: Validate inside the transaction after locking workspace FOR UPDATE
+      await ensureWorkspaceMembersActive(tx, wsScope.workspace.id, input.memberIds)
+      await ensureWorkspaceMembersActive(tx, wsScope.workspace.id, [{ userId: actorId }])
 
-    const project = await tx.project.create({
-      data: { workspaceId: wsScope.workspace.id, code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
-      select: { id: true },
+      const project = await tx.project.create({
+        data: { workspaceId: wsScope.workspace.id, code: input.code, name: input.name, description: input.description, themeKey: input.themeKey },
+        select: { id: true },
+      })
+      const memberByUserId = new Map(input.memberIds.map((member) => [member.userId, member.role]))
+      memberByUserId.set(actorId, 'OWNER')
+      await tx.projectMember.createMany({ data: [...memberByUserId].map(([userId, role]) => ({ projectId: project.id, userId, role })) })
+      if (input.copyConfigurationFromProjectId) await copyProjectConfiguration(tx, input.copyConfigurationFromProjectId, project.id)
+      else await createMinimalProjectConfiguration(tx, project.id)
+      await tx.auditLog.create({ data: { workspaceId: wsScope.workspace.id, projectId: project.id, userId: actorId, action: 'Creación', entityId: `project:${project.id}`, detail: `Proyecto "${input.name}" creado${input.copyConfigurationFromProjectId ? ' copiando configuración' : ''}`, timestamp: new Date() } })
+      return project.id
     })
-    const memberByUserId = new Map(input.memberIds.map((member) => [member.userId, member.role]))
-    memberByUserId.set(actorId, 'OWNER')
-    await tx.projectMember.createMany({ data: [...memberByUserId].map(([userId, role]) => ({ projectId: project.id, userId, role })) })
-    if (input.copyConfigurationFromProjectId) await copyProjectConfiguration(tx, input.copyConfigurationFromProjectId, project.id)
-    else await createMinimalProjectConfiguration(tx, project.id)
-    await tx.auditLog.create({ data: { workspaceId: wsScope.workspace.id, projectId: project.id, userId: actorId, action: 'Creación', entityId: `project:${project.id}`, detail: `Proyecto "${input.name}" creado${input.copyConfigurationFromProjectId ? ' copiando configuración' : ''}`, timestamp: new Date() } })
-    return project.id
-  })
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw Object.assign(new Error(`Ya existe un proyecto con el código "${input.code}".`), {
+        status: 409,
+        code: 'PROJECT_CODE_ALREADY_EXISTS',
+      })
+    }
+    throw error
+  }
   const project = await prisma.project.findUniqueOrThrow({ where: { id: created }, include: projectInclude })
   res.status(201).json(serializeProject(project))
 }))

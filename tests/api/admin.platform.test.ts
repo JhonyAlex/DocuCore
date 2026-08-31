@@ -90,6 +90,19 @@ describe("SAAS-05 Platform Admin API", () => {
       })
       expect(nonAdminManualRes.status).toBe(403)
 
+      // Workspace roles are not a path to platform administration. The normal
+      // member endpoint is strict and has no isPlatformAdmin field.
+      const escalationRes = await fetch(`${baseUrl}/api/users/${standardUser.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-docucore-test-actor-id": String(standardUser.id),
+        },
+        body: JSON.stringify({ role: "ADMIN", isPlatformAdmin: true }),
+      })
+      expect(escalationRes.status).toBe(400)
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: standardUser.id } })).isPlatformAdmin).toBe(false)
+
       const unverifiedManualRes = await fetch(`${baseUrl}/api/admin/workspaces/${unverifiedWorkspace.id}/manual-plan`, {
         method: "POST",
         headers: {
@@ -262,6 +275,40 @@ describe("SAAS-05 Platform Admin API", () => {
       expect(reactivateRes.status).toBe(200)
       const reactivateData = await reactivateRes.json()
       expect(reactivateData.billingStatus).toBe("ACTIVE")
+
+      // 8. Suspending and reactivating an unlicensed workspace must never
+      // turn the administrative action into a payment bypass. A platform
+      // admin must explicitly assign a MANUAL plan to grant access without
+      // Stripe.
+      const unpaidWorkspace = await prisma.workspace.create({
+        data: {
+          name: `Cuenta sin licencia ${stamp}`,
+          slug: `sin-licencia-${stamp}`,
+          billingStatus: "SUSPENDED",
+        },
+      })
+      await prisma.workspaceMember.create({ data: { workspaceId: unpaidWorkspace.id, userId: standardUser.id, role: "OWNER" } })
+      const unpaidReactivate = await fetch(`${baseUrl}/api/admin/workspaces/${unpaidWorkspace.id}/reactivate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(adminUser.id) },
+      })
+      expect(unpaidReactivate.status).toBe(200)
+      expect(await unpaidReactivate.json()).toMatchObject({ billingStatus: "CANCELED" })
+
+      const unverifiedSuspendedWorkspace = await prisma.workspace.create({
+        data: {
+          name: `Cuenta pendiente ${stamp}`,
+          slug: `pendiente-${stamp}`,
+          billingStatus: "SUSPENDED",
+        },
+      })
+      await prisma.workspaceMember.create({ data: { workspaceId: unverifiedSuspendedWorkspace.id, userId: unverifiedUser.id, role: "OWNER" } })
+      const unverifiedReactivate = await fetch(`${baseUrl}/api/admin/workspaces/${unverifiedSuspendedWorkspace.id}/reactivate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(adminUser.id) },
+      })
+      expect(unverifiedReactivate.status).toBe(200)
+      expect(await unverifiedReactivate.json()).toMatchObject({ billingStatus: "PENDING_VERIFICATION" })
     } finally {
       server.close()
     }

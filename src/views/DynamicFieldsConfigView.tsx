@@ -87,7 +87,7 @@ export default function DynamicFieldsConfigView() {
           <h1 className="text-2xl font-semibold tracking-tight">Campos dinámicos</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Características personalizadas del proyecto {project?.name ?? ''}</p>
         </div>
-        <button type="button" onClick={() => { setFormError(null); setFormField(null) }} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">Nuevo campo</button>
+        <button type="button" onClick={() => { setFormError(null); setFormField(null) }} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Nuevo campo</button>
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select aria-label="Filtrar por tipo de activo" value={typeFilter} onChange={(event) => { setTypeFilter(Number(event.target.value)); selection.clear() }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">

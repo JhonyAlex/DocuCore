@@ -544,11 +544,31 @@ model DocumentVersion {
   uploadedAt   DateTime  @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  attachments DocumentVersionAttachment[]
 
   @@unique([documentId, version])
   @@index([documentId, uploadedAt])
   @@index([expiryDate])
   @@index([documentId, version(sort: Desc)])
+}
+
+// Una versión es una entrega lógica: mantiene un fichero principal compatible
+// con el contrato histórico y puede incluir justificantes complementarios.
+// Todas las piezas del lote comparten emisión/vencimiento y, por tanto, solo
+// avanzan la periodicidad una vez.
+model DocumentVersionAttachment {
+  id                Int       @id @default(autoincrement())
+  documentVersionId Int
+  originalName      String
+  storageKey        String    @unique
+  mimeType          String
+  sizeBytes         Int
+  sortOrder         Int       @default(0)
+  createdAt         DateTime  @default(now())
+
+  documentVersion DocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Cascade)
+
+  @@index([documentVersionId, sortOrder])
 }
 
 model Event {

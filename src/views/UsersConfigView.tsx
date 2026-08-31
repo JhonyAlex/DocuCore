@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from '@/contexts/ProjectContext'
-import { addProjectMember, fetchBillingStatus, fetchProjectMembers, fetchWorkspaceMembers, inviteWorkspaceMember, reactivateWorkspaceMember, removeProjectMember, setWorkspaceMemberStatus, updateProjectMember, type ApiProjectMember, type ApiProjectRole, type ApiWorkspaceMember } from '@/lib/api'
+import { addProjectMember, ApiError, fetchBillingStatus, fetchProjectMembers, fetchWorkspaceMembers, inviteWorkspaceMember, reactivateWorkspaceMember, removeProjectMember, setWorkspaceMemberStatus, updateProjectMember, type ApiProjectMember, type ApiProjectRole, type ApiWorkspaceMember } from '@/lib/api'
 import type { ApiBillingStatus } from '@/types'
 
 const roles: ApiProjectRole[] = ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER']
@@ -10,6 +10,13 @@ function workspaceStatusLabel(status: ApiWorkspaceMember['workspaceStatus']): st
   if (status === 'SUSPENDED') return 'Suspendido'
   if (status === 'PLAN_LOCKED') return 'Bloqueado por plan'
   return 'Activo'
+}
+
+const memberLimitMessage = 'Has alcanzado el límite de usuarios activos de tu plan. Suspende a un miembro o actualiza tu plan.'
+
+function displayUserError(reason: unknown, fallback: string): string {
+  if (reason instanceof ApiError && reason.code === 'WORKSPACE_MEMBER_LIMIT_REACHED') return memberLimitMessage
+  return reason instanceof Error ? reason.message : fallback
 }
 
 export default function UsersConfigView() {
@@ -43,6 +50,11 @@ export default function UsersConfigView() {
 
   const invite = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (billing && !billing.canInviteMember) {
+      setError(memberLimitMessage)
+      setNotice(null)
+      return
+    }
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -52,7 +64,7 @@ export default function UsersConfigView() {
       setNotice(`Invitación enviada a ${invitation.email}. La persona recibirá un correo electrónico para aceptarla y configurar su propia contraseña.`)
       await load()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'No se pudo enviar la invitación.')
+      setError(displayUserError(reason, 'No se pudo enviar la invitación.'))
     } finally {
       setBusy(false)
     }
@@ -78,13 +90,21 @@ export default function UsersConfigView() {
   }
 
   const toggleWorkspaceStatus = async (user: ApiWorkspaceMember) => {
+    if (user.workspaceStatus === 'SUSPENDED' && billing && !billing.canActivateMember) {
+      setError(memberLimitMessage)
+      return
+    }
     setBusy(true)
-    try { await setWorkspaceMemberStatus(user.id, user.workspaceStatus !== 'SUSPENDED'); await load() } catch (reason) { setError(reason instanceof Error ? reason.message : 'No se pudo actualizar el usuario.') } finally { setBusy(false) }
+    try { await setWorkspaceMemberStatus(user.id, user.workspaceStatus !== 'SUSPENDED'); await load() } catch (reason) { setError(displayUserError(reason, 'No se pudo actualizar el usuario.')) } finally { setBusy(false) }
   }
 
   const reactivatePlanLocked = async (user: ApiWorkspaceMember) => {
+    if (billing && !billing.canActivateMember) {
+      setError(memberLimitMessage)
+      return
+    }
     setBusy(true)
-    try { await reactivateWorkspaceMember(user.id); await load() } catch (reason) { setError(reason instanceof Error ? reason.message : 'No se pudo reactivar el usuario.') } finally { setBusy(false) }
+    try { await reactivateWorkspaceMember(user.id); await load() } catch (reason) { setError(displayUserError(reason, 'No se pudo reactivar el usuario.')) } finally { setBusy(false) }
   }
 
   const remove = async (userId: number) => {
@@ -104,6 +124,9 @@ export default function UsersConfigView() {
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           La identidad es global; el rol se asigna de forma independiente en cada proyecto. Las invitaciones no
           requieren definir la contraseña de otra persona.
+        </p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Los roles de esta pantalla solo conceden permisos dentro del workspace y sus proyectos; no conceden acceso a Administración de plataforma.
         </p>
       </div>
       {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
@@ -192,7 +215,7 @@ export default function UsersConfigView() {
                 </p>
               </div>
               {user.workspaceStatus === 'PLAN_LOCKED' ? (
-                <button type="button" disabled={busy || remainingSeats <= 0} onClick={() => void reactivatePlanLocked(user)} className="text-xs font-medium text-brand-600 disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={() => void reactivatePlanLocked(user)} className="text-xs font-medium text-brand-600 disabled:opacity-50">
                   Reactivar
                 </button>
               ) : (
