@@ -1293,7 +1293,12 @@ export function switchActiveWorkspace(workspaceId: number): Promise<{ activeWork
 
 export async function fetchDocuments(projectId: number, params: Omit<DocumentListParams, 'projectId'> = {}): Promise<ApiDocumentListResponse> {
   const q = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') q.set(key, String(value))
+  for (const [key, value] of Object.entries(params)) {
+    // assetId=null es el filtro explícito de documentos sin activos. El resto de
+    // filtros opcionales usan null como estado local de «sin filtro» y no deben
+    // llegar al servidor como la cadena "null".
+    if (value !== undefined && value !== '' && (value !== null || key === 'assetId')) q.set(key, String(value))
+  }
   return request<ApiDocumentListResponse>(`${projectPath(projectId, '/documents')}?${q.toString()}`)
 }
 

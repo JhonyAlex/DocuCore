@@ -50,9 +50,16 @@ test.describe('Dashboard (Panel general)', () => {
 
     // Return to dashboard and click KPI 2: Documentos por vencer -> /docs
     await page.goto('/dashboard')
+    const documentsResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/projects/1/documents'
+        && !url.searchParams.has('typeId')
+        && !url.searchParams.has('locationId')
+    })
     await main.getByText('Documentos por vencer', { exact: true }).click()
     await expect(page).toHaveURL(/\/docs$/)
     await expect(page.getByRole('heading', { name: 'Documentos', exact: true })).toBeVisible()
+    expect((await documentsResponse).status()).toBe(200)
 
     // Return to dashboard and click KPI 3: Eventos próximos -> /calendar
     await page.goto('/dashboard')
