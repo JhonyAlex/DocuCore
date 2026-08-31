@@ -5,6 +5,7 @@ import SearchableMultiPicker, { type SelectedValue } from '@/components/Searchab
 import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
 import { createDocument, createDocumentVersion, downloadDocument, downloadDocumentAttachment, fetchAssets, fetchDocument, fetchDocumentAttachmentPreview, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
 import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
+import { isExcelMimeType, isPdfMimeType, isTextMimeType, isViewableMimeType } from '@/lib/documentPreview'
 import { useProject } from '@/contexts/ProjectContext'
 
 type DocumentModalProps = {
@@ -60,8 +61,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const previewOpenRef = useRef(false)
   // Contenido de la vista previa incrustada: se carga al abrir el documento y
   // se comparte con el visor (no se vuelve a pedir el fichero al ampliar).
-  // PDF guarda el blob (lo renderiza PdfPreview en canvas); imagen y texto
-  // conservan objectUrl/text como antes.
+  // PDF y Excel guardan el blob; imagen y texto conservan objectUrl/text.
   const [preview, setPreview] = useState<{ objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
   const [previewError, setPreviewError] = useState(false)
   const [historyPreview, setHistoryPreview] = useState<{ name?: string; version: number; mimeType: string; objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
@@ -82,7 +82,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const version = current?.currentVersion
   const documentId = document?.id
   const versionNumber = version?.version
-  const previewable = Boolean(version && (version.mimeType === 'application/pdf' || version.mimeType.startsWith('image/') || version.mimeType.startsWith('text/')))
+  const previewable = Boolean(version && isViewableMimeType(version.mimeType))
 
   useEffect(() => {
     if (!documentId || !versionNumber) return
@@ -92,9 +92,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     fetchDocumentPreview(projectId, documentId)
       .then((blob) => {
         if (!active) return
-        if (blob.type.startsWith('text/')) {
+        if (isTextMimeType(blob.type)) {
           void blob.text().then((text) => { if (active) setPreview({ objectUrl: null, text, blob: null }) })
-        } else if (blob.type === 'application/pdf') {
+        } else if (isPdfMimeType(blob.type) || isExcelMimeType(blob.type)) {
           setPreview({ objectUrl: null, text: null, blob })
         } else {
           setPreview({ objectUrl: URL.createObjectURL(blob), text: null, blob: null })
@@ -139,12 +139,12 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       let objectUrl: string | null = null
       let text: string | null = null
       let blob: Blob | null = null
-      const previewableVersion = historicalVersion.mimeType === 'application/pdf' || historicalVersion.mimeType.startsWith('image/') || historicalVersion.mimeType.startsWith('text/')
+      const previewableVersion = isViewableMimeType(historicalVersion.mimeType)
       if (previewableVersion) {
         const previewBlob = await fetchDocumentPreview(projectId, document.id, historicalVersion.version)
         if (requestId !== previewRequestRef.current) return
-        if (previewBlob.type.startsWith('text/')) text = await previewBlob.text()
-        else if (previewBlob.type === 'application/pdf') blob = previewBlob
+        if (isTextMimeType(previewBlob.type)) text = await previewBlob.text()
+        else if (isPdfMimeType(previewBlob.type) || isExcelMimeType(previewBlob.type)) blob = previewBlob
         else objectUrl = URL.createObjectURL(previewBlob)
       }
       if (requestId !== previewRequestRef.current) {
@@ -174,12 +174,12 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       let objectUrl: string | null = null
       let text: string | null = null
       let blob: Blob | null = null
-      const previewableAttachment = attachment.mimeType === 'application/pdf' || attachment.mimeType.startsWith('image/') || attachment.mimeType.startsWith('text/')
+      const previewableAttachment = isViewableMimeType(attachment.mimeType)
       if (previewableAttachment) {
         const previewBlob = await fetchDocumentAttachmentPreview(projectId, document.id, targetVersion, attachment.id)
         if (requestId !== previewRequestRef.current) return
-        if (previewBlob.type.startsWith('text/')) text = await previewBlob.text()
-        else if (previewBlob.type === 'application/pdf') blob = previewBlob
+        if (isTextMimeType(previewBlob.type)) text = await previewBlob.text()
+        else if (isPdfMimeType(previewBlob.type) || isExcelMimeType(previewBlob.type)) blob = previewBlob
         else objectUrl = URL.createObjectURL(previewBlob)
       }
       if (requestId !== previewRequestRef.current) {

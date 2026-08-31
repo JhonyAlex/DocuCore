@@ -1,17 +1,19 @@
 import { expect, test } from './fixtures'
 import { minimalPdf } from './pdf'
+import { createSampleWorkbookBuffer } from '../helpers/excelFixture'
 
 // DOC-03: vista previa de documentos. Al abrir «Gestionar documento», la
 // versión actual se muestra incrustada justo debajo del campo Emisión (PDF
 // renderizado con pdf.js en canvas propios — sin la barra del visor nativo y
-// siempre desde arriba —, imágenes en <img>, texto plano en <pre>) sin botón
-// previo; al tocar la vista previa se abre el visor ampliado. Los formatos sin
-// visor nativo (xlsx/xls) muestran el área deshabilitada. Escape cierra solo
-// el visor, sin cerrar el modal padre.
+// siempre desde arriba —, Excel renderizado en cuadrícula de solo lectura con
+// pestañas de hojas y celdas combinadas, imágenes en <img>, texto plano en <pre>)
+// sin botón previo; al tocar la vista previa se abre el visor ampliado. Escape
+// cierra solo el visor, sin cerrar el modal padre.
 
 // PNG 1x1 válido.
 const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082', 'hex')
-const XLSX_BYTES = Buffer.from('PK\x03\x04DOCUCORE-PREVIEW-XLSX')
+const XLSX_BYTES = createSampleWorkbookBuffer()
+const CORRUPTED_XLSX_BYTES = Buffer.from('PK\x03\x04CORRUPTED-ZIP-HEADER')
 
 async function createDocument(page: import('@playwright/test').Page, name: string, mimeType: string, bytes: Buffer, fileName: string): Promise<{ id: number }> {
   const response = await page.request.post('/api/documents', {
@@ -60,13 +62,10 @@ test.describe.serial('document preview', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('renders a pdf with canvas previews and disables the preview area for xlsx', async ({ page, consoleIssues }) => {
+  test('renders a pdf with canvas previews and scroll reset', async ({ page, consoleIssues }) => {
     const pdfName = `E2E Preview PDF ${Date.now()}`
-    const xlsxName = `E2E Preview XLSX ${Date.now()}`
     const pdf = await createDocument(page, pdfName, 'application/pdf', minimalPdf(3), 'plano-e2e.pdf')
-    const xlsx = await createDocument(page, xlsxName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', XLSX_BYTES, 'tabla-e2e.xlsx')
     expect(pdf.id).toBeGreaterThan(0)
-    expect(xlsx.id).toBeGreaterThan(0)
 
     await page.goto('/docs')
     await page.getByText(pdfName, { exact: true }).click()
@@ -93,12 +92,64 @@ test.describe.serial('document preview', () => {
     await page.keyboard.press('Escape')
     await expect(pdfPreview).toBeHidden()
     await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    expect(consoleIssues).toEqual([])
+  })
 
+  test('renders an uploaded xlsx in embedded preview, switches sheet tabs, opens enlarged viewer, and handles corrupted files gracefully', async ({ page, consoleIssues }) => {
+    const xlsxName = `E2E Preview XLSX ${Date.now()}`
+    const corruptedName = `E2E Corrupted XLSX ${Date.now()}`
+    const xlsx = await createDocument(page, xlsxName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', XLSX_BYTES, 'inventario.xlsx')
+    const corrupted = await createDocument(page, corruptedName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', CORRUPTED_XLSX_BYTES, 'corrupto.xlsx')
+    expect(xlsx.id).toBeGreaterThan(0)
+    expect(corrupted.id).toBeGreaterThan(0)
+
+    await page.goto('/docs')
     await page.getByText(xlsxName, { exact: true }).click()
-    const xlsxDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
-    await expect(xlsxDialog.getByText('Sin vista previa para este formato. Descarga el archivo para visualizarlo.', { exact: true })).toBeVisible()
-    await expect(xlsxDialog.getByRole('button', { name: /Abrir vista previa/ })).toHaveCount(0)
-    await xlsxDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+
+    // Vista previa incrustada en el modal de gestión
+    const previewBtn = manageDialog.getByRole('button', { name: `Abrir vista previa de ${xlsxName}` })
+    await expect(previewBtn).toBeVisible({ timeout: 10_000 })
+    await expect(previewBtn.getByText('Resumen de Equipos y Calibración')).toBeVisible()
+    await expect(previewBtn.getByText('MG-203')).toBeVisible()
+
+    // Abrir visor ampliado
+    await previewBtn.click()
+    const enlargedDialog = page.getByRole('dialog', { name: `Vista previa de ${xlsxName}` })
+    await expect(enlargedDialog).toBeVisible()
+
+    // Pestañas de hojas: Inventario y Mantenimiento
+    const invTab = enlargedDialog.getByRole('button', { name: 'Inventario', exact: true })
+    const mantTab = enlargedDialog.getByRole('button', { name: 'Mantenimiento', exact: true })
+    await expect(invTab).toBeVisible()
+    await expect(mantTab).toBeVisible()
+
+    // Comprobar contenido de la primera hoja
+    await expect(enlargedDialog.getByText('Manómetro digital')).toBeVisible()
+    await expect(enlargedDialog.getByText('85%')).toBeVisible()
+
+    // Cambiar a la segunda hoja (Mantenimiento)
+    await mantTab.click()
+    await expect(enlargedDialog.getByText('Calibración anual')).toBeVisible()
+    await expect(enlargedDialog.getByText('Juan Pérez')).toBeVisible()
+    await expect(enlargedDialog.getByText('150 €')).toBeVisible()
+
+    // Volver a la primera hoja
+    await invTab.click()
+    await expect(enlargedDialog.getByText('MG-203')).toBeVisible()
+
+    // Escape cierra el visor ampliado sin cerrar el modal de gestión
+    await page.keyboard.press('Escape')
+    await expect(enlargedDialog).toBeHidden()
+    await expect(manageDialog).toBeVisible()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+
+    // Comprobar manejo de archivo Excel corrupto
+    await page.getByText(corruptedName, { exact: true }).click()
+    const corruptDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    await expect(corruptDialog.getByText('No se pudo generar la vista previa de esta hoja de cálculo.')).toBeVisible()
+    await corruptDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+
     expect(consoleIssues).toEqual([])
   })
 

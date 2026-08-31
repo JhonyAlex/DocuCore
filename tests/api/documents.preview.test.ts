@@ -16,10 +16,12 @@ let baseUrl: string
 let storageDir: string
 const createdDocumentIds: number[] = []
 
+import { createSampleWorkbookBuffer } from '../helpers/excelFixture'
+
 // PNG 1x1 válido.
 const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082', 'hex')
 const PDF_BYTES = Buffer.from('%PDF-1.4 QA PREVIEW BYTES')
-const XLSX_BYTES = Buffer.from('PK\x03\x04QA-PREVIEW-XLSX')
+const XLSX_BYTES = createSampleWorkbookBuffer()
 
 async function api(apiPath: string, init?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${projectApiPath(apiPath, init)}`, init)
@@ -112,10 +114,12 @@ describe('document preview endpoint', () => {
     expect(Buffer.from(await current.arrayBuffer())).toEqual(currentBytes)
   })
 
-  it('serves an xlsx document (no native preview; download keeps attachment)', async () => {
+  it('serves an xlsx document inline for preview and attachment for download', async () => {
     const id = await createDocument(`QA-PREVIEW-XLSX-${uniqueSuffix()}`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', XLSX_BYTES, 'tabla.xlsx')
     const preview = await api(`/api/documents/${id}/preview`)
     expect(preview.status).toBe(200)
+    expect(preview.headers.get('content-type')).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    expect(preview.headers.get('content-disposition')).toContain('inline')
     expect(Buffer.from(await preview.arrayBuffer())).toEqual(XLSX_BYTES)
     const download = await api(`/api/documents/${id}/download`)
     expect(download.headers.get('content-disposition')).toContain('attachment')

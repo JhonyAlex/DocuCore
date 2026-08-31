@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react'
 import PdfPreview from '@/components/PdfPreview'
+import ExcelPreview from '@/components/ExcelPreview'
+import { isExcelMimeType, isImageMimeType, isPdfMimeType, isTextMimeType } from '@/lib/documentPreview'
 
 // Cuerpo de la vista previa: PDF renderizado con pdf.js en canvas propios
-// (PdfPreview: sin la barra del visor nativo y siempre desde arriba), imágenes
-// en <img> y texto plano en <pre>. El iframe queda solo como respaldo si el
-// PDF llegara sin blob (no ocurre en el flujo normal). Los formatos sin vista
-// previa del navegador (xlsx/xls) se resuelven antes de llegar aquí (el área
-// de vista previa queda deshabilitada en el modal); el mensaje se mantiene
-// como respaldo por si llega otro MIME. `compact` es el modo incrustado del
-// modal (alturas pequeñas, sin interacción interna: el clic abre el visor);
-// el visor usa el modo completo.
+// (PdfPreview: sin la barra del visor nativo y siempre desde arriba), Excel
+// renderizado en cuadrícula de solo lectura (ExcelPreview: hojas, celdas
+// formateadas y celdas combinadas), imágenes en <img> y texto plano en <pre>.
+// El iframe queda solo como respaldo si el PDF llegara sin blob (no ocurre en
+// el flujo normal). `compact` es el modo incrustado del modal (alturas
+// pequeñas, sin interacción interna: el clic abre el visor); el visor usa el
+// modo completo.
 export function DocumentPreviewBody({ name, mimeType, objectUrl, text, blob, compact = false }: {
   name: string
   mimeType: string
@@ -18,12 +19,16 @@ export function DocumentPreviewBody({ name, mimeType, objectUrl, text, blob, com
   blob: Blob | null
   compact?: boolean
 }) {
-  const isPdf = mimeType === 'application/pdf'
-  const isImage = mimeType.startsWith('image/')
-  const isText = mimeType.startsWith('text/')
+  const isPdf = isPdfMimeType(mimeType)
+  const isExcel = isExcelMimeType(mimeType)
+  const isImage = isImageMimeType(mimeType)
+  const isText = isTextMimeType(mimeType)
 
   if (isPdf && blob) {
     return <PdfPreview blob={blob} name={name} compact={compact} />
+  }
+  if (isExcel && blob) {
+    return <ExcelPreview blob={blob} name={name} compact={compact} />
   }
   if (isPdf && objectUrl) {
     return <iframe title={`Vista previa de ${name}`} src={objectUrl} className={compact ? 'pointer-events-none h-56 w-full' : 'h-[70vh] w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800'} />
@@ -53,6 +58,7 @@ type DocumentPreviewModalProps = {
 // su propio Escape mientras está abierto.
 export default function DocumentPreviewModal({ name, version, mimeType, objectUrl, text, blob, onClose }: DocumentPreviewModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const isExcel = isExcelMimeType(mimeType)
 
   useEffect(() => {
     const previouslyFocused = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
@@ -69,7 +75,7 @@ export default function DocumentPreviewModal({ name, version, mimeType, objectUr
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Vista previa de ${name}`} tabIndex={-1} className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none flex flex-col">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={`Vista previa de ${name}`} tabIndex={-1} className={`w-full ${isExcel ? 'max-w-[95vw]' : 'max-w-4xl'} max-h-[90vh] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none flex flex-col`}>
         <div className="shrink-0 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
           <h2 className="min-w-0 truncate font-semibold text-lg">Vista previa · {name} · v{version}</h2>
           <button type="button" aria-label="Cerrar vista previa" onClick={onClose} className="shrink-0 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">×</button>
@@ -81,3 +87,4 @@ export default function DocumentPreviewModal({ name, version, mimeType, objectUr
     </div>
   )
 }
+
