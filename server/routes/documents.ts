@@ -8,11 +8,15 @@ import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicity
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
 import { actorIdFromRequest, requireDocumentInProject, scopedProjectId } from '../lib/projectScope'
+import { normalizeFileName } from '../lib/textEncoding'
 
 const router: Router = Router({ mergeParams: true })
 
 const upload = multer({
   storage: multer.memoryStorage(),
+  // Browsers send multipart filenames as UTF-8. Multer defaults to Latin-1,
+  // which turns “–” into “â” before the document reaches our storage layer.
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: 1 },
   fileFilter: (_req, file, callback) => {
     if (!ALLOWED_DOCUMENT_MIME_TYPES.has(file.mimetype)) return callback(new Error('Unsupported document type'))
@@ -160,7 +164,7 @@ async function sendDocumentVersion(
   }
   res.setHeader('Content-Type', version.mimeType)
   res.setHeader('Content-Length', String(bytes.length))
-  res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodeURIComponent(version.originalName)}`)
+  res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodeURIComponent(normalizeFileName(version.originalName))}`)
   res.send(bytes)
 }
 

@@ -10,10 +10,12 @@ import { MAX_AUTOCOMPLETE_SIZE, MAX_MARKER_PAGE_SIZE, pageLimit } from '../lib/p
 import { nextAssetEventsById } from '../lib/nextAssetEvents'
 import type { DerivedAssetEvent } from '../lib/assetEvents'
 import { actorIdFromRequest, requireAssetInProject, requireLocationInProject, scopedProjectId } from '../lib/projectScope'
+import { normalizeFileName } from '../lib/textEncoding'
 
 const router: Router = Router({ mergeParams: true })
 const upload = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_FLOOR_PLAN_SIZE_BYTES, files: 1 },
   fileFilter: (_req, file, callback) => {
     if (!ALLOWED_FLOOR_PLAN_MIME_TYPES.has(file.mimetype)) return callback(new Error('Unsupported floor plan type'))
@@ -217,7 +219,7 @@ router.post('/', asyncHandler(async (req, res) => {
   try {
     const plan = await prisma.$transaction(async (tx) => {
       const created = await tx.floorPlan.create({ data: { name: input.name, projectId, locationId: input.locationId } })
-      await tx.floorPlanVersion.create({ data: { floorPlanId: created.id, version: 1, originalName: `${req.file!.originalname.replace(/\.[^.]+$/, '') || 'plano'}.webp`, ...stored } })
+      await tx.floorPlanVersion.create({ data: { floorPlanId: created.id, version: 1, originalName: `${normalizeFileName(req.file!.originalname).replace(/\.[^.]+$/, '') || 'plano'}.webp`, ...stored } })
       await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: created.id }, include: planInclude })
     })
@@ -246,7 +248,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const nextVersion = (versionOf(plan) ?? 0) + 1
-      await tx.floorPlanVersion.create({ data: { floorPlanId: planId, version: nextVersion, originalName: `${req.file!.originalname.replace(/\.[^.]+$/, '') || 'plano'}.webp`, ...stored } })
+      await tx.floorPlanVersion.create({ data: { floorPlanId: planId, version: nextVersion, originalName: `${normalizeFileName(req.file!.originalname).replace(/\.[^.]+$/, '') || 'plano'}.webp`, ...stored } })
       await tx.auditLog.create({ data: { projectId: plan.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de plano', entityId: String(planId), detail: `${plan.name} · v${nextVersion}` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: planId }, include: planInclude })
     })
@@ -297,7 +299,7 @@ router.get('/:id/current', asyncHandler(async (req, res) => {
 router.get('/:id/current/image', asyncHandler(async (req, res) => {
   const planId = id(req.params.id); if (!planId) return res.status(400).json({ error: 'Invalid id' }); const plan = await getPlan(planId, scopedProjectId(req)); const version = plan.versions[0]
   if (!version) return res.status(404).json({ error: 'Floor plan version not found' })
-  const bytes = await readFloorPlanOriginal(version.storageKey); res.set({ 'Content-Type': version.mimeType, 'Content-Length': String(bytes.length), 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(version.originalName)}`, 'Cache-Control': 'private, max-age=3600' }).send(bytes)
+  const bytes = await readFloorPlanOriginal(version.storageKey); res.set({ 'Content-Type': version.mimeType, 'Content-Length': String(bytes.length), 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(normalizeFileName(version.originalName))}`, 'Cache-Control': 'private, max-age=3600' }).send(bytes)
 }))
 
 router.get('/:id/versions/:version/dzi', asyncHandler(async (req, res) => {

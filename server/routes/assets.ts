@@ -33,6 +33,7 @@ const ASSET_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp',
 
 const uploadImage = multer({
   storage: multer.memoryStorage(),
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES, files: MAX_ASSET_IMAGES },
   fileFilter: (_req, file, callback) => {
     if (!ASSET_IMAGE_MIME_TYPES.has(file.mimetype)) return callback(new Error('Unsupported image type'))

@@ -35,6 +35,7 @@ import { validateBillingConfiguration } from './lib/billing'
 import { validateEmailConfiguration } from './lib/email'
 import { getVersionInfo } from './lib/version'
 import prisma from './lib/prisma'
+import { normalizeTextPayload } from './lib/textEncoding'
 
 const app = express()
 
@@ -70,6 +71,15 @@ app.use(express.json({
     (req as unknown as { rawBody: Buffer }).rawBody = buf
   },
 }))
+// JSON arrives as UTF-8, but imported/legacy values can still contain
+// mojibake. Repair request text before validation and response text globally so
+// every API consumer receives readable values without per-view workarounds.
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') req.body = normalizeTextPayload(req.body)
+  const originalJson = res.json.bind(res)
+  res.json = ((body: unknown) => originalJson(normalizeTextPayload(body))) as typeof res.json
+  next()
+})
 app.use(optionalAuth)
 
 app.get('/api/health', (_req, res) => {

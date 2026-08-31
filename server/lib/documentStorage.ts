@@ -2,6 +2,7 @@ import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
+import { normalizeFileName } from './textEncoding'
 
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -179,11 +180,12 @@ export async function storeDocumentFile(file: Express.Multer.File): Promise<stri
 
 export async function storeDocumentUpload(file: Express.Multer.File): Promise<StoredDocumentUpload> {
   const optimized = await optimizeImageForWeb(file.buffer, file.mimetype)
+  const originalName = normalizeFileName(file.originalname)
   return {
     storageKey: await storePreparedDocumentBuffer(optimized.bytes, optimized.mimeType),
     mimeType: optimized.mimeType,
     sizeBytes: optimized.bytes.length,
-    originalName: optimized.mimeType === 'image/webp' && file.mimetype !== 'image/webp' ? webpName(file.originalname) : file.originalname,
+    originalName: optimized.mimeType === 'image/webp' && file.mimetype !== 'image/webp' ? webpName(originalName) : originalName,
   }
 }
 
