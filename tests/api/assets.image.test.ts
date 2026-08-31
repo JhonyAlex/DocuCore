@@ -122,22 +122,21 @@ describe('asset image endpoints', () => {
       imageStorageKey?: unknown
     }
     expect(updated.images).toHaveLength(1)
-    expect(updated.images[0].mimeType).toBe('image/png')
-    expect(updated.images[0].sizeBytes).toBe(PNG_BYTES.length)
+    expect(updated.images[0].mimeType).toBe('image/webp')
+    expect(updated.images[0].sizeBytes).toBeGreaterThan(0)
     expect(updated.imageUrl).toBe(updated.images[0].url)
-    expect(updated.imageMimeType).toBe('image/png')
-    expect(updated.imageSizeBytes).toBe(PNG_BYTES.length)
+    expect(updated.imageMimeType).toBe('image/webp')
+    expect(updated.imageSizeBytes).toBe(updated.images[0].sizeBytes)
     expect(updated.imageStorageKey).toBeUndefined()
 
     expect((await addedStorageFiles()).length).toBe(before + 1)
     const served = await api(updated.images[0].url)
     expect(served.status).toBe(200)
-    expect(served.headers.get('content-type')).toContain('image/png')
-    expect(Buffer.from(await served.arrayBuffer())).toEqual(PNG_BYTES)
+    expect(served.headers.get('content-type')).toContain('image/webp')
 
     const servedLegacy = await api(`/api/assets/${id}/image`)
     expect(servedLegacy.status).toBe(200)
-    expect(servedLegacy.headers.get('content-type')).toContain('image/png')
+    expect(servedLegacy.headers.get('content-type')).toContain('image/webp')
   })
 
   it('allows uploading up to 5 images and serves each image inline', async () => {

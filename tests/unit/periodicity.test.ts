@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { addMonthsClamped, calculateNextExpiry } from '../../server/lib/periodicity'
-import { addMonthsClamped as clientAddMonthsClamped, calculateNextExpiry as clientCalculateNextExpiry } from '@/lib/periodicity'
+import { addDaysUtc, addMonthsClamped, calculateNextExpiry } from '../../server/lib/periodicity'
+import { addDaysUtc as clientAddDaysUtc, addMonthsClamped as clientAddMonthsClamped, calculateNextExpiry as clientCalculateNextExpiry } from '@/lib/periodicity'
 
 // DOC-03: el cálculo del próximo vencimiento vive duplicado en server y src con
 // la misma semántica (el servidor es la fuente autoritativa; el frontend
@@ -34,6 +34,13 @@ describe('addMonthsClamped', () => {
 })
 
 describe('calculateNextExpiry (server)', () => {
+  it('calculates daily, weekly and fortnightly recurrences in UTC', () => {
+    expect(calculateNextExpiry(null, iso('2026-01-31'), 'Subida', 'Diaria').toISOString().slice(0, 10)).toBe('2026-02-01')
+    expect(calculateNextExpiry(null, iso('2026-01-31'), 'Subida', 'Semanal').toISOString().slice(0, 10)).toBe('2026-02-07')
+    expect(calculateNextExpiry(null, iso('2026-01-31'), 'Subida', 'Quincenal').toISOString().slice(0, 10)).toBe('2026-02-15')
+    expect(addDaysUtc(iso('2026-12-31'), 1).toISOString().slice(0, 10)).toBe('2027-01-01')
+  })
+
   it('Calendario mode jumps from the previous expiry', () => {
     const next = calculateNextExpiry(iso('2026-03-15'), iso('2026-04-20'), 'Calendario', 'Trimestral')
     expect(next.toISOString().slice(0, 10)).toBe('2026-06-15')
@@ -61,6 +68,12 @@ describe('calculateNextExpiry (server)', () => {
 describe('frontend mirrors the server calculation', () => {
   it('clamps month ends identically', () => {
     expect(clientAddMonthsClamped(iso('2026-01-31'), 1).toISOString().slice(0, 10)).toBe('2026-02-28')
+  })
+
+  it('advances short recurrences identically', () => {
+    expect(clientAddDaysUtc(iso('2026-12-31'), 1).toISOString().slice(0, 10)).toBe('2027-01-01')
+    expect(clientCalculateNextExpiry(null, iso('2026-01-31'), 'Subida', 'Quincenal').toISOString().slice(0, 10))
+      .toBe(calculateNextExpiry(null, iso('2026-01-31'), 'Subida', 'Quincenal').toISOString().slice(0, 10))
   })
 
   it('calculates both modes identically', () => {

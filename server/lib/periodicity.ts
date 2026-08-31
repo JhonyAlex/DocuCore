@@ -6,13 +6,19 @@
 // La misma lógica vive en src/lib/periodicity.ts (el frontend precalcula el
 // campo editable); el servidor es la fuente autoritativa cuando no llega fecha.
 
-export const PERIODICITIES = ['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual'] as const
+// Compartida por documentos, fechas configurables de activos y preventivos.
+// Las unidades cortas se calculan por días UTC y las mensuales conservan el
+// día de mes (con clamp al último día cuando sea necesario).
+export const PERIODICITIES = ['Diaria', 'Semanal', 'Quincenal', 'Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual'] as const
 export type DocumentPeriodicity = (typeof PERIODICITIES)[number]
 
 export const PERIODICITY_MODES = ['Calendario', 'Subida'] as const
 export type DocumentPeriodicityMode = (typeof PERIODICITY_MODES)[number]
 
 const PERIODICITY_MONTHS: Record<DocumentPeriodicity, number> = {
+  Diaria: 0,
+  Semanal: 0,
+  Quincenal: 0,
   Mensual: 1,
   Bimestral: 2,
   Trimestral: 3,
@@ -21,8 +27,18 @@ const PERIODICITY_MONTHS: Record<DocumentPeriodicity, number> = {
   Anual: 12,
 }
 
+const PERIODICITY_DAYS: Partial<Record<DocumentPeriodicity, number>> = {
+  Diaria: 1,
+  Semanal: 7,
+  Quincenal: 15,
+}
+
 export function periodicityMonths(periodicity: DocumentPeriodicity): number {
   return PERIODICITY_MONTHS[periodicity]
+}
+
+export function addDaysUtc(date: Date, days: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days))
 }
 
 // Suma meses a una fecha UTC conservando el día del mes; si el día no existe en
@@ -45,5 +61,6 @@ export function calculateNextExpiry(
   periodicity: DocumentPeriodicity,
 ): Date {
   const base = mode === 'Calendario' ? (previousExpiry ?? issueDate) : issueDate
-  return addMonthsClamped(base, PERIODICITY_MONTHS[periodicity])
+  const days = PERIODICITY_DAYS[periodicity]
+  return days ? addDaysUtc(base, days) : addMonthsClamped(base, PERIODICITY_MONTHS[periodicity])
 }

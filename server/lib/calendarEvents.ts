@@ -141,7 +141,7 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
     ...manualEvents.map((event) => createCalendarOccurrence({
       source: 'event', sourceId: event.id, projectId: event.projectId, assetId: event.assetId,
       title: event.title, sourceLabel: calendarCategoryLabel(calendarCategoryFromText(event.type)), category: calendarCategoryFromText(event.type),
-      date: event.date, completedAt: event.completedAt, today: now, asset: toAssetRef(event.asset), progress: null,
+      date: event.date, completedAt: event.completedAt, today: now, asset: toAssetRef(event.asset), progress: null, periodicity: event.periodicity, periodicityMode: event.periodicityMode,
     })),
     ...documents.flatMap((document) => {
       const expiryDate = document.versions[0]?.expiryDate
@@ -214,6 +214,10 @@ export async function completeCalendarOccurrence(tx: Prisma.TransactionClient, i
     const event = await tx.event.findFirst({ where: { id: input.sourceId, completedAt: null, projectId: input.projectId, ...(input.assetId !== undefined ? { assetId: input.assetId } : {}) }, include: { asset: { select: { code: true } } } })
     if (!event) throw Object.assign(new Error('Event is not pending'), { status: 409 })
     await tx.event.update({ where: { id: event.id }, data: { completedAt: new Date() } })
+    if (event.periodicity && event.periodicityMode) {
+      const nextDate = calculateNextExpiry(event.date, performed, event.periodicityMode as DocumentPeriodicityMode, event.periodicity as DocumentPeriodicity)
+      await tx.event.create({ data: { title: event.title, date: nextDate, type: event.type, projectId: event.projectId, assetId: event.assetId, periodicity: event.periodicity, periodicityMode: event.periodicityMode } })
+    }
     entityId = event.asset?.code ?? `event:${event.id}`
   } else if (input.source === 'document') {
     if (!input.assetId) throw Object.assign(new Error('A document occurrence requires an asset'), { status: 400 })

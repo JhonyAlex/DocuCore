@@ -151,6 +151,8 @@ export interface ApiCalendarEventOccurrence {
   status: ApiCalendarEventStatus
   completedAt: string | null
   completedDate: string | null
+  periodicity: DocumentPeriodicity | null
+  periodicityMode: DocumentPeriodicityMode | null
   asset: { id: number; code: string; name: string; location?: string } | null
   progress: { completed: number; total: number } | null
   canComplete: boolean
@@ -178,6 +180,8 @@ export interface CalendarManualEventInput {
   date: string
   category: ApiCalendarEventCategory
   assetId: number | null
+  periodicity?: DocumentPeriodicity | null
+  periodicityMode?: DocumentPeriodicityMode | null
   projectId: number
 }
 
@@ -357,6 +361,7 @@ export interface ApiLocation {
   projectId: number
   responsible: ApiUserRef
   assetCount: number
+  documentCount: number
   childCount: number
   hasFloorPlan: boolean
 }
@@ -388,6 +393,18 @@ export interface ApiLocationDetail extends ApiLocation {
   assets?: ApiLocationAsset[]
   previewAssets: ApiLocationAsset[]
   previewAssetCount: number
+  documents?: ApiLocationDocument[]
+  previewDocumentCount: number
+}
+
+export interface ApiLocationDocument {
+  id: number
+  name: string
+  type: string
+  eventTitle: string | null
+  periodicity: DocumentPeriodicity | null
+  periodicityMode: DocumentPeriodicityMode | null
+  currentVersion: Pick<ApiDocumentVersion, 'version' | 'expiryDate'> | null
 }
 
 export interface ApiFloorPlanVersion {
@@ -512,6 +529,7 @@ export interface ApiDocument {
   currentVersion: ApiDocumentVersion | null
   assetIds?: number[]
   assets?: Array<{ id: number; code: string; name: string }>
+  location?: { id: number; code: string; name: string; label: string } | null
   assetCount?: number
   periodicity?: DocumentPeriodicity | null
   periodicityMode?: DocumentPeriodicityMode | null
@@ -527,6 +545,7 @@ export interface DocumentMetadataInput {
   typeId?: number
   projectId: number
   assetIds?: number[]
+  locationId?: number | null
   issueDate: string
   expiryDate?: string
   periodicity?: DocumentPeriodicity
@@ -808,7 +827,7 @@ export function fetchCalendar(projectId: number, input: Omit<CalendarQuery, 'pro
 export function createCalendarEvent(projectId: number, input: Omit<CalendarManualEventInput, 'projectId'>): Promise<ApiCalendarEventOccurrence> {
   return request(projectPath(projectId, '/calendar/events'), { method: 'POST', body: JSON.stringify(input) })
 }
-export function updateCalendarEvent(projectId: number, id: number, input: Partial<Pick<CalendarManualEventInput, 'title' | 'date' | 'category' | 'assetId'>>): Promise<ApiCalendarEventOccurrence> {
+export function updateCalendarEvent(projectId: number, id: number, input: Partial<Pick<CalendarManualEventInput, 'title' | 'date' | 'category' | 'assetId' | 'periodicity' | 'periodicityMode'>>): Promise<ApiCalendarEventOccurrence> {
   return request(projectPath(projectId, `/calendar/events/${id}`), { method: 'PATCH', body: JSON.stringify(input) })
 }
 export function deleteCalendarEvent(projectId: number, id: number): Promise<void> { return request(projectPath(projectId, `/calendar/events/${id}`), { method: 'DELETE' }) }

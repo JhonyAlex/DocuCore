@@ -623,7 +623,7 @@ async function seedDatabase(prisma: PrismaClient): Promise<void> {
   const floorPlanBytes = await readFile(path.join(process.cwd(), 'public', 'floor-plan.png'))
   const storedFloorPlan = await storeFloorPlanBuffer(floorPlanBytes, 'image/png')
   await prisma.floorPlanVersion.create({
-    data: { floorPlanId: floorPlan.id, version: 1, originalName: 'plano-planta-1-nave-a.png', mimeType: 'image/png', sizeBytes: floorPlanBytes.length, ...storedFloorPlan },
+    data: { floorPlanId: floorPlan.id, version: 1, originalName: 'plano-planta-1-nave-a.webp', ...storedFloorPlan },
   })
   const directAssets = await prisma.asset.findMany({
     where: { projectId: 1, location: { code: 'PIN-NA-01A' }, deletedAt: null },

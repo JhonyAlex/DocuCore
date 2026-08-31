@@ -6,7 +6,7 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { assetEventClock, deriveAssetEventsExcludingAcknowledged, type DerivedAssetEvent } from '../lib/assetEvents'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema, assetSortBySchema, sortOrderSchema } from '../lib/validate'
-import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentBuffer } from '../lib/documentStorage'
+import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentUpload } from '../lib/documentStorage'
 import { completeDynamicDateSchema, dateScheduleValueSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
 import { asUtcDate, completeAssetDateOccurrence, createPreventiveExecution, setAssetDateSchedule } from '../lib/assetSchedules'
 import { completeCalendarOccurrence, listCalendarOccurrences } from '../lib/calendarEvents'
@@ -1066,14 +1066,13 @@ router.post(
       res.status(400).json({ error: `El activo no puede tener más de ${MAX_ASSET_IMAGES} imágenes` })
       return
     }
-    const storedKeys: string[] = []
+    const storedUploads: Array<{ storageKey: string; mimeType: string; sizeBytes: number }> = []
     try {
       for (const file of files) {
-        const key = await storeDocumentBuffer(file.buffer, file.mimetype)
-        storedKeys.push(key)
+        storedUploads.push(await storeDocumentUpload(file))
       }
     } catch (error) {
-      for (const key of storedKeys) await removeDocumentFile(key).catch(() => undefined)
+      for (const stored of storedUploads) await removeDocumentFile(stored.storageKey).catch(() => undefined)
       const message = error instanceof Error ? error.message : ''
       if (message === 'Unsupported document type') throw new Error('Unsupported image type')
       if (message === 'Invalid document size') throw new Error('Invalid image size')
@@ -1083,13 +1082,13 @@ router.post(
     let updated: AssetWithRelations
     try {
       ;[updated] = await prisma.$transaction([
-        ...storedKeys.map((storageKey, index) =>
+        ...storedUploads.map((stored) =>
           prisma.assetImage.create({
             data: {
               assetId: id,
-              storageKey,
-              mimeType: files[index].mimetype,
-              sizeBytes: files[index].size,
+              storageKey: stored.storageKey,
+              mimeType: stored.mimeType,
+              sizeBytes: stored.sizeBytes,
               sortOrder: ++maxSortOrder,
             },
           })
@@ -1111,7 +1110,7 @@ router.post(
         }),
       ]).then((results) => [results[results.length - 2] as AssetWithRelations])
     } catch (error) {
-      for (const key of storedKeys) await removeDocumentFile(key).catch(() => undefined)
+      for (const stored of storedUploads) await removeDocumentFile(stored.storageKey).catch(() => undefined)
       throw error
     }
     res.json(withDerivedEvents(updated))

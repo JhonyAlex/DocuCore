@@ -356,6 +356,7 @@ export default function LocationsView() {
       ? catalog.project.name
       : ''
   const displayedAssets = (detail?.assets ?? []).slice(0, PREVIEW_ASSET_COUNT).map(mapApiLocationAssetToDisplay)
+  const displayedDocuments = detail?.documents ?? []
   const hasLocations = (catalog?.locations.length ?? 0) > 0
 
   return (
@@ -449,6 +450,10 @@ export default function LocationsView() {
                   <div className="text-xs text-slate-500">Código</div>
                   <div className="text-sm font-medium mt-0.5 font-mono">{detail.code}</div>
                 </div>
+                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                  <div className="text-xs text-slate-500">Documentos</div>
+                  <div className="text-sm font-medium mt-0.5">{detail.previewDocumentCount}</div>
+                </div>
               </div>
 
               <div className="flex items-center justify-between mb-3">
@@ -476,6 +481,19 @@ export default function LocationsView() {
                 {displayedAssets.length === 0 && (
                   <div className="text-sm text-slate-500 dark:text-slate-400">Sin activos en esta ubicación.</div>
                 )}
+              </div>
+              <div className="mt-5">
+                <h3 className="font-medium text-sm mb-3">Documentos asociados</h3>
+                <div className="space-y-2">
+                  {displayedDocuments.map((document) => (
+                    <button key={document.id} type="button" onClick={() => navigate(`/projects/${projectId}/docs?documentId=${document.id}`)} className="w-full flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 text-left">
+                      <div className="min-w-0"><div className="text-sm font-medium truncate">{document.name}</div><div className="text-xs text-slate-500 truncate">{document.type}{document.periodicity ? ` · ${document.periodicity}` : ''}{document.currentVersion?.expiryDate ? ` · Vence ${new Intl.DateTimeFormat('es-ES').format(new Date(document.currentVersion.expiryDate))}` : ''}</div></div>
+                      <span className="text-xs text-brand-600 shrink-0">Abrir</span>
+                    </button>
+                  ))}
+                  {displayedDocuments.length === 0 && <div className="text-sm text-slate-500 dark:text-slate-400">Sin documentos asociados a esta ubicación.</div>}
+                  {detail.previewDocumentCount > displayedDocuments.length && <div className="text-xs text-slate-500">Se muestran los {displayedDocuments.length} documentos más recientes de {detail.previewDocumentCount} asociados.</div>}
+                </div>
               </div>
             </>
           )}

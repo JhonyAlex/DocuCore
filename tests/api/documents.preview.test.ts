@@ -82,9 +82,9 @@ describe('document preview endpoint', () => {
     const id = await createDocument(`QA-PREVIEW-IMG-${uniqueSuffix()}`, 'image/png', PNG_BYTES, 'foto.png')
     const response = await api(`/api/documents/${id}/preview`)
     expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toContain('image/png')
+    expect(response.headers.get('content-type')).toContain('image/webp')
     expect(response.headers.get('content-disposition')).toContain('inline')
-    expect(Buffer.from(await response.arrayBuffer())).toEqual(PNG_BYTES)
+    expect(Buffer.from(await response.arrayBuffer())).not.toEqual(PNG_BYTES)
   })
 
   it('serves a pdf document inline for the iframe viewer', async () => {

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PERIODICITIES, PERIODICITY_MODES } from './periodicity'
 
 const isoDateSchema = z.string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date in YYYY-MM-DD format')
@@ -47,6 +48,10 @@ const nullableOptionalDateSchema = z.preprocess((value) => value === '' ? null :
 const calendarSourceSchema = z.enum(['event', 'document', 'dynamic-date', 'preventive'])
 const calendarCategorySchema = z.enum(['expiry', 'calibration', 'maintenance', 'review'])
 const calendarStatusSchema = z.enum(['overdue', 'today', 'upcoming', 'pending', 'completed'])
+const calendarOptionalPeriodicity = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(PERIODICITIES).optional())
+const calendarNullableOptionalPeriodicity = calendarOptionalPeriodicity.nullable()
+const calendarOptionalPeriodicityMode = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(PERIODICITY_MODES).optional())
+const calendarNullableOptionalPeriodicityMode = calendarOptionalPeriodicityMode.nullable()
 const optionalQueryText = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((value) => value === '' || value === undefined ? undefined : value, schema.optional())
 const calendarOptionalAssetId = z.preprocess((value) => value === '' || value === undefined ? undefined : value === null || value === 'null' ? null : Number(value), z.number().int().positive().nullable().optional())
 const calendarProjectId = z.preprocess((value) => Number(value), z.number().int().positive())
@@ -73,6 +78,8 @@ export const calendarCreateEventSchema = z.object({
   date: isoDateSchema,
   category: calendarCategorySchema,
   assetId: calendarOptionalAssetId,
+  periodicity: calendarOptionalPeriodicity,
+  periodicityMode: calendarOptionalPeriodicityMode,
   projectId: optionalCalendarProjectId,
 }).strict()
 
@@ -81,6 +88,8 @@ export const calendarUpdateEventSchema = z.object({
   date: isoDateSchema.optional(),
   category: calendarCategorySchema.optional(),
   assetId: calendarOptionalAssetId,
+  periodicity: calendarNullableOptionalPeriodicity,
+  periodicityMode: calendarNullableOptionalPeriodicityMode,
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one value is required')
 
 export const completeCalendarOccurrenceSchema = z.object({
@@ -115,8 +124,8 @@ const nullableOptionalAssetIds = z.preprocess((value) => {
 
 // DOC-03: periodicidad y modo viajan como strings en FormData (multipart) o
 // JSON; '' equivale a no enviado y null (solo update, JSON) quita la regla.
-const optionalPeriodicity = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual']).optional())
-const optionalPeriodicityMode = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(['Calendario', 'Subida']).optional())
+const optionalPeriodicity = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(PERIODICITIES).optional())
+const optionalPeriodicityMode = z.preprocess((value) => value === '' || value === undefined ? undefined : value, z.enum(PERIODICITY_MODES).optional())
 const nullableOptionalPeriodicity = optionalPeriodicity.nullable()
 const nullableOptionalPeriodicityMode = optionalPeriodicityMode.nullable()
 
@@ -126,6 +135,7 @@ export const createDocumentMetadataSchema = z.object({
   typeId: optionalPositiveId,
   projectId: z.preprocess((value) => Number(value), z.number().int().positive()),
   assetIds: optionalAssetIds,
+  locationId: optionalPositiveId,
   issueDate: isoDateSchema,
   expiryDate: optionalDateSchema,
   periodicity: optionalPeriodicity,
@@ -153,6 +163,7 @@ export const updateDocumentMetadataSchema = z.object({
   typeId: nullableOptionalPositiveId,
   projectId: z.preprocess((value) => value === undefined ? undefined : Number(value), z.number().int().positive().optional()),
   assetIds: nullableOptionalAssetIds,
+  locationId: nullableOptionalPositiveId,
   issueDate: optionalDateSchema,
   expiryDate: nullableOptionalDateSchema,
   periodicity: nullableOptionalPeriodicity,
