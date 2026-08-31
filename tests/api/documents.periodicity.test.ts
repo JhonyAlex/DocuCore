@@ -164,6 +164,11 @@ describe('document periodicity API', () => {
     expect(document.currentVersion.attachments).toEqual([expect.objectContaining({ originalName: 'anexo.txt' })])
 
     const attachment = document.currentVersion.attachments[0]!
+    const previewed = await api(`/api/documents/${id}/versions/2/files/${attachment.id}/preview`)
+    expect(previewed.status).toBe(200)
+    expect(previewed.headers.get('content-disposition')).toContain('inline')
+    expect(Buffer.from(await previewed.arrayBuffer())).toEqual(Buffer.from('ANEXO QA'))
+
     const downloaded = await api(`/api/documents/${id}/versions/2/files/${attachment.id}/download`)
     expect(downloaded.status).toBe(200)
     expect(downloaded.headers.get('content-disposition')).toContain('attachment')

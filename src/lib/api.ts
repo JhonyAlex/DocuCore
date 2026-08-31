@@ -1329,6 +1329,12 @@ export async function fetchDocumentPreview(projectId: number, id: number, versio
   return response.blob()
 }
 
+export async function fetchDocumentAttachmentPreview(projectId: number, id: number, version: number, attachmentId: number): Promise<Blob> {
+  const response = await fetch(`${API_BASE}${projectPath(projectId, `/documents/${id}/versions/${version}/files/${attachmentId}/preview`)}`)
+  if (!response.ok) throw new Error(`API ${response.status}: preview failed`)
+  return response.blob()
+}
+
 export async function downloadDocument(projectId: number, id: number, version?: number): Promise<void> {
   const suffix = version ? `/versions/${version}/download` : '/download'
   const response = await fetch(`${API_BASE}${projectPath(projectId, `/documents/${id}${suffix}`)}`)

@@ -3,7 +3,7 @@ import type { SearchableOption } from '@/components/SearchablePicker'
 import SearchablePicker from '@/components/SearchablePicker'
 import SearchableMultiPicker, { type SelectedValue } from '@/components/SearchableMultiPicker'
 import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
-import { createDocument, createDocumentVersion, downloadDocument, downloadDocumentAttachment, fetchAssets, fetchDocument, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
+import { createDocument, createDocumentVersion, downloadDocument, downloadDocumentAttachment, fetchAssets, fetchDocument, fetchDocumentAttachmentPreview, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
 import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
 import { useProject } from '@/contexts/ProjectContext'
 
@@ -64,8 +64,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   // conservan objectUrl/text como antes.
   const [preview, setPreview] = useState<{ objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
   const [previewError, setPreviewError] = useState(false)
-  const [historyPreview, setHistoryPreview] = useState<{ version: number; mimeType: string; objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
-  const [previewingVersion, setPreviewingVersion] = useState<number | null>(null)
+  const [historyPreview, setHistoryPreview] = useState<{ name?: string; version: number; mimeType: string; objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
+  const [previewingTarget, setPreviewingTarget] = useState<string | null>(null)
   // `current` es el documento con la versión vigente: al subir una nueva
   // versión se refresca para que la vista previa incrustada, el área según
   // formato y el visor cambien de inmediato sin reabrir el modal.
@@ -129,11 +129,12 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }
 
   const openVersionPreview = async (historicalVersion: ApiDocumentDetail['versions'][number]) => {
-    if (!document || previewingVersion !== null) return
+    if (!document || previewingTarget !== null) return
+    const targetKey = `v-${historicalVersion.version}`
     const requestId = previewRequestRef.current + 1
     previewRequestRef.current = requestId
     setError(null)
-    setPreviewingVersion(historicalVersion.version)
+    setPreviewingTarget(targetKey)
     try {
       let objectUrl: string | null = null
       let text: string | null = null
@@ -152,13 +153,48 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       }
       if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
       historyPreviewUrlRef.current = objectUrl
-      setHistoryPreview({ version: historicalVersion.version, mimeType: historicalVersion.mimeType, objectUrl, text, blob })
+      setHistoryPreview({ name: document.name, version: historicalVersion.version, mimeType: historicalVersion.mimeType, objectUrl, text, blob })
       previewOpenRef.current = true
       setPreviewOpen(true)
     } catch {
       if (requestId === previewRequestRef.current) setError(`No se pudo abrir la vista previa de la versión ${historicalVersion.version}.`)
     } finally {
-      if (requestId === previewRequestRef.current) setPreviewingVersion(null)
+      if (requestId === previewRequestRef.current) setPreviewingTarget(null)
+    }
+  }
+
+  const openAttachmentPreview = async (targetVersion: number, attachment: { id: number; originalName: string; mimeType: string }) => {
+    if (!document || previewingTarget !== null) return
+    const targetKey = `v-${targetVersion}-att-${attachment.id}`
+    const requestId = previewRequestRef.current + 1
+    previewRequestRef.current = requestId
+    setError(null)
+    setPreviewingTarget(targetKey)
+    try {
+      let objectUrl: string | null = null
+      let text: string | null = null
+      let blob: Blob | null = null
+      const previewableAttachment = attachment.mimeType === 'application/pdf' || attachment.mimeType.startsWith('image/') || attachment.mimeType.startsWith('text/')
+      if (previewableAttachment) {
+        const previewBlob = await fetchDocumentAttachmentPreview(projectId, document.id, targetVersion, attachment.id)
+        if (requestId !== previewRequestRef.current) return
+        if (previewBlob.type.startsWith('text/')) text = await previewBlob.text()
+        else if (previewBlob.type === 'application/pdf') blob = previewBlob
+        else objectUrl = URL.createObjectURL(previewBlob)
+      }
+      if (requestId !== previewRequestRef.current) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+        return
+      }
+      if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
+      historyPreviewUrlRef.current = objectUrl
+      setHistoryPreview({ name: `${document.name} · ${attachment.originalName}`, version: targetVersion, mimeType: attachment.mimeType, objectUrl, text, blob })
+      previewOpenRef.current = true
+      setPreviewOpen(true)
+    } catch {
+      if (requestId === previewRequestRef.current) setError(`No se pudo abrir la vista previa de ${attachment.originalName}.`)
+    } finally {
+      if (requestId === previewRequestRef.current) setPreviewingTarget(null)
     }
   }
 
@@ -293,7 +329,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }
 
   const modalPreview = historyPreview ?? (current?.currentVersion && preview
-    ? { version: current.currentVersion.version, mimeType: current.currentVersion.mimeType, objectUrl: preview.objectUrl, text: preview.text, blob: preview.blob }
+    ? { name: current.name, version: current.currentVersion.version, mimeType: current.currentVersion.mimeType, objectUrl: preview.objectUrl, text: preview.text, blob: preview.blob }
     : null)
 
   return (
@@ -340,14 +376,64 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               <div className="select-none cursor-not-allowed rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-6 text-center text-sm text-slate-400">Sin vista previa para este formato. Descarga el archivo para visualizarlo.</div>
             )}
           </div>}
-          {!isNew && current?.currentVersion && current.currentVersion.attachments && current.currentVersion.attachments.length > 0 && <div><h3 className="mb-2 text-sm font-medium">Archivos complementarios de la entrega</h3><ul className="space-y-1 text-sm">{current.currentVersion.attachments.map((attachment) => <li key={attachment.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><span className="min-w-0 truncate" title={attachment.originalName}>{attachment.originalName}</span><button type="button" className="shrink-0 text-brand-600" onClick={() => void downloadDocumentAttachment(projectId, current.id, current.currentVersion!.version, attachment.id)}>Descargar</button></li>)}</ul></div>}
+          {!isNew && current?.currentVersion && current.currentVersion.attachments && current.currentVersion.attachments.length > 0 && <div><h3 className="mb-2 text-sm font-medium">Archivos complementarios de la entrega</h3><ul className="space-y-1 text-sm">{current.currentVersion.attachments.map((attachment) => {
+            const isPreviewing = previewingTarget === `v-${current.currentVersion!.version}-att-${attachment.id}`
+            return (
+              <li key={attachment.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50">
+                <span className="min-w-0 truncate" title={attachment.originalName}>{attachment.originalName}</span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <button
+                    type="button"
+                    aria-label={`Ver ${attachment.originalName}`}
+                    disabled={previewingTarget !== null}
+                    className="text-brand-600 disabled:opacity-40"
+                    onClick={() => void openAttachmentPreview(current.currentVersion!.version, attachment)}
+                  >
+                    {isPreviewing ? 'Abriendo…' : 'Ver'}
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 text-brand-600"
+                    onClick={() => void downloadDocumentAttachment(projectId, current.id, current.currentVersion!.version, attachment.id)}
+                  >
+                    Descargar
+                  </button>
+                </span>
+              </li>
+            )
+          })}</ul></div>}
           {!isNew && document && <div className="flex flex-wrap items-center gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" multiple aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { void uploadNewVersion(event); event.currentTarget.value = '' }} disabled={saving} className="sr-only" /></label><button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar archivo principal</button></div>}
-          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}{historyVersion.attachments && historyVersion.attachments.length > 0 ? ` + ${historyVersion.attachments.length} adjunto(s)` : ''}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingVersion !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingVersion === historyVersion.version ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></div>{historyVersion.attachments && historyVersion.attachments.length > 0 && <ul className="mt-1 space-y-1 border-t border-slate-200 pt-1 text-xs dark:border-slate-700">{historyVersion.attachments.map((attachment) => <li key={attachment.id} className="flex items-center justify-between gap-2"><span className="min-w-0 truncate">{attachment.originalName}</span><button type="button" className="shrink-0 text-brand-600" onClick={() => void downloadDocumentAttachment(projectId, document.id, historyVersion.version, attachment.id)}>Descargar</button></li>)}</ul>}</li>)}</ul></div>}
+          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}{historyVersion.attachments && historyVersion.attachments.length > 0 ? ` + ${historyVersion.attachments.length} adjunto(s)` : ''}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingTarget !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingTarget === `v-${historyVersion.version}` ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></div>{historyVersion.attachments && historyVersion.attachments.length > 0 && <ul className="mt-1 space-y-1 border-t border-slate-200 pt-1 text-xs dark:border-slate-700">{historyVersion.attachments.map((attachment) => {
+            const isPreviewing = previewingTarget === `v-${historyVersion.version}-att-${attachment.id}`
+            return (
+              <li key={attachment.id} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate">{attachment.originalName}</span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <button
+                    type="button"
+                    aria-label={`Ver ${attachment.originalName}`}
+                    disabled={previewingTarget !== null}
+                    className="text-brand-600 disabled:opacity-40"
+                    onClick={() => void openAttachmentPreview(historyVersion.version, attachment)}
+                  >
+                    {isPreviewing ? 'Abriendo…' : 'Ver'}
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 text-brand-600"
+                    onClick={() => void downloadDocumentAttachment(projectId, document.id, historyVersion.version, attachment.id)}
+                  >
+                    Descargar
+                  </button>
+                </span>
+              </li>
+            )
+          })}</ul>}</li>)}</ul></div>}
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cancelar</button><button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button></div>
       </div>
-      {previewOpen && modalPreview && current && <DocumentPreviewModal name={current.name} version={modalPreview.version} mimeType={modalPreview.mimeType} objectUrl={modalPreview.objectUrl} text={modalPreview.text} blob={modalPreview.blob} onClose={closePreview} />}
+      {previewOpen && modalPreview && current && <DocumentPreviewModal name={modalPreview.name ?? current.name} version={modalPreview.version} mimeType={modalPreview.mimeType} objectUrl={modalPreview.objectUrl} text={modalPreview.text} blob={modalPreview.blob} onClose={closePreview} />}
     </div>
   )
 }
