@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import type { Asset, AssetFilters, Pagination } from '@/types'
 import AssetsFilters from '@/components/AssetsFilters'
 import AssetsTable from '@/components/AssetsTable'
+import AssetSummaryCards from '@/components/AssetSummaryCards'
 import AssetModal from '@/components/AssetModal'
 import AssetFormModal from '@/components/AssetFormModal'
 import BulkActionBar from '@/components/BulkActionBar'
@@ -10,7 +11,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
 import type { AssetFormValues } from '@/components/AssetFormModal'
 import type { LocationFormValues } from '@/components/LocationFormModal'
-import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAsset, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImages, type ApiAsset, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
+import { changeAssetStatus, createAsset, createLocation, deleteAsset, fetchAsset, fetchAssetKpis, fetchAssetTypes, fetchAssets, fetchLocations, fetchStatuses, fetchUsers, purgeAsset, restoreAsset, updateAsset, uploadAssetImages, type ApiAsset, type ApiAssetKpis, type ApiAssetType, type ApiLocation, type ApiStatus, type ApiUserRef, type AssetListParams } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { mapApiAssetToDisplay } from '@/lib/assetMappers'
 import { useSession } from '@/contexts/SessionContext'
@@ -60,6 +61,7 @@ export default function AssetsView() {
   const [trashMode, setTrashMode] = useState(false)
   const [trashCount, setTrashCount] = useState(0)
   const [trashSearch, setTrashSearch] = useState('')
+  const [kpis, setKpis] = useState<ApiAssetKpis>({ operativo: 0, enRevision: 0, fueraDeServicio: 0, total: 0 })
   const [removalTarget, setRemovalTarget] = useState<RemovalTarget | null>(null)
   const [removalError, setRemovalError] = useState<string | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -67,6 +69,15 @@ export default function AssetsView() {
   const openedDeepLinkRef = useRef<number | null>(null)
   const deepLinkedAssetId = Number(searchParams.get('assetId'))
   const deepLinkedPreventiveExecutionId = Number(searchParams.get('preventiveExecutionId'))
+
+  const refreshKpis = useCallback(async () => {
+    try {
+      const nextKpis = await fetchAssetKpis(projectId)
+      setKpis(nextKpis)
+    } catch {
+      // conservar estado actual ante error transitorio
+    }
+  }, [projectId])
 
   const loadAssets = useCallback(async () => {
     const requestId = latestLoadRequest.current + 1
@@ -117,6 +128,10 @@ export default function AssetsView() {
   useEffect(() => {
     void refreshTrashCount()
   }, [refreshTrashCount])
+
+  useEffect(() => {
+    void refreshKpis()
+  }, [refreshKpis])
 
   useEffect(() => {
     let active = true
@@ -216,7 +231,7 @@ export default function AssetsView() {
     // Solo en edición/duplicado se refresca la ficha abierta; al crear el
     // activo la lista se recarga y el formulario se cierra sin abrir ficha.
     if (formMode === 'edit' || formMode === 'duplicate') setSelectedAsset(saved)
-    await loadAssets()
+    await Promise.all([loadAssets(), refreshTrashCount(), refreshKpis()])
     reloadSession()
     refreshProject()
     setFormMode(null)
@@ -247,7 +262,7 @@ export default function AssetsView() {
     try {
       const updated = await changeAssetStatus(projectId, selectedAsset.id, statusId)
       setSelectedAsset(updated)
-      await loadAssets()
+      await Promise.all([loadAssets(), refreshKpis()])
     } catch (writeError) {
       throw new Error(toUserError(writeError))
     }
@@ -265,7 +280,7 @@ export default function AssetsView() {
     try {
       await deleteAsset(projectId, asset.id)
       if (selectedAsset?.id === asset.id) setSelectedAsset(null)
-      await Promise.all([loadAssets(), refreshTrashCount()])
+      await Promise.all([loadAssets(), refreshTrashCount(), refreshKpis()])
       reloadSession()
       refreshProject()
     } catch (writeError) {
@@ -276,7 +291,7 @@ export default function AssetsView() {
   const handleRestore = async (asset: { id: number }) => {
     try {
       await restoreAsset(projectId, asset.id)
-      await Promise.all([loadAssets(), refreshTrashCount()])
+      await Promise.all([loadAssets(), refreshTrashCount(), refreshKpis()])
       reloadSession()
       refreshProject()
     } catch (writeError) {
@@ -288,7 +303,7 @@ export default function AssetsView() {
     try {
       await Promise.all(selection.selectedIds.map((id) => restoreAsset(projectId, id)))
       selection.clear()
-      await Promise.all([loadAssets(), refreshTrashCount()])
+      await Promise.all([loadAssets(), refreshTrashCount(), refreshKpis()])
       reloadSession()
       refreshProject()
     } catch (writeError) {
@@ -304,7 +319,7 @@ export default function AssetsView() {
   }
 
   const refreshSelectedAsset = async () => {
-    await loadAssets()
+    await Promise.all([loadAssets(), refreshKpis()])
     if (!selectedAsset) return
     const refreshed = await fetchAsset(projectId, selectedAsset.id)
     setSelectedAsset(refreshed)
@@ -338,7 +353,7 @@ export default function AssetsView() {
       await Promise.all(target.ids.map((id) => target.kind === 'purge' ? purgeAsset(projectId, id) : deleteAsset(projectId, id)))
       selection.clear()
       setRemovalTarget(null)
-      await Promise.all([loadAssets(), refreshTrashCount()])
+      await Promise.all([loadAssets(), refreshTrashCount(), refreshKpis()])
       if (target.kind === 'trash') {
         reloadSession()
         refreshProject()
@@ -401,6 +416,8 @@ export default function AssetsView() {
             </button>
           )}
         </div></SectionActions>
+
+      {!trashMode && <AssetSummaryCards kpis={kpis} />}
 
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
         {trashMode ? (

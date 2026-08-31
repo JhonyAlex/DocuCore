@@ -449,6 +449,30 @@ router.get(
   }),
 )
 
+router.get(
+  '/kpis',
+  asyncHandler(async (req, res) => {
+    const projectId = scopedProjectId(req)
+    const rows = await prisma.$queryRaw<Array<{ operativo: bigint | number; enRevision: bigint | number; fueraDeServicio: bigint | number; total: bigint | number }>>(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE s.color = 'emerald') AS operativo,
+        COUNT(*) FILTER (WHERE s.color = 'amber') AS "enRevision",
+        COUNT(*) FILTER (WHERE s.color = 'red' OR s."pulseDot" = 'red') AS "fueraDeServicio",
+        COUNT(*) AS total
+      FROM "Asset" a
+      JOIN "Status" s ON s.id = a."statusId"
+      WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL
+    `)
+    const row = rows[0] ?? { operativo: 0, enRevision: 0, fueraDeServicio: 0, total: 0 }
+    res.json({
+      operativo: Number(row.operativo),
+      enRevision: Number(row.enRevision),
+      fueraDeServicio: Number(row.fueraDeServicio),
+      total: Number(row.total),
+    })
+  }),
+)
+
 // UX-04: valores actuales de un campo de activo (Código, Nombre, Iniciales)
 // para las sugerencias del formulario. Devuelve filas con los tres campos para
 // mostrar el valor de los otros dos como contexto junto a cada sugerencia.

@@ -654,6 +654,17 @@ export async function fetchAssets(projectId: number, params: Omit<FetchAssetsPar
   return { ...res, assets: res.assets ?? rows, data: rows }
 }
 
+export interface ApiAssetKpis {
+  operativo: number
+  enRevision: number
+  fueraDeServicio: number
+  total: number
+}
+
+export function fetchAssetKpis(projectId: number): Promise<ApiAssetKpis> {
+  return request<ApiAssetKpis>(projectPath(projectId, '/assets/kpis'))
+}
+
 export type ApiAssetSuggestionField = 'code' | 'name' | 'initials'
 export interface ApiAssetSuggestionRow {
   code: string | null
