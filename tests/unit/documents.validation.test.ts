@@ -135,9 +135,16 @@ describe('document periodicity schemas', () => {
     })).toThrow()
   })
 
+  it('accepts the short periodicities shared with asset dates and preventives', () => {
+    const parsed = createDocumentMetadataSchema.parse({
+      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01', periodicity: 'Semanal', periodicityMode: 'Calendario',
+    })
+    expect(parsed.periodicity).toBe('Semanal')
+  })
+
   it('rejects an unknown periodicity value', () => {
     expect(() => createDocumentMetadataSchema.parse({
-      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01', periodicity: 'Semanal',
+      name: 'X', type: 'Manual', projectId: 1, issueDate: '2026-08-01', periodicity: 'Cada tres días',
     })).toThrow()
   })
 

@@ -1,8 +1,7 @@
 import { Prisma } from '@prisma/client'
-import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from './periodicity'
+import { calculateNextExpiry, PERIODICITIES, PERIODICITY_MODES, type DocumentPeriodicity, type DocumentPeriodicityMode } from './periodicity'
 
-export const PERIODICITIES = ['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual'] as const
-export const PERIODICITY_MODES = ['Calendario', 'Subida'] as const
+export { PERIODICITIES, PERIODICITY_MODES }
 
 export function asUtcDate(value: string): Date {
   const date = new Date(`${value}T00:00:00.000Z`)

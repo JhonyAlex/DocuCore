@@ -27,12 +27,13 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.floor(Math.random() * 1000)}`
 }
 
-async function createDocument(input: { issueDate: string; periodicity?: string; periodicityMode?: string }, expiryDate?: string): Promise<number> {
+async function createDocument(input: { issueDate: string; periodicity?: string; periodicityMode?: string; locationId?: number }, expiryDate?: string): Promise<number> {
   const form = new FormData()
   form.set('name', `QA-PERIODICITY-${uniqueSuffix()}`)
   form.set('type', 'Manual')
   form.set('projectId', '1')
   form.set('issueDate', input.issueDate)
+  if (input.locationId) form.set('locationId', String(input.locationId))
   if (expiryDate) form.set('expiryDate', expiryDate)
   if (input.periodicity) {
     form.set('periodicity', input.periodicity)
@@ -81,6 +82,29 @@ afterAll(async () => {
 })
 
 describe('document periodicity API', () => {
+  it('calculates the short periodicities from the selected base date', async () => {
+    const id = await createDocument({ issueDate: '2026-07-15', periodicity: 'Quincenal', periodicityMode: 'Calendario' })
+    const document = await (await api(`/api/documents/${id}`)).json() as { currentVersion: { expiryDate: string | null } }
+    expect(document.currentVersion.expiryDate).toBe('2026-07-30T00:00:00.000Z')
+  })
+
+  it('associates a document with a location and exposes it in the location detail', async () => {
+    const locations = await (await api('/api/locations?parentId=root')).json() as { locations: Array<{ id: number }> }
+    const locationId = locations.locations[0]?.id
+    if (!locationId) throw new Error('Expected a seeded root location')
+    const id = await createDocument({ issueDate: '2026-07-15', locationId })
+    const document = await (await api(`/api/documents/${id}`)).json() as { location: { id: number; code: string } | null }
+    expect(document.location).toMatchObject({ id: locationId })
+
+    const location = await (await api(`/api/locations/${locationId}`)).json() as { previewDocumentCount: number; documents: Array<{ id: number }> }
+    expect(location.previewDocumentCount).toBeGreaterThan(0)
+    expect(location.documents.some((entry) => entry.id === id)).toBe(true)
+
+    const clear = await api(`/api/documents/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locationId: null }) })
+    expect(clear.status).toBe(200)
+    expect((await clear.json() as { location: unknown }).location).toBeNull()
+  })
+
   it('calculates the first expiry from the issue date when creating with periodicity', async () => {
     const id = await createDocument({ issueDate: '2026-07-15', periodicity: 'Trimestral', periodicityMode: 'Calendario' })
     const document = await (await api(`/api/documents/${id}`)).json() as {
@@ -169,7 +193,7 @@ describe('document periodicity API', () => {
     form.set('type', 'Manual')
     form.set('projectId', '1')
     form.set('issueDate', '2026-08-01')
-    form.set('periodicity', 'Semanal')
+    form.set('periodicity', 'Cada tres días')
     form.append('file', new Blob([new Uint8Array(PDF_BYTES)], { type: 'application/pdf' }), 'doc.pdf')
 
     const response = await api('/api/documents', { method: 'POST', body: form })

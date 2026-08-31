@@ -60,8 +60,8 @@ describe('floor plan API', () => {
 
     const original = await api(`/api/floor-plans/${plan.id}/current/image`)
     expect(original.status).toBe(200)
-    expect(original.headers.get('content-type')).toContain('image/png')
-    expect(Buffer.from(await original.arrayBuffer())).toEqual(image)
+    expect(original.headers.get('content-type')).toContain('image/webp')
+    expect((await sharp(Buffer.from(await original.arrayBuffer())).metadata()).format).toBe('webp')
 
     const dzi = await api(`/api/floor-plans/${plan.id}/versions/1/dzi`)
     const dziText = await dzi.text()

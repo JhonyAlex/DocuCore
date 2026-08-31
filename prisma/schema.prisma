@@ -504,17 +504,20 @@ model Document {
   periodicity     String?
   periodicityMode String?
   projectId       Int
+  locationId      Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   assets       DocumentItem[]
   project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  location     Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
   documentType DocumentType?     @relation(fields: [typeId], references: [id], onDelete: Restrict)
   versions     DocumentVersion[]
 
   @@index([projectId])
   @@index([typeId])
   @@index([projectId, updatedAt, id])
+  @@index([projectId, locationId, updatedAt, id])
 }
 
 model DocumentItem {
@@ -556,6 +559,8 @@ model Event {
   projectId   Int
   assetId     Int?
   completedAt DateTime?
+  periodicity String?
+  periodicityMode String?
   createdAt   DateTime  @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -741,6 +746,7 @@ model Location {
   responsible User        @relation("LocationResponsible", fields: [responsibleId], references: [id])
   project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assets      Asset[]
+  documents   Document[]
   floorPlans  FloorPlan[]
 
   @@unique([projectId, code])

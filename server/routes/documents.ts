@@ -3,7 +3,7 @@ import multer from 'multer'
 import { Prisma } from '@prisma/client'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentFile } from '../lib/documentStorage'
+import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentUpload } from '../lib/documentStorage'
 import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '../lib/periodicity'
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
@@ -28,6 +28,7 @@ const documentInclude = {
     include: { asset: { select: { id: true, code: true, name: true } } },
   },
   project: { select: { id: true, code: true, name: true } },
+  location: { select: { id: true, code: true, name: true, label: true } },
   documentType: { select: { id: true, name: true, iconKey: true } },
   versions: { orderBy: { version: 'desc' as const }, take: 1 },
 } satisfies Prisma.DocumentInclude
@@ -47,6 +48,7 @@ const documentListSelect = {
   updatedAt: true,
   periodicity: true,
   periodicityMode: true,
+  location: { select: { id: true, code: true, name: true, label: true } },
   documentType: { select: { id: true, name: true, iconKey: true } },
   assets: {
     where: { asset: { deletedAt: null } },
@@ -85,6 +87,7 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
     typeId: document.typeId ?? null,
     documentType: document.documentType ?? null,
     assets: document.assets.map((link) => link.asset),
+    location: document.location ?? null,
     projectId: document.projectId,
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
@@ -197,6 +200,16 @@ async function assertDocumentAssets(projectId: number, assetIds: number[]): Prom
   }
 }
 
+async function assertDocumentLocation(projectId: number, locationId: number | null | undefined): Promise<void> {
+  if (locationId === undefined || locationId === null) return
+  const location = await prisma.location.findFirst({ where: { id: locationId, projectId }, select: { id: true } })
+  if (!location) {
+    const error = new Error('Location must belong to the document project') as Error & { status?: number }
+    error.status = 400
+    throw error
+  }
+}
+
 async function resolveDocumentType(projectId: number, inputTypeId?: number, inputTypeName?: string): Promise<{ typeId: number | null; type: string }> {
   if (inputTypeId) {
     const docType = await prisma.documentType.findFirst({
@@ -219,6 +232,10 @@ async function resolveDocumentType(projectId: number, inputTypeId?: number, inpu
 
 function assetCodes(document: DocumentWithCurrentVersion): string {
   return document.assets.map((link) => link.asset.code).join(', ') || 'sin activos'
+}
+
+function locationName(document: DocumentWithCurrentVersion): string {
+  return document.location ? `${document.location.code} · ${document.location.label || document.location.name}` : 'sin ubicación'
 }
 
 router.get('/', asyncHandler(async (req, res) => {
@@ -352,6 +369,7 @@ router.post('/', asyncHandler(async (req, res) => {
   if (input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const assetIds = input.assetIds ?? []
   await assertDocumentAssets(projectId, assetIds)
+  await assertDocumentLocation(projectId, input.locationId)
   const resolvedType = await resolveDocumentType(projectId, input.typeId, input.type)
 
   // DOC-03: con periodicidad y sin vencimiento explícito, la primera versión
@@ -363,7 +381,7 @@ router.post('/', asyncHandler(async (req, res) => {
     : periodicity
       ? calculateNextExpiry(null, new Date(input.issueDate), periodicityMode, periodicity)
       : null
-  const storageKey = await storeDocumentFile(req.file)
+  const storedUpload = await storeDocumentUpload(req.file)
   try {
     const created = await prisma.$transaction(async (tx) => {
       const document = await tx.document.create({
@@ -374,18 +392,19 @@ router.post('/', asyncHandler(async (req, res) => {
           projectId,
           periodicity,
           periodicityMode: periodicity ? periodicityMode : null,
+          locationId: input.locationId ?? null,
           assets: { create: assetIds.map((assetId) => ({ asset: { connect: { id: assetId } } })) },
         },
       })
       await tx.documentVersion.create({
-        data: { documentId: document.id, version: 1, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate },
+          data: { documentId: document.id, version: 1, originalName: storedUpload.originalName, storageKey: storedUpload.storageKey, mimeType: storedUpload.mimeType, sizeBytes: storedUpload.sizeBytes, issueDate: new Date(input.issueDate), expiryDate },
       })
       await tx.auditLog.create({ data: { projectId: document.projectId, userId: actorIdFromRequest(req), action: 'Documento subido', entityId: String(document.id), detail: `${input.name} · v1` } })
       return tx.document.findUniqueOrThrow({ where: { id: document.id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(created))
   } catch (error) {
-    await removeDocumentFile(storageKey)
+    await removeDocumentFile(storedUpload.storageKey)
     throw error
   }
 }))
@@ -407,19 +426,19 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
     : periodicity && periodicityMode
       ? calculateNextExpiry(before.versions[0]?.expiryDate ?? null, new Date(input.issueDate), periodicityMode, periodicity)
       : null
-  const storageKey = await storeDocumentFile(req.file)
+  const storedUpload = await storeDocumentUpload(req.file)
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const lastVersion = await tx.documentVersion.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' }, select: { version: true } })
       const version = (lastVersion?.version ?? 0) + 1
-      await tx.documentVersion.create({ data: { documentId: id, version, originalName: req.file!.originalname, storageKey, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, issueDate: new Date(input.issueDate), expiryDate } })
+      await tx.documentVersion.create({ data: { documentId: id, version, originalName: storedUpload.originalName, storageKey: storedUpload.storageKey, mimeType: storedUpload.mimeType, sizeBytes: storedUpload.sizeBytes, issueDate: new Date(input.issueDate), expiryDate } })
       await tx.document.update({ where: { id }, data: {} })
       await tx.auditLog.create({ data: { projectId: before.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida` } })
       return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(updated))
   } catch (error) {
-    await removeDocumentFile(storageKey)
+    await removeDocumentFile(storedUpload.storageKey)
     throw error
   }
 }))
@@ -432,6 +451,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   if (input.projectId !== undefined && input.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const before = await assertDocumentExists(id, projectId)
   if (input.assetIds !== undefined) await assertDocumentAssets(projectId, input.assetIds ?? [])
+  if (input.locationId !== undefined) await assertDocumentLocation(projectId, input.locationId)
 
   let resolvedType: { typeId: number | null; type: string } | undefined
   if (input.typeId !== undefined || input.type !== undefined) {
@@ -458,6 +478,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
         type: resolvedType ? resolvedType.type : undefined,
         typeId: resolvedType ? resolvedType.typeId : input.typeId === null ? null : undefined,
         projectId: undefined,
+        locationId: input.locationId,
         periodicity,
         periodicityMode: periodicity === null ? null : input.periodicityMode,
         assets: input.assetIds === undefined ? undefined : {
@@ -479,11 +500,12 @@ router.patch('/:id', asyncHandler(async (req, res) => {
     const previousAssetIds = before.assets.map((link) => link.asset.id).sort((left, right) => left - right)
     const nextAssetIds = (input.assetIds ?? previousAssetIds).slice().sort((left, right) => left - right)
     const relationChanged = JSON.stringify(previousAssetIds) !== JSON.stringify(nextAssetIds)
+    const locationChanged = input.locationId !== undefined && before.locationId !== document.locationId
     const periodicityChanged = periodicity !== undefined
-    const action = relationChanged && versionMetadataChanged
+    const action = (relationChanged || locationChanged) && versionMetadataChanged
       ? 'Documento y relación actualizados'
-      : relationChanged
-        ? 'Relación documento-activo actualizada'
+      : relationChanged || locationChanged
+        ? 'Relaciones de documento actualizadas'
         : versionMetadataChanged
           ? 'Fechas de documento actualizadas'
           : periodicityChanged
@@ -491,6 +513,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
             : 'Metadatos de documento actualizados'
     const detail = [
       relationChanged ? `Activos ${assetCodes(before)} → ${assetCodes(document)}` : null,
+      locationChanged ? `Ubicación ${locationName(before)} → ${locationName(document)}` : null,
       versionMetadataChanged ? `Fechas de v${currentVersion?.version ?? 1} actualizadas` : null,
       periodicityChanged ? `Periodicidad ${before.periodicity ?? 'Sin'} → ${periodicity ?? 'Sin'} · modo ${input.periodicityMode === null ? '—' : (input.periodicityMode ?? before.periodicityMode ?? '—')}` : null,
     ].filter(Boolean).join(' · ') || 'Nombre, tipo o proyecto actualizado'

@@ -1,6 +1,7 @@
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import sharp from 'sharp'
 
 export const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -14,6 +15,27 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = new Map<string, string>([
   ['image/webp', '.webp'],
   ['image/gif', '.gif'],
 ])
+
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+
+export type StoredDocumentUpload = { storageKey: string; mimeType: string; sizeBytes: number; originalName: string }
+
+function webpName(originalName: string): string {
+  const stem = originalName.replace(/\.[^.]+$/, '') || 'imagen'
+  return `${stem}.webp`
+}
+
+async function optimizeImageForWeb(bytes: Buffer, mimeType: string): Promise<{ bytes: Buffer; mimeType: string }> {
+  if (!IMAGE_MIME_TYPES.has(mimeType)) return { bytes, mimeType }
+  try {
+    const optimized = await sharp(bytes, { failOn: 'error', animated: true }).rotate().webp({ quality: 82, effort: 4 }).toBuffer()
+    if (optimized.length === 0 || optimized.length > MAX_DOCUMENT_SIZE_BYTES) throw new Error('Invalid document size')
+    return { bytes: optimized, mimeType: 'image/webp' }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid document size') throw error
+    throw new Error('Invalid document image')
+  }
+}
 
 // Marcador propio que identifica un directorio como almacenamiento de DocuCore.
 const STORAGE_MARKER_FILE = '.docucore-storage.json'
@@ -152,10 +174,25 @@ function safeStoragePath(storageKey: string): string {
 }
 
 export async function storeDocumentFile(file: Express.Multer.File): Promise<string> {
-  return storeDocumentBuffer(file.buffer, file.mimetype)
+  return (await storeDocumentUpload(file)).storageKey
+}
+
+export async function storeDocumentUpload(file: Express.Multer.File): Promise<StoredDocumentUpload> {
+  const optimized = await optimizeImageForWeb(file.buffer, file.mimetype)
+  return {
+    storageKey: await storePreparedDocumentBuffer(optimized.bytes, optimized.mimeType),
+    mimeType: optimized.mimeType,
+    sizeBytes: optimized.bytes.length,
+    originalName: optimized.mimeType === 'image/webp' && file.mimetype !== 'image/webp' ? webpName(file.originalname) : file.originalname,
+  }
 }
 
 export async function storeDocumentBuffer(bytes: Buffer, mimeType: string): Promise<string> {
+  const optimized = await optimizeImageForWeb(bytes, mimeType)
+  return storePreparedDocumentBuffer(optimized.bytes, optimized.mimeType)
+}
+
+async function storePreparedDocumentBuffer(bytes: Buffer, mimeType: string): Promise<string> {
   const extension = ALLOWED_DOCUMENT_MIME_TYPES.get(mimeType)
   if (!extension) throw new Error('Unsupported document type')
   if (bytes.length <= 0 || bytes.length > MAX_DOCUMENT_SIZE_BYTES) throw new Error('Invalid document size')

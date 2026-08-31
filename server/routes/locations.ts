@@ -16,7 +16,7 @@ const locationInclude = {
   responsible: { select: { id: true, name: true, initials: true, color: true } },
   floorPlans: { select: { id: true } },
   // ITEM-05: el árbol cuenta solo activos vivos, igual que el detalle.
-  _count: { select: { assets: { where: { deletedAt: null } }, children: true } },
+  _count: { select: { assets: { where: { deletedAt: null } }, documents: true, children: true } },
 } satisfies Prisma.LocationInclude
 
 type LocationWithRelations = Prisma.LocationGetPayload<{ include: typeof locationInclude }>
@@ -30,6 +30,7 @@ function serializeLocation(location: LocationWithRelations) {
     responsible,
     hasFloorPlan: floorPlans.length > 0,
     assetCount: _count.assets,
+    documentCount: _count.documents,
     childCount: _count.children,
   }
 }
@@ -176,6 +177,36 @@ function serializeLocationAsset(asset: Prisma.AssetGetPayload<{ select: typeof l
   return { ...asset, installDate: asset.installDate.toISOString() }
 }
 
+// Igual que los activos, los documentos del detalle son una vista previa
+// acotada. El documento completo se abre desde su vista especializada.
+const locationDocumentSelect = {
+  id: true,
+  name: true,
+  type: true,
+  eventTitle: true,
+  periodicity: true,
+  periodicityMode: true,
+  documentType: { select: { name: true } },
+  versions: {
+    orderBy: { version: 'desc' as const },
+    take: 1,
+    select: { version: true, expiryDate: true },
+  },
+} satisfies Prisma.DocumentSelect
+
+function serializeLocationDocument(document: Prisma.DocumentGetPayload<{ select: typeof locationDocumentSelect }>) {
+  const version = document.versions[0]
+  return {
+    id: document.id,
+    name: document.name,
+    type: document.documentType?.name ?? document.type,
+    eventTitle: document.eventTitle,
+    periodicity: document.periodicity,
+    periodicityMode: document.periodicityMode,
+    currentVersion: version ? { version: version.version, expiryDate: version.expiryDate?.toISOString() ?? null } : null,
+  }
+}
+
 // Detail is deliberately a preview. A separate endpoint is the only way to
 // request the complete, paged location inventory.
 router.get('/:id/assets', asyncHandler(async (req, res) => {
@@ -224,12 +255,20 @@ router.get(
       nextId = ancestor.parentId
     }
 
-    const assets = await prisma.asset.findMany({
-      where: { projectId, locationId: id, deletedAt: null },
-      orderBy: { id: 'asc' },
-      select: locationAssetSelect,
-      take: LOCATION_PREVIEW_SIZE,
-    })
+    const [assets, documents] = await Promise.all([
+      prisma.asset.findMany({
+        where: { projectId, locationId: id, deletedAt: null },
+        orderBy: { id: 'asc' },
+        select: locationAssetSelect,
+        take: LOCATION_PREVIEW_SIZE,
+      }),
+      prisma.document.findMany({
+        where: { projectId, locationId: id },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: locationDocumentSelect,
+        take: LOCATION_PREVIEW_SIZE,
+      }),
+    ])
 
     // The subtree is counted inside PostgreSQL. The detail never materializes
     // a potentially huge location-id array in Node just to show this number.
@@ -252,6 +291,8 @@ router.get(
       assetCount: subtreeAssets,
       ancestors,
       assets: assets.map(serializeLocationAsset),
+      documents: documents.map(serializeLocationDocument),
+      previewDocumentCount: location._count.documents,
     })
   }),
 )

@@ -2,6 +2,7 @@ import { mkdtemp, readdir, writeFile, mkdir, rm, stat, readFile, lstat } from 'n
 import type { PathLike, Stats } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import sharp from 'sharp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   StorageMarkerError,
@@ -11,6 +12,7 @@ import {
   prevalidateDocumentStorage,
   storageMarkerPath,
   storeDocumentBuffer,
+  storeDocumentUpload,
 } from '../../server/lib/documentStorage'
 
 // Envuelve writeFile, rm, readFile y lstat para poder simular fallos de
@@ -51,6 +53,14 @@ describe('documentStorage', () => {
     await storeDocumentBuffer(Buffer.from('hola'), 'text/plain')
     const entries = await readdir(dir)
     expect(entries).toContain(path.basename(storageMarkerPath()))
+  })
+
+  it('convierte cualquier imagen subida a WebP antes de guardarla', async () => {
+    await useTempStorage()
+    const png = await sharp({ create: { width: 2, height: 2, channels: 4, background: '#3a64ff' } }).png().toBuffer()
+    const stored = await storeDocumentUpload({ buffer: png, mimetype: 'image/png', originalname: 'foto.png' } as Express.Multer.File)
+    expect(stored).toMatchObject({ mimeType: 'image/webp', originalName: 'foto.webp' })
+    expect((await sharp(await readFile(path.join(process.env.DOCUMENT_STORAGE_PATH!, stored.storageKey))).metadata()).format).toBe('webp')
   })
 
   it('limpia claves gestionadas pero conserva el marcador', async () => {

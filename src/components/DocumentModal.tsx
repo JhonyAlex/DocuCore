@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SearchableOption } from '@/components/SearchablePicker'
+import SearchablePicker from '@/components/SearchablePicker'
 import SearchableMultiPicker, { type SelectedValue } from '@/components/SearchableMultiPicker'
 import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
-import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, fetchDocumentPreview, fetchDocumentTypes, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
+import { createDocument, createDocumentVersion, downloadDocument, fetchAssets, fetchDocument, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
 import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
 import { useProject } from '@/contexts/ProjectContext'
 
@@ -39,6 +40,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     const seen = new Set<number>()
     return seeded.filter((value) => !seen.has(value.id) && seen.add(value.id))
   })
+  const [locationId, setLocationId] = useState<number | null>(document?.location?.id ?? null)
+  const [locationLabel, setLocationLabel] = useState<string | null>(document?.location ? `${document.location.code} · ${document.location.label || document.location.name}` : null)
   const [issueDate, setIssueDate] = useState(dateInput(document?.currentVersion?.issueDate) || new Date().toISOString().slice(0, 10))
   const [expiryDate, setExpiryDate] = useState(dateInput(document?.currentVersion?.expiryDate))
   // DOC-03: periodicidad y modo de cálculo del documento; expiryTouched marca
@@ -224,6 +227,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     typeId: typeId ?? undefined,
     projectId,
     assetIds: assets.map((asset) => asset.id),
+    locationId: locationId ?? undefined,
     issueDate,
     expiryDate: expiryDate || undefined,
     periodicity: periodicity || undefined,
@@ -235,13 +239,18 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     return res.data.map((asset) => ({ value: String(asset.id), label: `${asset.code} · ${asset.name}`, hint: asset.location?.name }))
   }
 
+  const searchLocationOptions = async (query: string): Promise<SearchableOption[]> => {
+    const response = await searchLocations(projectId, query)
+    return response.data.map((location) => ({ value: String(location.id), label: `${location.code} · ${location.label || location.name}`, hint: location.name }))
+  }
+
   const save = async () => {
     setError(null)
     if (isNew && !file) return setError('Selecciona un fichero para subir el documento.')
     setSaving(true)
     try {
       if (isNew && file) await createDocument(projectId, metadata(), file)
-      if (!isNew && document) await updateDocument(projectId, document.id, { name, type, typeId: typeId ?? undefined, assetIds: assets.map((asset) => asset.id), issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
+      if (!isNew && document) await updateDocument(projectId, document.id, { name, type, typeId: typeId ?? undefined, assetIds: assets.map((asset) => asset.id), locationId, issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
       await onChanged()
       onClose()
     } catch {
@@ -308,6 +317,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               }
             }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((dt) => <option key={dt.id} value={String(dt.id)}>{dt.name}</option>)}{type && !documentTypes.some((dt) => (typeId !== null && dt.id === typeId) || dt.name.toLowerCase() === type.toLowerCase()) && <option value={type}>{type}</option>}</select></label>
             <label className="text-sm">Activos asociados<SearchableMultiPicker values={assets} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={saving} onSearch={searchAssets} onChange={setAssets} /></label>
+            <label className="text-sm">Ubicación asociada<SearchablePicker value={locationId === null ? null : String(locationId)} selectedLabel={locationLabel} ariaLabel="Ubicación asociada" placeholder="Buscar ubicación por nombre o código…" disabled={saving} allowClear clearLabel="Sin ubicación" onSearch={searchLocationOptions} onSelect={(option) => { setLocationId(option ? Number(option.value) : null); setLocationLabel(option?.label ?? null) }} /></label>
             <label className="text-sm">Emisión<input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
             <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => { setExpiryDate(event.target.value); setExpiryTouched(true) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" />{periodicity && !expiryTouched && <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}</span>}</label>
             <label className="text-sm">Periodicidad<select value={periodicity ?? ''} onChange={(event) => { setPeriodicity(event.target.value === '' ? null : event.target.value as DocumentPeriodicity); setExpiryTouched(false) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{periodicityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>

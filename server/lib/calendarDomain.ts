@@ -19,6 +19,8 @@ export interface CalendarEventOccurrence {
   status: CalendarEventStatus
   completedAt: string | null
   completedDate: string | null
+  periodicity: string | null
+  periodicityMode: string | null
   asset: { id: number; code: string; name: string; location?: string } | null
   progress: { completed: number; total: number } | null
   canComplete: boolean
@@ -61,10 +63,12 @@ export function calendarOccurrenceId(source: CalendarEventSource, sourceId: numb
   return source === 'document' && assetId !== null ? `document:${sourceId}:asset:${assetId}` : `${source}:${sourceId}`
 }
 
-export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'id' | 'date' | 'status' | 'completedAt' | 'completedDate' | 'canComplete' | 'canEdit' | 'canDelete'> & {
+export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'id' | 'date' | 'status' | 'completedAt' | 'completedDate' | 'periodicity' | 'periodicityMode' | 'canComplete' | 'canEdit' | 'canDelete'> & {
   date: Date
   completedAt?: Date | null
   completedDate?: Date | null
+  periodicity?: string | null
+  periodicityMode?: string | null
   today: Date
 }): CalendarEventOccurrence {
   const completedAt = input.completedAt ?? null
@@ -89,6 +93,8 @@ export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'i
     status,
     completedAt: completedAt?.toISOString() ?? null,
     completedDate: input.completedDate ? asCalendarDate(input.completedDate) : null,
+    periodicity: input.periodicity ?? null,
+    periodicityMode: input.periodicityMode ?? null,
     asset: input.asset,
     progress: input.progress,
     canComplete,

@@ -217,7 +217,7 @@ router.post('/', asyncHandler(async (req, res) => {
   try {
     const plan = await prisma.$transaction(async (tx) => {
       const created = await tx.floorPlan.create({ data: { name: input.name, projectId, locationId: input.locationId } })
-      await tx.floorPlanVersion.create({ data: { floorPlanId: created.id, version: 1, originalName: req.file!.originalname, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, ...stored } })
+      await tx.floorPlanVersion.create({ data: { floorPlanId: created.id, version: 1, originalName: `${req.file!.originalname.replace(/\.[^.]+$/, '') || 'plano'}.webp`, ...stored } })
       await tx.auditLog.create({ data: { projectId, userId: actorIdFromRequest(req), action: 'Plano creado', entityId: String(created.id), detail: `${input.name} · v1` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: created.id }, include: planInclude })
     })
@@ -246,7 +246,7 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const nextVersion = (versionOf(plan) ?? 0) + 1
-      await tx.floorPlanVersion.create({ data: { floorPlanId: planId, version: nextVersion, originalName: req.file!.originalname, mimeType: req.file!.mimetype, sizeBytes: req.file!.size, ...stored } })
+      await tx.floorPlanVersion.create({ data: { floorPlanId: planId, version: nextVersion, originalName: `${req.file!.originalname.replace(/\.[^.]+$/, '') || 'plano'}.webp`, ...stored } })
       await tx.auditLog.create({ data: { projectId: plan.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de plano', entityId: String(planId), detail: `${plan.name} · v${nextVersion}` } })
       return tx.floorPlan.findUniqueOrThrow({ where: { id: planId }, include: planInclude })
     })

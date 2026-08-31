@@ -1,5 +1,6 @@
 import { FieldType, Prisma } from '@prisma/client'
 import { z } from 'zod'
+import { PERIODICITIES, PERIODICITY_MODES } from './periodicity'
 
 export const dynamicFieldTypes = ['TEXT', 'TEXTAREA', 'NUMBER', 'DATE', 'SELECT', 'MULTISELECT', 'BOOLEAN'] as const
 
@@ -39,8 +40,8 @@ export const completeDynamicDateSchema = z.object({
 
 export const dateScheduleValueSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  periodicity: z.enum(['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual']).nullable(),
-  periodicityMode: z.enum(['Calendario', 'Subida']).nullable(),
+  periodicity: z.enum(PERIODICITIES).nullable(),
+  periodicityMode: z.enum(PERIODICITY_MODES).nullable(),
 }).strict().superRefine((value, ctx) => {
   if (value.periodicity && !value.periodicityMode) ctx.addIssue({ code: 'custom', path: ['periodicityMode'], message: 'periodicityMode requires periodicity' })
   if (!value.periodicity && value.periodicityMode) ctx.addIssue({ code: 'custom', path: ['periodicityMode'], message: 'periodicityMode requires periodicity' })

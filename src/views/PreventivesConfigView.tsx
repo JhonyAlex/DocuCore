@@ -24,9 +24,8 @@ import {
   type ApiTask,
   type PreventivePlanInput,
 } from '@/lib/api'
-import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
+import { PERIODICITIES, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
 
-const PERIODICITIES: DocumentPeriodicity[] = ['Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual']
 const PERIODICITY_MODES: DocumentPeriodicityMode[] = ['Calendario', 'Subida']
 
 const controlClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800'

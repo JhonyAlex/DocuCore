@@ -12,6 +12,8 @@ export const ALLOWED_FLOOR_PLAN_MIME_TYPES = new Map<string, string>([
 
 const MARKER = '.docucore-storage.json'
 const OWNER = 'docucore-floor-plan-storage'
+// Acepta claves históricas para lectura/borrado seguro; las nuevas siempre se
+// crean con extensión WebP en `storeFloorPlanBuffer`.
 const ORIGINAL_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(png|jpg|jpeg|webp)$/i
 const DZI_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TILE = /^\d+_\d+\.(?:jpeg|jpg|png|webp)$/i
@@ -45,6 +47,8 @@ export interface FloorPlanStoragePrevalidationOptions {
 export interface StoredFloorPlan {
   storageKey: string
   dziKey: string
+  mimeType: 'image/webp'
+  sizeBytes: number
   width: number
   height: number
 }
@@ -128,19 +132,20 @@ function dziOutputBase(base: string, key: string): string {
 }
 
 export async function storeFloorPlanBuffer(buffer: Buffer, mimeType: string): Promise<StoredFloorPlan> {
-  const extension = ALLOWED_FLOOR_PLAN_MIME_TYPES.get(mimeType)
-  if (!extension) throw new Error('Unsupported floor plan type')
+  if (!ALLOWED_FLOOR_PLAN_MIME_TYPES.has(mimeType)) throw new Error('Unsupported floor plan type')
   if (buffer.length <= 0 || buffer.length > MAX_FLOOR_PLAN_SIZE_BYTES) throw new Error('Invalid floor plan size')
   const base = await root()
-  const storageKey = `${randomUUID()}${extension}`
+  const storageKey = `${randomUUID()}.webp`
   const dziKey = randomUUID()
   try {
     const image = sharp(buffer, { failOn: 'error' }).rotate()
     const metadata = await image.metadata()
     if (!metadata.width || !metadata.height) throw new Error('Invalid floor plan image')
-    await writeFile(originalPath(base, storageKey), buffer, { flag: 'wx' })
+    const optimized = await image.webp({ quality: 85, effort: 4 }).toBuffer()
+    if (optimized.length === 0 || optimized.length > MAX_FLOOR_PLAN_SIZE_BYTES) throw new Error('Invalid floor plan size')
+    await writeFile(originalPath(base, storageKey), optimized, { flag: 'wx' })
     await image.jpeg({ quality: 85 }).tile({ size: 256, overlap: 1, layout: 'dz', container: 'fs' }).toFile(dziOutputBase(base, dziKey))
-    return { storageKey, dziKey, width: metadata.width, height: metadata.height }
+    return { storageKey, dziKey, mimeType: 'image/webp', sizeBytes: optimized.length, width: metadata.width, height: metadata.height }
   } catch (error) {
     await removeFloorPlanFiles({ storageKey, dziKey }).catch(() => undefined)
     if (error instanceof Error && error.message === 'Invalid floor plan image') throw error
