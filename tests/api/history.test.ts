@@ -68,6 +68,22 @@ describe('history and audit log API', () => {
     expect(first.user).toHaveProperty('initials')
   })
 
+  it('loads each history page independently and preserves the total', async () => {
+    const firstResponse = await api('/api/history?limit=1&page=1')
+    const secondResponse = await api('/api/history?limit=1&page=2')
+    expect(firstResponse.status).toBe(200)
+    expect(secondResponse.status).toBe(200)
+
+    const firstPage = await firstResponse.json() as { data: Array<{ id: number }>; total: number; page: number; totalPages: number }
+    const secondPage = await secondResponse.json() as { data: Array<{ id: number }>; total: number; page: number; totalPages: number }
+    expect(firstPage.total).toBeGreaterThan(1)
+    expect(firstPage.total).toBe(secondPage.total)
+    expect(firstPage.page).toBe(1)
+    expect(secondPage.page).toBe(2)
+    expect(firstPage.totalPages).toBeGreaterThan(1)
+    expect(secondPage.data[0]?.id).not.toBe(firstPage.data[0]?.id)
+  })
+
   it('filters history by search term', async () => {
     const response = await api('/api/history?projectId=1&search=cread')
     expect(response.status).toBe(200)

@@ -8,6 +8,11 @@ test.describe('Historial global del proyecto', () => {
     const rows = page.locator('tbody tr')
     await expect(rows.first()).toBeVisible()
 
+    const pageResponse = page.waitForResponse((response) => response.url().includes('/api/projects/1/history?') && response.url().includes('page=2') && response.request().method() === 'GET')
+    await page.getByRole('button', { name: 'Siguiente', exact: true }).click()
+    await expect((await pageResponse).status()).toBe(200)
+    await expect(page.getByText(/2 \/ \d+/)).toBeVisible()
+
     await page.locator('#history-action-filter').selectOption({ label: 'Creación' })
     await expect(rows.first()).toContainText('Creación')
 

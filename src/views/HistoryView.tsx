@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useProject } from '@/contexts/ProjectContext'
 import SectionActions from '@/components/SectionActions'
+import ListPagination from '@/components/ListPagination'
 import { useTableDragScroll } from '@/hooks/useTableDragScroll'
 import { downloadHistoryCsv, fetchHistory, type ApiHistoryEntry } from '@/lib/api'
 import { formatApiDateTime, getHistoryActionChipClass, responsibleColorMap } from '@/lib/assetMappers'
@@ -13,24 +14,35 @@ export default function HistoryView() {
   const [history, setHistory] = useState<ApiHistoryEntry[]>([])
   const [availableActions, setAvailableActions] = useState<string[]>([])
   const [selectedAction, setSelectedAction] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const latestRequestRef = useRef(0)
 
   const loadHistory = useCallback(async () => {
+    const requestId = ++latestRequestRef.current
     setLoading(true)
     setError(null)
     try {
-      const response = await fetchHistory(projectId, { action: selectedAction || undefined, page: 1, limit: HISTORY_PAGE_SIZE })
+      const response = await fetchHistory(projectId, { action: selectedAction || undefined, page, limit: HISTORY_PAGE_SIZE })
+      if (requestId !== latestRequestRef.current) return
       setHistory(response.data)
       setAvailableActions(response.availableActions ?? [])
+      setTotal(response.total)
+      setTotalPages(response.totalPages)
     } catch {
+      if (requestId !== latestRequestRef.current) return
       setHistory([])
+      setTotal(0)
+      setTotalPages(1)
       setError('No se pudo cargar el historial. Inténtalo de nuevo.')
     } finally {
-      setLoading(false)
+      if (requestId === latestRequestRef.current) setLoading(false)
     }
-  }, [projectId, selectedAction])
+  }, [page, projectId, selectedAction])
 
   useEffect(() => {
     void loadHistory()
@@ -50,7 +62,7 @@ export default function HistoryView() {
   return (
     <section className="fade-in">
       <SectionActions><div className="flex items-center gap-3">
-          <select id="history-action-filter" aria-label="Filtrar por tipo de acción" value={selectedAction} onChange={(event) => setSelectedAction(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
+          <select id="history-action-filter" aria-label="Filtrar por tipo de acción" value={selectedAction} onChange={(event) => { setSelectedAction(event.target.value); setPage(1) }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
             <option value="">Todas las acciones</option>
             {availableActions.map((action) => <option key={action} value={action}>{action}</option>)}
           </select>
@@ -101,6 +113,7 @@ export default function HistoryView() {
             </tbody>
           </table>
         </div>
+        <ListPagination page={page} totalPages={totalPages} total={total} limit={HISTORY_PAGE_SIZE} onPageChange={setPage} />
       </div>
     </section>
   )
