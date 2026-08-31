@@ -203,17 +203,13 @@ async function buildDashboard(project: ProjectSummary, range: '30d' | '7d' | 'ye
         LIMIT 1
       ) current_version ON current_version."expiryDate" IS NOT NULL
       WHERE document."projectId" = ${project.id} AND current_version."expiryDate" <= ${rangeEnd}
-        AND (document."eventTitle" IS NOT NULL OR EXISTS (
-          SELECT 1 FROM "DocumentItem" item
-          JOIN "Asset" asset ON asset.id = item."assetId" AND asset."deletedAt" IS NULL
-          WHERE item."documentId" = document.id
-        ))
     `),
     prisma.$queryRaw<ExpiringDocumentRow[]>(Prisma.sql`
       SELECT document.id, document.name, document."eventTitle", document.type,
         current_version."expiryDate" AS "expiryDate",
         linked_asset.id AS "assetId", linked_asset.code AS "assetCode",
-        COALESCE(location.label, location.name) AS "locationName", responsible.name AS "responsibleName"
+        COALESCE(doc_location.label, doc_location.name, location.label, location.name) AS "locationName",
+        responsible.name AS "responsibleName"
       FROM "Document" document
       JOIN LATERAL (
         SELECT "expiryDate" FROM "DocumentVersion"
@@ -230,9 +226,9 @@ async function buildDashboard(project: ProjectSummary, range: '30d' | '7d' | 'ye
         LIMIT 1
       ) linked_asset ON true
       LEFT JOIN "Location" location ON location.id = linked_asset."locationId"
+      LEFT JOIN "Location" doc_location ON doc_location.id = document."locationId"
       LEFT JOIN "User" responsible ON responsible.id = linked_asset."responsibleId"
       WHERE document."projectId" = ${project.id} AND current_version."expiryDate" <= ${rangeEnd}
-        AND (document."eventTitle" IS NOT NULL OR linked_asset.id IS NOT NULL)
       ORDER BY current_version."expiryDate" ASC, document.id ASC
       LIMIT 5
     `),
@@ -288,13 +284,14 @@ async function buildDashboard(project: ProjectSummary, range: '30d' | '7d' | 'ye
       return {
         id: event.id,
         title: `${event.title}${event.asset ? ` · ${event.asset.code}` : ''}`,
-        subtitle: [event.sourceLabel, event.asset?.location, event.asset?.name].filter(Boolean).join(' · '),
+        subtitle: [event.sourceLabel, event.location ?? event.asset?.location, event.asset?.name].filter(Boolean).join(' · '),
         ...expirationVisual(event.source, event.category),
         chipText: chip.text,
         chipClass: chip.className,
         pulseDot: chip.pulseDot,
-        targetType: event.assetId ? ('asset' as const) : ('calendar' as const),
+        targetType: event.assetId ? ('asset' as const) : (event.source === 'document' ? ('docs' as const) : ('calendar' as const)),
         targetId: event.assetId ?? undefined,
+        searchQuery: event.assetId || event.source !== 'document' ? undefined : event.title,
         date: event.date,
       }
     })

@@ -137,10 +137,6 @@ export async function syncProjectNotifications(
   const documentsWithExpiry = await db.document.findMany({
     where: {
       projectId,
-      OR: [
-        { eventTitle: { not: null } },
-        { assets: { some: { asset: { deletedAt: null } } } },
-      ],
       versions: {
         some: {
           expiryDate: { lte: in30Days },
