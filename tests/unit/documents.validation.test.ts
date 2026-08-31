@@ -26,6 +26,13 @@ describe('document list query schema', () => {
     expect(parsed.assetId).toBeUndefined()
   })
 
+  it('parses numeric typeId and locationId filters', () => {
+    const parsed = documentListQuerySchema.parse({ typeId: '3', locationId: '5', page: 1, limit: 20 })
+
+    expect(parsed.typeId).toBe(3)
+    expect(parsed.locationId).toBe(5)
+  })
+
   it('rejects a non-numeric assetId', () => {
     expect(() => documentListQuerySchema.parse({ assetId: 'abc', page: 1, limit: 20 })).toThrow()
   })

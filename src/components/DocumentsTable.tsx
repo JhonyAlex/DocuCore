@@ -42,11 +42,33 @@ interface DocumentsTableProps {
   onRowClick: (document: ApiDocument) => void
   onDownload: (document: ApiDocument) => void
   onDelete: (document: ApiDocument) => void
+  page?: number
+  totalPages?: number
+  total?: number
+  limit?: number
+  onPageChange?: (page: number) => void
 }
 
-export default function DocumentsTable({ documents, selection, sortBy, sortOrder, onSort, onRowClick, onDownload, onDelete }: DocumentsTableProps) {
+type PageToken = number | 'ellipsis'
+
+function pageWindow(current: number, total: number): PageToken[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: PageToken[] = [1]
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+  if (start > 2) pages.push('ellipsis')
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (end < total - 1) pages.push('ellipsis')
+  pages.push(total)
+  return pages
+}
+
+export default function DocumentsTable({ documents, selection, sortBy, sortOrder, onSort, onRowClick, onDownload, onDelete, page = 1, totalPages = 1, total = 0, limit = 5, onPageChange }: DocumentsTableProps) {
   const tableContainerRef = useTableDragScroll<HTMLDivElement>()
   const ids = documents.map((d) => d.id)
+  const start = total === 0 ? 0 : (page - 1) * limit + 1
+  const end = Math.min(page * limit, total)
+  const pages = pageWindow(page, totalPages)
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -139,6 +161,26 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
           </tbody>
         </table>
       </div>
+      {onPageChange && (
+        <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="text-sm text-slate-500 dark:text-slate-400">
+            {total === 0 ? 'Sin resultados' : `Mostrando ${start}-${end} de ${total} resultados`}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => onPageChange(page - 1)} disabled={page <= 1} className="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+              {pages.map((p, i) =>
+                p === 'ellipsis' ? (
+                  <span key={`e-${i}`} className="px-2 text-slate-400">…</span>
+                ) : (
+                  <button key={p} type="button" onClick={() => onPageChange(p)} className={`px-3 py-1.5 rounded-md text-sm ${p === page ? 'bg-brand-600 text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{p}</button>
+                ),
+              )}
+              <button type="button" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="px-3 py-1.5 rounded-md text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">Siguiente</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

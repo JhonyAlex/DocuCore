@@ -21,6 +21,7 @@ export interface CalendarEventOccurrence {
   completedDate: string | null
   periodicity: string | null
   periodicityMode: string | null
+  location?: string | null
   asset: { id: number; code: string; name: string; location?: string } | null
   progress: { completed: number; total: number } | null
   canComplete: boolean
@@ -95,6 +96,7 @@ export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'i
     completedDate: input.completedDate ? asCalendarDate(input.completedDate) : null,
     periodicity: input.periodicity ?? null,
     periodicityMode: input.periodicityMode ?? null,
+    location: input.location ?? input.asset?.location ?? null,
     asset: input.asset,
     progress: input.progress,
     canComplete,

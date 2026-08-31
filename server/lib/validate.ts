@@ -201,8 +201,10 @@ export const documentSortBySchema = z.enum([
 export const documentListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   type: z.string().trim().min(1).optional(),
+  typeId: optionalPositiveId,
   status: z.enum(['Vigente', 'Por vencer', 'Vencido']).optional(),
   projectId: optionalPositiveId,
+  locationId: optionalPositiveId,
   assetId: nullableOptionalPositiveId,
   page: z.preprocess((value) => value === undefined ? 1 : Number(value), z.number().int().positive()),
   limit: z.preprocess((value) => value === undefined ? 10 : Number(value), z.number().int().positive().max(100)),

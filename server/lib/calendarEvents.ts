@@ -60,7 +60,7 @@ function toAssetRef(asset: { id: number; code: string; name: string; location: {
 function matchesSearch(event: CalendarEventOccurrence, search?: string): boolean {
   if (!search) return true
   const needle = search.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es')
-  return [event.title, event.sourceLabel, event.asset?.code, event.asset?.name, event.asset?.location]
+  return [event.title, event.sourceLabel, event.location, event.asset?.code, event.asset?.name, event.asset?.location]
     .filter((value): value is string => Boolean(value))
     .some((value) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es').includes(needle))
 }
@@ -93,13 +93,10 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
         where: {
           projectId: input.projectId,
           ...(input.assetId ? { assets: { some: { assetId: input.assetId } } } : {}),
-          // Un archivo genérico del proyecto sin activo ni título de evento no
-          // es una ocurrencia accionable. Los documentos sin activo que sí
-          // definen un hito aparecen igualmente como eventos de proyecto.
-          OR: [{ assets: { some: { asset: { deletedAt: null } } } }, { eventTitle: { not: null } }],
           versions: { some: { expiryDate: dateRange ?? { not: null } } },
         },
         include: {
+          location: { select: { label: true, name: true } },
           versions: { orderBy: { version: 'desc' }, take: 1, select: { expiryDate: true } },
           assets: { where: { asset: activeAssetWhere }, include: { asset: { select: assetSelect } }, take: 20 },
         },
@@ -147,10 +144,11 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
       const expiryDate = document.versions[0]?.expiryDate
       if (!expiryDate || (from && expiryDate < asUtcDate(from)) || (to && expiryDate > asUtcDate(to))) return []
       const category = calendarCategoryFromText(`${document.type} ${document.eventTitle ?? ''}`)
+      const docLocation = document.location ? (document.location.label || document.location.name) : null
       if (document.assets.length === 0) return [createCalendarOccurrence({
         source: 'document', sourceId: document.id, projectId: document.projectId, assetId: null,
         title: document.eventTitle ?? document.name, sourceLabel: document.type, category, date: expiryDate,
-        today: now, asset: null, progress: null,
+        today: now, asset: null, location: docLocation, progress: null,
       })]
       return document.assets.map((link) => {
         const acknowledgement = acknowledgementByAsset.get(`${link.assetId}:document:${document.id}`)

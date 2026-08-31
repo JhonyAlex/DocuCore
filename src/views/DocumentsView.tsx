@@ -6,7 +6,7 @@ import DocumentsFilters, { type DocumentFilters } from '@/components/DocumentsFi
 import BulkActionBar from '@/components/BulkActionBar'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useSelection } from '@/hooks/useSelection'
-import { deleteDocument, downloadDocument, fetchDocument, fetchDocumentKpis, fetchDocuments, type ApiDocument } from '@/lib/api'
+import { deleteDocument, downloadDocument, fetchDocument, fetchDocumentKpis, fetchDocuments, fetchDocumentTypes, fetchLocations, type ApiDocument, type ApiDocumentType, type ApiLocation } from '@/lib/api'
 import { toUserWriteError } from '@/lib/apiErrors'
 import { useProject } from '@/contexts/ProjectContext'
 import SectionActions from '@/components/SectionActions'
@@ -19,6 +19,8 @@ export default function DocumentsView() {
   if (projectId === null) throw new Error('DocumentsView requires a project scope')
   const selection = useSelection<number>()
   const [documents, setDocuments] = useState<ApiDocument[]>([])
+  const [types, setTypes] = useState<ApiDocumentType[]>([])
+  const [locations, setLocations] = useState<ApiLocation[]>([])
   const [kpis, setKpis] = useState({ vigente: 0, porVencer: 0, vencido: 0, total: 0 })
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<ApiDocument | null | undefined>(undefined)
@@ -34,6 +36,20 @@ export default function DocumentsView() {
   const [totalPages, setTotalPages] = useState(1)
   const openedDocIdRef = useRef<number | null>(null)
   const deepLinkedDocId = Number(searchParams.get('documentId'))
+
+  useEffect(() => {
+    let active = true
+    Promise.all([fetchDocumentTypes(projectId), fetchLocations(projectId)])
+      .then(([nextTypes, nextLocations]) => {
+        if (!active) return
+        setTypes(nextTypes)
+        setLocations(nextLocations.locations)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [projectId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDeferredFilters(filters), 250)
@@ -72,8 +88,17 @@ export default function DocumentsView() {
 
   useEffect(() => {
     const urlSearch = searchParams.get('search')
-    if (urlSearch !== null) {
-      setFilters((prev) => ({ ...prev, search: urlSearch }))
+    const urlTypeId = searchParams.get('typeId') ? Number(searchParams.get('typeId')) : null
+    const urlStatus = searchParams.get('status') as DocumentFilters['status'] | null
+    const urlLocationId = searchParams.get('locationId') ? Number(searchParams.get('locationId')) : null
+
+    if (urlSearch !== null || urlTypeId !== null || urlStatus !== null || urlLocationId !== null) {
+      setFilters({
+        search: urlSearch ?? '',
+        typeId: urlTypeId,
+        status: urlStatus ?? undefined,
+        locationId: urlLocationId,
+      })
     }
   }, [searchParams])
 
@@ -126,18 +151,53 @@ export default function DocumentsView() {
 
   return (
     <section className="fade-in">
-      <SectionActions><div className="flex items-center gap-2"><DocumentsFilters filters={filters} onChange={(next) => { setFilters(next); setPage(1); selection.clear() }} page={page} total={total} totalPages={totalPages} onPageChange={(next) => { setPage(next); selection.clear() }} /><button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Subir documento</button></div></SectionActions>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">{cards.map((card) => <div key={card.label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex items-center gap-3"><div className={`w-10 h-10 rounded-lg ${card.className} flex items-center justify-center text-lg font-semibold`}>{card.value}</div><div><div className="text-sm font-medium">{card.label}</div><div className="text-xs text-slate-500">{card.sublabel}</div></div></div>)}</div>
+      <SectionActions>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Subir documento
+          </button>
+        </div>
+      </SectionActions>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+        {cards.map((card) => (
+          <div key={card.label} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-lg ${card.className} flex items-center justify-center text-lg font-semibold`}>{card.value}</div>
+            <div>
+              <div className="text-sm font-medium">{card.label}</div>
+              <div className="text-xs text-slate-500">{card.sublabel}</div>
+            </div>
+          </div>
+        ))}
+      </div>
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
         <button type="button" onClick={() => void handleBulkDownload()} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Descargar</button>
         <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
       </BulkActionBar>
+      <DocumentsFilters
+        filters={filters}
+        types={types}
+        locations={locations}
+        onFilterChange={(next) => {
+          setFilters(next)
+          setPage(1)
+          selection.clear()
+        }}
+      />
       {error && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">{error}</div>}
       <DocumentsTable
         documents={documents}
         selection={selection}
         sortBy={sortBy}
         sortOrder={sortOrder}
+        page={page}
+        total={total}
+        totalPages={totalPages}
+        limit={LIMIT}
+        onPageChange={(next) => {
+          setPage(next)
+          selection.clear()
+        }}
         onSort={handleSort}
         onRowClick={(document) => setEditing(document)}
         onDownload={(document) => void downloadDocument(projectId, document.id)}

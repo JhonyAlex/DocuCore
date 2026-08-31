@@ -282,16 +282,24 @@ router.get('/', asyncHandler(async (req, res) => {
   const conditions: Prisma.Sql[] = [Prisma.sql`d."projectId" = ${projectId}`]
   if (parsed.assetId === null) conditions.push(Prisma.sql`NOT EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id")`)
   if (parsed.assetId !== undefined && parsed.assetId !== null) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id" AND di."assetId" = ${parsed.assetId})`)
+  if (parsed.typeId !== undefined) conditions.push(Prisma.sql`d."typeId" = ${parsed.typeId}`)
+  if (parsed.locationId !== undefined) conditions.push(Prisma.sql`d."locationId" = ${parsed.locationId}`)
   if (parsed.type) conditions.push(Prisma.sql`d."type" ILIKE ${parsed.type}`)
   if (parsed.search) {
     const pattern = `%${parsed.search}%`
     conditions.push(Prisma.sql`(
       d."name" ILIKE ${pattern}
+      OR d."type" ILIKE ${pattern}
       OR EXISTS (
         SELECT 1 FROM "DocumentItem" di
         INNER JOIN "Asset" a ON a."id" = di."assetId"
         WHERE di."documentId" = d."id" AND a."deletedAt" IS NULL
           AND (a."code" ILIKE ${pattern} OR a."name" ILIKE ${pattern})
+      )
+      OR EXISTS (
+        SELECT 1 FROM "Location" loc
+        WHERE loc."id" = d."locationId"
+          AND (loc."name" ILIKE ${pattern} OR loc."code" ILIKE ${pattern} OR loc."label" ILIKE ${pattern})
       )
     )`)
   }

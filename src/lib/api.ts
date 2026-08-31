@@ -153,6 +153,7 @@ export interface ApiCalendarEventOccurrence {
   completedDate: string | null
   periodicity: DocumentPeriodicity | null
   periodicityMode: DocumentPeriodicityMode | null
+  location?: string | null
   asset: { id: number; code: string; name: string; location?: string } | null
   progress: { completed: number; total: number } | null
   canComplete: boolean
@@ -563,8 +564,10 @@ export interface DocumentMetadataInput {
 export interface DocumentListParams {
   search?: string
   type?: string
+  typeId?: number | null
   status?: 'Vigente' | 'Por vencer' | 'Vencido'
   projectId?: number
+  locationId?: number | null
   assetId?: number | null
   page?: number
   limit?: number
