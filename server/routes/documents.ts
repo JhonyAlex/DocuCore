@@ -9,6 +9,7 @@ import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionM
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
 import { actorIdFromRequest, requireDocumentInProject, scopedProjectId } from '../lib/projectScope'
 import { normalizeFileName } from '../lib/textEncoding'
+import { computeDocumentStatus, nowClock, DOCUMENT_EXPIRY_THRESHOLD_DAYS } from '../lib/documentStatus'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -75,19 +76,6 @@ const documentListSelect = {
 } satisfies Prisma.DocumentSelect
 type DocumentListRow = Prisma.DocumentGetPayload<{ select: typeof documentListSelect }>
 
-function nowClock(): Date {
-  const configured = process.env.DOCUCORE_NOW ? new Date(process.env.DOCUCORE_NOW) : null
-  return configured && !Number.isNaN(configured.getTime()) ? configured : new Date()
-}
-
-function documentStatus(expiryDate: Date | null, now = nowClock()): 'Vigente' | 'Por vencer' | 'Vencido' {
-  if (!expiryDate) return 'Vigente'
-  const days = Math.floor((Date.UTC(expiryDate.getUTCFullYear(), expiryDate.getUTCMonth(), expiryDate.getUTCDate()) - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) / 86_400_000)
-  if (days < 0) return 'Vencido'
-  if (days <= 30) return 'Por vencer'
-  return 'Vigente'
-}
-
 export function serializeDocument(document: DocumentWithCurrentVersion) {
   const currentVersion = document.versions[0]
   return {
@@ -120,7 +108,7 @@ export function serializeDocument(document: DocumentWithCurrentVersion) {
         sizeBytes: attachment.sizeBytes,
       })),
     } : null,
-    status: documentStatus(currentVersion?.expiryDate ?? null),
+    status: computeDocumentStatus(currentVersion?.expiryDate ?? null, nowClock()),
   }
 }
 
@@ -155,7 +143,7 @@ function serializeDocumentList(document: DocumentListRow) {
       expiryDate: currentVersion.expiryDate?.toISOString() ?? null,
       uploadedAt: currentVersion.uploadedAt.toISOString(),
     } : null,
-    status: documentStatus(currentVersion?.expiryDate ?? null),
+    status: computeDocumentStatus(currentVersion?.expiryDate ?? null, nowClock()),
   }
 }
 
@@ -278,7 +266,7 @@ router.get('/', asyncHandler(async (req, res) => {
   if (parsed.projectId !== undefined && parsed.projectId !== projectId) return res.status(400).json({ error: 'Project id does not match route scope' })
   const now = nowClock()
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + 30)
+  const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + DOCUMENT_EXPIRY_THRESHOLD_DAYS)
   const conditions: Prisma.Sql[] = [Prisma.sql`d."projectId" = ${projectId}`]
   if (parsed.assetId === null) conditions.push(Prisma.sql`NOT EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id")`)
   if (parsed.assetId !== undefined && parsed.assetId !== null) conditions.push(Prisma.sql`EXISTS (SELECT 1 FROM "DocumentItem" di WHERE di."documentId" = d."id" AND di."assetId" = ${parsed.assetId})`)
@@ -304,8 +292,9 @@ router.get('/', asyncHandler(async (req, res) => {
     )`)
   }
   if (parsed.status === 'Vencido') conditions.push(Prisma.sql`current."expiryDate" < ${today}`)
-  if (parsed.status === 'Por vencer') conditions.push(Prisma.sql`current."expiryDate" >= ${today} AND current."expiryDate" <= ${soon}`)
-  if (parsed.status === 'Vigente') conditions.push(Prisma.sql`(current."expiryDate" IS NULL OR current."expiryDate" > ${soon})`)
+  if (parsed.status === 'Por vencer' || parsed.status === 'Próximo a vencer') conditions.push(Prisma.sql`current."expiryDate" >= ${today} AND current."expiryDate" <= ${soon}`)
+  if (parsed.status === 'Vigente') conditions.push(Prisma.sql`current."expiryDate" > ${soon}`)
+  if (parsed.status === 'Sin vencimiento') conditions.push(Prisma.sql`current."expiryDate" IS NULL`)
 
   const isAsc = (parsed.sortOrder ?? parsed.sortDir ?? 'asc') === 'asc'
   let orderBy: Prisma.Sql
@@ -373,7 +362,7 @@ router.get('/kpis', asyncHandler(async (req, res) => {
   const projectId = scopedProjectId(req)
   const now = nowClock()
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + 30)
+  const soon = new Date(today); soon.setUTCDate(soon.getUTCDate() + DOCUMENT_EXPIRY_THRESHOLD_DAYS)
   const rows = await prisma.$queryRaw<Array<{ vigente: bigint | number; porVencer: bigint | number; vencido: bigint | number; total: bigint | number }>>(Prisma.sql`
     SELECT
       COUNT(*) FILTER (WHERE current."expiryDate" IS NULL OR current."expiryDate" > ${soon}) AS vigente,
@@ -503,8 +492,17 @@ router.post('/:id/versions', asyncHandler(async (req, res) => {
           attachments: { create: storedUploads.slice(1).map((upload, sortOrder) => ({ ...upload, sortOrder })) },
         },
       })
-      await tx.document.update({ where: { id }, data: {} })
-      await tx.auditLog.create({ data: { projectId: before.projectId, userId: actorIdFromRequest(req), action: 'Nueva versión de documento', entityId: String(id), detail: `Versión v${version} subida · ${storedUploads.length} archivo(s)` } })
+      const expiryText = expiryDate ? `Vencimiento: ${expiryDate.toISOString().slice(0, 10)}` : 'Sin vencimiento'
+      const assetsText = before.assets.length > 0 ? ` · Activos: ${assetCodes(before)}` : ''
+      await tx.auditLog.create({
+        data: {
+          projectId: before.projectId,
+          userId: actorIdFromRequest(req),
+          action: 'Nueva versión de documento',
+          entityId: String(id),
+          detail: `Versión v${version} subida (anterior: v${lastVersion?.version ?? 1}) · ${primaryUpload.originalName} · Emisión: ${input.issueDate.slice(0, 10)} · ${expiryText}${assetsText} · ${storedUploads.length} archivo(s)`,
+        },
+      })
       return tx.document.findUniqueOrThrow({ where: { id }, include: documentInclude })
     })
     res.status(201).json(serializeDocument(updated))

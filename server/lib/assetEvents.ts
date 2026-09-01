@@ -1,5 +1,8 @@
+import { createCalendarOccurrence } from './calendarDomain'
+
 export type DerivedEventUrgency = 'amber' | 'red' | 'slate'
 export type DerivedEventSource = 'event' | 'document' | 'dynamic-date' | 'preventive'
+export type DerivedEventAction = 'view_document' | 'open_preventive' | 'complete' | 'view_dynamic_date' | 'view_event'
 
 export interface DerivedAssetEvent {
   id: string
@@ -9,6 +12,8 @@ export interface DerivedAssetEvent {
   urgency: DerivedEventUrgency
   source: DerivedEventSource
   sourceLabel: string
+  isCompletable: boolean
+  primaryAction: DerivedEventAction
 }
 
 interface RelatedEvent {
@@ -118,6 +123,15 @@ function toDerivedEvent(
     progress: null,
   })
   const daysUntil = Math.round((utcDay(date) - utcDay(now)) / DAY_MS)
+  const isCompletable = source !== 'document'
+  const primaryAction: DerivedEventAction = source === 'document'
+    ? 'view_document'
+    : source === 'preventive'
+      ? 'open_preventive'
+      : source === 'dynamic-date'
+        ? 'view_dynamic_date'
+        : 'complete'
+
   return {
     id,
     title,
@@ -126,6 +140,8 @@ function toDerivedEvent(
     urgency: occurrence.status === 'overdue' ? 'red' : occurrence.status === 'today' || occurrence.status === 'upcoming' ? 'amber' : 'slate',
     source,
     sourceLabel,
+    isCompletable,
+    primaryAction,
   }
 }
 
@@ -182,15 +198,14 @@ export function deriveAssetEvents(relations: AssetEventRelations, now = new Date
   })
 }
 
+/**
+ * Los vencimientos documentales NUNCA se ocultan mediante acknowledgements.
+ * Su vigencia se deriva exclusivamente de la versión más alta del documento.
+ */
 export function deriveAssetEventsExcludingAcknowledged(
   relations: AssetEventRelations,
-  acknowledgements: Iterable<string>,
+  _acknowledgements: Iterable<string>,
   now = assetEventClock(),
 ): DerivedAssetEvent[] {
-  const acknowledged = new Set(acknowledgements)
-  return deriveAssetEvents({
-    ...relations,
-    documents: relations.documents.filter((document) => !acknowledged.has(`document:${document.id}`)),
-  }, now)
+  return deriveAssetEvents(relations, now)
 }
-import { createCalendarOccurrence } from './calendarDomain'

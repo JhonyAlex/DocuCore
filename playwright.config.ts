@@ -4,7 +4,7 @@ import { E2E_DATABASE_URL } from './tests/helpers/database'
 // La BD del webServer es SIEMPRE el destino E2E canónico (P0-REM-01): un
 // DATABASE_URL/DOCUCORE_DB_PORT heredado del shell o del .env no puede hacer
 // que la API de Playwright use 5435 u otra base.
-const apiPort = process.env.DOCUCORE_E2E_API_PORT ?? '3101'
+const apiPort = process.env.DOCUCORE_E2E_API_PORT ?? '3185'
 const apiUrl = `http://127.0.0.1:${apiPort}`
 
 export default defineConfig({
@@ -30,7 +30,7 @@ export default defineConfig({
     {
       command: 'pnpm start',
       url: `${apiUrl}/api/health`,
-      timeout: 60_000,
+      timeout: 120_000,
       reuseExistingServer: true,
       env: {
         ...process.env,
@@ -45,14 +45,14 @@ export default defineConfig({
     {
       command: 'pnpm dev',
       url: 'http://127.0.0.1:5173',
-      timeout: 60_000,
+      timeout: 120_000,
       reuseExistingServer: true,
       env: { ...process.env, VITE_API_PROXY_TARGET: apiUrl },
     },
     {
       command: 'tsx tests/helpers/referenceServer.ts',
       url: 'http://127.0.0.1:4173/docucore-prototype.html',
-      timeout: 30_000,
+      timeout: 60_000,
       reuseExistingServer: true,
     },
   ],

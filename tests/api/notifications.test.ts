@@ -7,7 +7,9 @@ let server: Server | undefined
 let baseUrl: string
 
 function api(path: string, init: RequestInit = {}) {
-  return fetch(`${baseUrl}${projectApiPath(path, init)}`, init)
+  const headers = new Headers(init.headers)
+  if (!headers.has('x-docucore-test-actor-id')) headers.set('x-docucore-test-actor-id', '1')
+  return fetch(`${baseUrl}${projectApiPath(path, init)}`, { ...init, headers })
 }
 
 describe('notifications API', () => {

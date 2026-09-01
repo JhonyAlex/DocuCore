@@ -99,7 +99,7 @@ describe('assets KPIs API', () => {
 
     // Move to trash
     const deleteRes = await api(`/api/assets/${asset.id}`, { method: 'DELETE' })
-    expect(deleteRes.status).toBe(200)
+    expect(deleteRes.status).toBe(204)
 
     const afterTrashRes = await api('/api/projects/1/assets/kpis')
     const afterTrash = (await afterTrashRes.json()) as KpisResponse

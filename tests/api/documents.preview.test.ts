@@ -17,9 +17,9 @@ let storageDir: string
 const createdDocumentIds: number[] = []
 
 import { createSampleWorkbookBuffer } from '../helpers/excelFixture'
+import sharp from 'sharp'
 
-// PNG 1x1 válido.
-const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082', 'hex')
+let PNG_BYTES: Buffer
 const PDF_BYTES = Buffer.from('%PDF-1.4 QA PREVIEW BYTES')
 const XLSX_BYTES = createSampleWorkbookBuffer()
 
@@ -39,7 +39,10 @@ async function createDocument(name: string, mimeType: string, bytes: Buffer, fil
   form.set('issueDate', '2026-08-01')
   form.append('file', new Blob([new Uint8Array(bytes)], { type: mimeType }), fileName)
   const response = await api('/api/documents', { method: 'POST', body: form })
-  expect(response.status).toBe(201)
+  if (response.status !== 201) {
+    const err = await response.text()
+    throw new Error(`createDocument failed: ${response.status} - ${err}`)
+  }
   const created = (await response.json()) as { id: number }
   createdDocumentIds.push(created.id)
   return created.id
@@ -53,6 +56,15 @@ async function createVersion(id: number, mimeType: string, bytes: Buffer, fileNa
 }
 
 beforeAll(async () => {
+  PNG_BYTES = await sharp({
+    create: {
+      width: 10,
+      height: 10,
+      channels: 4,
+      background: { r: 58, g: 100, b: 255, alpha: 1 },
+    },
+  }).png().toBuffer()
+
   process.env.DATABASE_URL = databaseUrl
   storageDir = await mkdtemp(path.join(tmpdir(), 'docucore-preview-'))
   process.env.DOCUMENT_STORAGE_PATH = storageDir

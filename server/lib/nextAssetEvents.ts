@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
+import { UPCOMING_THRESHOLD_DAYS } from '../../shared/documentStatus'
 import { assetEventClock, type DerivedAssetEvent } from './assetEvents'
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient
@@ -16,14 +17,25 @@ function utcDay(date: Date): number {
 
 function derived(id: string, title: string, date: Date, source: DerivedAssetEvent['source'], sourceLabel: string, now: Date): DerivedAssetEvent {
   const daysUntil = Math.round((utcDay(date) - utcDay(now)) / DAY_MS)
+  const isCompletable = source !== 'document'
+  const primaryAction: DerivedAssetEvent['primaryAction'] = source === 'document'
+    ? 'view_document'
+    : source === 'preventive'
+      ? 'open_preventive'
+      : source === 'dynamic-date'
+        ? 'view_dynamic_date'
+        : 'complete'
+
   return {
     id,
     title,
     date: `${date.toISOString().slice(0, 10)}T00:00:00.000Z`,
     daysUntil,
-    urgency: daysUntil < 0 ? 'red' : daysUntil <= 21 ? 'amber' : 'slate',
+    urgency: daysUntil < 0 ? 'red' : daysUntil <= UPCOMING_THRESHOLD_DAYS ? 'amber' : 'slate',
     source,
     sourceLabel,
+    isCompletable,
+    primaryAction,
   }
 }
 
@@ -31,6 +43,7 @@ function derived(id: string, title: string, date: Date, source: DerivedAssetEven
  * Obtiene el siguiente evento visible de cada activo indicado sin hidratar sus
  * historiales. Cada LATERAL contiene un `LIMIT 1`, por lo que el trabajo y el
  * DTO crecen con la página de activos, no con el número de ocurrencias.
+ * Los vencimientos documentales se derivan de la última versión vigente.
  */
 export async function nextAssetEventsById(db: DatabaseClient, assetIds: number[], now = assetEventClock()): Promise<Map<number, DerivedAssetEvent>> {
   const ids = [...new Set(assetIds)]
@@ -62,10 +75,7 @@ export async function nextAssetEventsById(db: DatabaseClient, assetIds: number[]
           ORDER BY version DESC
           LIMIT 1
         ) version ON version."expiryDate" IS NOT NULL
-        LEFT JOIN "AssetEventAcknowledgement" acknowledgement
-          ON acknowledgement."assetId" = selected.id
-          AND acknowledgement."sourceKey" = CONCAT('document:', document.id)
-        WHERE item."assetId" = selected.id AND acknowledgement."sourceKey" IS NULL
+        WHERE item."assetId" = selected.id
         ORDER BY version."expiryDate" ASC, document.id ASC
         LIMIT 1
       ) document ON TRUE

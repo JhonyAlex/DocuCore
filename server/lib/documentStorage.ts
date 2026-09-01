@@ -29,7 +29,8 @@ function webpName(originalName: string): string {
 async function optimizeImageForWeb(bytes: Buffer, mimeType: string): Promise<{ bytes: Buffer; mimeType: string }> {
   if (!IMAGE_MIME_TYPES.has(mimeType)) return { bytes, mimeType }
   try {
-    const optimized = await sharp(bytes, { failOn: 'error', animated: true }).rotate().webp({ quality: 82, effort: 4 }).toBuffer()
+    const isAnimated = mimeType === 'image/gif' || mimeType === 'image/webp'
+    const optimized = await sharp(bytes, { failOn: 'error', ...(isAnimated ? { animated: true } : {}) }).rotate().webp({ quality: 82, effort: 4 }).toBuffer()
     if (optimized.length === 0 || optimized.length > MAX_DOCUMENT_SIZE_BYTES) throw new Error('Invalid document size')
     return { bytes: optimized, mimeType: 'image/webp' }
   } catch (error) {

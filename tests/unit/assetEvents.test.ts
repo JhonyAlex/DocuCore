@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deriveAssetEvents, type AssetEventRelations } from '../../server/lib/assetEvents'
+import { deriveAssetEvents, deriveAssetEventsExcludingAcknowledged, type AssetEventRelations } from '../../server/lib/assetEvents'
 
 function relations(overrides: Partial<AssetEventRelations> = {}): AssetEventRelations {
   return {
@@ -13,7 +13,7 @@ function relations(overrides: Partial<AssetEventRelations> = {}): AssetEventRela
 const now = new Date('2026-08-06T18:00:00.000Z')
 
 describe('deriveAssetEvents', () => {
-  it('derives, sorts and classifies events from explicit relations', () => {
+  it('derives, sorts and classifies events from explicit relations with semantic actions', () => {
     const result = deriveAssetEvents(relations({
       events: [
         { id: 2, title: 'Revisión futura', date: new Date('2026-09-15T10:00:00.000Z'), type: 'Mantenimiento' },
@@ -22,12 +22,26 @@ describe('deriveAssetEvents', () => {
     }), now)
 
     expect(result).toEqual([
-      expect.objectContaining({ id: 'event:1', daysUntil: -3, urgency: 'red', source: 'event' }),
-      expect.objectContaining({ id: 'event:2', daysUntil: 40, urgency: 'slate', source: 'event' }),
+      expect.objectContaining({
+        id: 'event:1',
+        daysUntil: -3,
+        urgency: 'red',
+        source: 'event',
+        isCompletable: true,
+        primaryAction: 'complete',
+      }),
+      expect.objectContaining({
+        id: 'event:2',
+        daysUntil: 40,
+        urgency: 'slate',
+        source: 'event',
+        isCompletable: true,
+        primaryAction: 'complete',
+      }),
     ])
   })
 
-  it('uses a related document expiry as an asset event', () => {
+  it('uses a related document expiry as an asset event and marks it not manually completable', () => {
     const result = deriveAssetEvents(relations({
       documents: [{ id: 4, name: 'Certificado de calibración', eventTitle: null, versions: [{ expiryDate: new Date('2026-08-10T00:00:00.000Z') }], type: 'Calibración' }],
     }), now)
@@ -41,8 +55,26 @@ describe('deriveAssetEvents', () => {
         urgency: 'amber',
         source: 'document',
         sourceLabel: 'Calibración',
+        isCompletable: false,
+        primaryAction: 'view_document',
       }),
     ])
+  })
+
+  it('does not filter out document events even when legacy acknowledgements are present', () => {
+    const rels = relations({
+      documents: [{ id: 4, name: 'Certificado de calibración', eventTitle: null, versions: [{ expiryDate: new Date('2026-08-10T00:00:00.000Z') }], type: 'Calibración' }],
+    })
+    const legacyAcknowledgements = ['document:4']
+    const result = deriveAssetEventsExcludingAcknowledged(rels, legacyAcknowledgements, now)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'document:4',
+      source: 'document',
+      isCompletable: false,
+      primaryAction: 'view_document',
+    }))
   })
 
   it('derives dates from dynamic DATE definitions and ignores unrelated or invalid values', () => {
@@ -60,6 +92,8 @@ describe('deriveAssetEvents', () => {
         daysUntil: 0,
         urgency: 'amber',
         source: 'dynamic-date',
+        isCompletable: true,
+        primaryAction: 'view_dynamic_date',
       }),
     ])
   })
@@ -86,6 +120,8 @@ describe('deriveAssetEvents', () => {
         urgency: 'amber',
         source: 'preventive',
         sourceLabel: '1/2 tareas',
+        isCompletable: true,
+        primaryAction: 'open_preventive',
       }),
       expect.objectContaining({
         id: 'event:1',

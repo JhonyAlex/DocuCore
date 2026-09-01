@@ -37,7 +37,7 @@ async function createDocument(input: { issueDate: string; periodicity?: string; 
   if (expiryDate) form.set('expiryDate', expiryDate)
   if (input.periodicity) {
     form.set('periodicity', input.periodicity)
-    form.set('periodicityMode', input.periodicityMode ?? 'Calendario')
+    if (input.periodicityMode) form.set('periodicityMode', input.periodicityMode)
   }
   form.append('file', new Blob([new Uint8Array(PDF_BYTES)], { type: 'application/pdf' }), 'doc.pdf')
   const response = await api('/api/documents', { method: 'POST', body: form })

@@ -1,4 +1,5 @@
 import type { DocumentPeriodicity, DocumentPeriodicityMode } from '@/lib/periodicity'
+import type { DocumentValidityStatus } from '@/lib/documentStatus'
 import type { DashboardKpi, UpcomingExpiration, AlertItem, ChartBar, ActivityItem } from '@/types'
 import type { AssetIconKey } from '../../shared/assetIconCatalog'
 import type { AssetTypeColorKey } from '../../shared/assetTypeColorCatalog'
@@ -134,6 +135,8 @@ export interface ApiAssetEvent {
   urgency: 'amber' | 'red' | 'slate'
   source: 'event' | 'document' | 'dynamic-date' | 'preventive'
   sourceLabel: string
+  isCompletable?: boolean
+  primaryAction?: 'view_document' | 'open_preventive' | 'complete' | 'view_dynamic_date' | 'view_event'
 }
 
 export type ApiCalendarEventSource = 'event' | 'document' | 'dynamic-date' | 'preventive'
@@ -160,6 +163,7 @@ export interface ApiCalendarEventOccurrence {
   canComplete: boolean
   canEdit: boolean
   canDelete: boolean
+  primaryAction?: 'view_document' | 'open_preventive' | 'complete' | 'view_dynamic_date' | 'view_event'
 }
 export interface ApiCalendarResponse {
   today: string
@@ -282,7 +286,12 @@ export interface ApiAssetDocument {
   id: number
   name: string
   type: string
-  currentVersion: ApiDocumentVersion | null
+  typeId?: number | null
+  documentType?: { id: number; name: string; iconKey?: string } | null
+  periodicity?: DocumentPeriodicity | null
+  periodicityMode?: DocumentPeriodicityMode | null
+  status?: DocumentValidityStatus
+  currentVersion: (ApiDocumentVersion & { attachmentsCount?: number }) | null
 }
 
 export interface ApiAsset {
@@ -348,7 +357,19 @@ export interface PreventivePlanInput {
   assetTypeIds: number[]
 }
 
-export interface ApiAssetEventHistory { source: 'event' | 'document' | 'dynamic-date' | 'preventive'; id: number; title: string; date: string; sourceLabel: string; status: ApiCalendarEventStatus; completedAt: string | null; completedDate: string | null; progress: { completed: number; total: number } | null }
+export interface ApiAssetEventHistory {
+  source: 'event' | 'document' | 'dynamic-date' | 'preventive'
+  id: number
+  title: string
+  date: string
+  sourceLabel: string
+  status: ApiCalendarEventStatus
+  completedAt: string | null
+  completedDate: string | null
+  progress: { completed: number; total: number } | null
+  canComplete?: boolean
+  primaryAction?: 'view_document' | 'open_preventive' | 'complete' | 'view_dynamic_date' | 'view_event'
+}
 export interface ApiAssetHistoryEntry { id: number; action: string; detail: string; timestamp: string; user: { name: string; initials: string } }
 export interface ApiAssetHistoryPage { data: ApiAssetHistoryEntry[]; total: number; page: number; totalPages: number }
 

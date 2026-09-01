@@ -4,7 +4,8 @@ import multer from 'multer'
 import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
-import { assetEventClock, deriveAssetEventsExcludingAcknowledged, type DerivedAssetEvent } from '../lib/assetEvents'
+import { assetEventClock, deriveAssetEvents, type DerivedAssetEvent } from '../lib/assetEvents'
+import { computeDocumentStatus } from '../lib/documentStatus'
 import { createAssetSchema, updateAssetSchema, changeStatusSchema, assetSortBySchema, sortOrderSchema } from '../lib/validate'
 import { MAX_DOCUMENT_SIZE_BYTES, readDocumentFile, removeDocumentFile, storeDocumentUpload } from '../lib/documentStorage'
 import { completeDynamicDateSchema, dateScheduleValueSchema, parseDynamicValue, storedValue } from '../lib/dynamicFields'
@@ -96,10 +97,14 @@ const assetInclude = {
           name: true,
           eventTitle: true,
           type: true,
+          typeId: true,
+          periodicity: true,
+          periodicityMode: true,
+          documentType: { select: { id: true, name: true, iconKey: true } },
           versions: {
             orderBy: { version: 'desc' },
             take: 1,
-            select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, expiryDate: true, uploadedAt: true },
+            select: { id: true, version: true, originalName: true, mimeType: true, sizeBytes: true, issueDate: true, expiryDate: true, uploadedAt: true, attachments: { select: { id: true } } },
           },
         },
       },
@@ -137,9 +142,8 @@ type AssetListRow = Prisma.AssetGetPayload<{ select: typeof assetListSelect }>
 type AssetWithRelations = Prisma.AssetGetPayload<{ include: typeof assetInclude }>
 
 function withDerivedEvents(asset: AssetWithRelations) {
-  const acknowledged = new Set(asset.eventAcknowledgements.map((entry) => entry.sourceKey))
-  const documents = asset.documentAssets.map((link) => link.document).filter((document) => !acknowledged.has(`document:${document.id}`))
-  const nextEvents = deriveAssetEventsExcludingAcknowledged({ ...asset, documents }, acknowledged, assetEventClock())
+  const documents = asset.documentAssets.map((link) => link.document)
+  const nextEvents = deriveAssetEvents({ ...asset, documents }, assetEventClock())
   // IMG-01: la clave interna de storage no se expone (como en documentos); el
   // frontend recibe URLs servidas por el propio API.
   const definitions = asset.type.fieldDefinitions.map((link) => link.definition).filter((definition) => definition.projectId === asset.projectId)
@@ -182,16 +186,30 @@ function withDerivedEvents(asset: AssetWithRelations) {
     type: { id: type.id, name: type.name, iconKey: type.iconKey, color: type.color },
     dynamicFields,
     documentCount: documents.length,
-    documents: documents.map((document) => ({
-      id: document.id,
-      name: document.name,
-      type: document.type,
-      currentVersion: document.versions[0] ? {
-        ...document.versions[0],
-        expiryDate: document.versions[0].expiryDate?.toISOString() ?? null,
-        uploadedAt: document.versions[0].uploadedAt.toISOString(),
-      } : null,
-    })),
+    documents: documents.map((document) => {
+      const currentVersion = document.versions[0]
+      return {
+        id: document.id,
+        name: document.name,
+        type: document.type,
+        typeId: document.typeId ?? null,
+        documentType: document.documentType ?? null,
+        periodicity: document.periodicity ?? null,
+        periodicityMode: document.periodicityMode ?? null,
+        status: computeDocumentStatus(currentVersion?.expiryDate ?? null, assetEventClock()),
+        currentVersion: currentVersion ? {
+          id: currentVersion.id,
+          version: currentVersion.version,
+          originalName: currentVersion.originalName,
+          mimeType: currentVersion.mimeType,
+          sizeBytes: currentVersion.sizeBytes,
+          issueDate: currentVersion.issueDate ? currentVersion.issueDate.toISOString() : null,
+          expiryDate: currentVersion.expiryDate ? currentVersion.expiryDate.toISOString() : null,
+          uploadedAt: currentVersion.uploadedAt.toISOString(),
+          attachmentsCount: currentVersion.attachments ? currentVersion.attachments.length : 0,
+        } : null,
+      }
+    }),
     eventCount: nextEvents.length,
     nextEvents,
     preventivePlans: preventivePlans.map((plan) => ({
@@ -549,6 +567,9 @@ router.post('/:id/events/complete', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })
   const input = completeEventSchema.parse(req.body)
+  if (input.source === 'document') {
+    return res.status(400).json({ error: 'Los vencimientos documentales no se completan manualmente. Sube una nueva versión vigente o actualiza sus fechas.' })
+  }
   const asset = await prisma.asset.findFirst({ where: { id, projectId: scopedProjectId(req), deletedAt: null }, select: { id: true, code: true, projectId: true } })
   if (!asset) return res.status(404).json({ error: 'Not found' })
   await prisma.$transaction((tx) => completeCalendarOccurrence(tx, { source: input.source, sourceId: input.id, assetId: id, projectId: asset.projectId, performedDate: input.performedDate, actorId: actorIdFromRequest(req) }))

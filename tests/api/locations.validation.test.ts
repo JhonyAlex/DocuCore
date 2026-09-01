@@ -26,7 +26,7 @@ describe('locations API validation', () => {
   it('rejects malformed location payloads through the real router and Zod error middleware', async () => {
     const response = await fetch(`${baseUrl}/api/projects/1/locations`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-docucore-test-actor-id': '1' },
       body: JSON.stringify({ name: '', responsibleId: 0 }),
     })
 
@@ -38,7 +38,9 @@ describe('locations API validation', () => {
   })
 
   it('rejects an invalid location id before accessing Prisma', async () => {
-    const response = await fetch(`${baseUrl}/api/projects/1/locations/not-a-number`)
+    const response = await fetch(`${baseUrl}/api/projects/1/locations/not-a-number`, {
+      headers: { 'x-docucore-test-actor-id': '1' },
+    })
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({ error: 'Invalid id' })
@@ -47,7 +49,7 @@ describe('locations API validation', () => {
   it('rejects manually supplied derived fields on create', async () => {
     const response = await fetch(`${baseUrl}/api/projects/1/locations`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-docucore-test-actor-id': '1' },
       body: JSON.stringify({ itemCount: 99, name: 'Dato manual no permitido' }),
     })
 

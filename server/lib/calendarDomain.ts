@@ -1,3 +1,5 @@
+import { UPCOMING_THRESHOLD_DAYS } from '../../shared/documentStatus'
+
 export const CALENDAR_EVENT_SOURCES = ['event', 'document', 'dynamic-date', 'preventive'] as const
 export type CalendarEventSource = (typeof CALENDAR_EVENT_SOURCES)[number]
 
@@ -5,6 +7,7 @@ export const CALENDAR_EVENT_CATEGORIES = ['expiry', 'calibration', 'maintenance'
 export type CalendarEventCategory = (typeof CALENDAR_EVENT_CATEGORIES)[number]
 
 export type CalendarEventStatus = 'overdue' | 'today' | 'upcoming' | 'pending' | 'completed'
+export type CalendarEventAction = 'view_document' | 'open_preventive' | 'complete' | 'view_dynamic_date' | 'view_event'
 
 export interface CalendarEventOccurrence {
   id: string
@@ -27,6 +30,7 @@ export interface CalendarEventOccurrence {
   canComplete: boolean
   canEdit: boolean
   canDelete: boolean
+  primaryAction: CalendarEventAction
 }
 
 const DAY_MS = 86_400_000
@@ -44,14 +48,14 @@ export function calendarEventStatus(date: Date, completedAt: Date | null, today:
   const difference = Math.round((utcCalendarDay(date) - utcCalendarDay(today)) / DAY_MS)
   if (difference < 0) return 'overdue'
   if (difference === 0) return 'today'
-  return difference <= 21 ? 'upcoming' : 'pending'
+  return difference <= UPCOMING_THRESHOLD_DAYS ? 'upcoming' : 'pending'
 }
 
 export function calendarCategoryFromText(value: string | null | undefined, fallback: CalendarEventCategory = 'expiry'): CalendarEventCategory {
   const normalized = (value ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('es')
   if (normalized === 'expiry' || normalized === 'calibration' || normalized === 'maintenance' || normalized === 'review') return normalized
   if (normalized.includes('calibr')) return 'calibration'
-  if (normalized.includes('manten') || normalized.includes('prevent')) return 'maintenance'
+  if (normalized.includes('manten')) return 'maintenance'
   if (normalized.includes('revision') || normalized.includes('inspecc') || normalized.includes('auditor')) return 'review'
   return fallback
 }
@@ -64,7 +68,7 @@ export function calendarOccurrenceId(source: CalendarEventSource, sourceId: numb
   return source === 'document' && assetId !== null ? `document:${sourceId}:asset:${assetId}` : `${source}:${sourceId}`
 }
 
-export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'id' | 'date' | 'status' | 'completedAt' | 'completedDate' | 'periodicity' | 'periodicityMode' | 'canComplete' | 'canEdit' | 'canDelete'> & {
+export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'id' | 'date' | 'status' | 'completedAt' | 'completedDate' | 'periodicity' | 'periodicityMode' | 'canComplete' | 'canEdit' | 'canDelete' | 'primaryAction'> & {
   date: Date
   completedAt?: Date | null
   completedDate?: Date | null
@@ -77,9 +81,18 @@ export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'i
   const hasCompletedPreventiveTasks = input.source !== 'preventive'
     || !input.progress
     || input.progress.completed === input.progress.total
+  // Los vencimientos documentales no son completables manualmente.
   const canComplete = status !== 'completed'
-    && (input.source !== 'document' || input.assetId !== null)
+    && input.source !== 'document'
     && hasCompletedPreventiveTasks
+
+  const primaryAction: CalendarEventAction = input.source === 'document'
+    ? 'view_document'
+    : input.source === 'preventive'
+      ? 'open_preventive'
+      : input.source === 'dynamic-date'
+        ? 'view_dynamic_date'
+        : 'complete'
 
   return {
     id: calendarOccurrenceId(input.source, input.sourceId, input.assetId),
@@ -102,5 +115,6 @@ export function createCalendarOccurrence(input: Omit<CalendarEventOccurrence, 'i
     canComplete,
     canEdit: input.source === 'event',
     canDelete: input.source === 'event',
+    primaryAction,
   }
 }

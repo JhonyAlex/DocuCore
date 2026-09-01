@@ -366,12 +366,12 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                 </button>}
               </div>
             </div>
-            <AssetDocuments asset={asset} openingId={documentDialog.openingId} onOpen={(documentId) => void documentDialog.openAssociated(documentId)} />
+            <AssetDocuments asset={asset} openingId={documentDialog.openingId} onOpen={(documentId) => void documentDialog.openAssociated(documentId)} showSummary={true} />
             {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
           </div>
         )}
 
-        {activeTab === 3 && <AssetEventsPanel asset={asset} onChanged={onImageChanged} onOpenPreventive={openPreventiveExecution} />}
+        {activeTab === 3 && <AssetEventsPanel asset={asset} onChanged={onImageChanged} onOpenPreventive={openPreventiveExecution} onOpenDocument={(documentId) => void documentDialog.openAssociated(documentId)} />}
 
         {activeTab === 4 && (
           <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">

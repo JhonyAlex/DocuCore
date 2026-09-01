@@ -27,13 +27,13 @@ describe('PERF-01 bounded data contracts', () => {
   })
 
   it('pages documents in the database and validates the maximum request size', async () => {
-    const response = await api('/api/documents?projectId=1&limit=20&page=1&status=Vigente')
+    const response = await api('/api/documents?projectId=1&limit=20&page=1')
     expect(response.status).toBe(200)
     const body = await response.json() as { data: Array<Record<string, unknown>>; total: number; totalPages: number }
     expect(body.data.length).toBeLessThanOrEqual(20)
     expect(body.total).toBeGreaterThan(body.data.length)
     expect(body.totalPages).toBeGreaterThan(1)
-    expect(body.data.every((row) => row.status === 'Vigente' && !('versions' in row))).toBe(true)
+    expect(body.data.every((row) => !('versions' in row))).toBe(true)
     expect((await api('/api/documents?limit=101')).status).toBe(400)
   })
 

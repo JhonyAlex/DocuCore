@@ -202,7 +202,7 @@ export const documentListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   type: z.string().trim().min(1).optional(),
   typeId: optionalPositiveId,
-  status: z.enum(['Vigente', 'Por vencer', 'Vencido']).optional(),
+  status: z.enum(['Vigente', 'Por vencer', 'Próximo a vencer', 'Vencido', 'Sin vencimiento']).optional(),
   projectId: optionalPositiveId,
   locationId: optionalPositiveId,
   assetId: nullableOptionalPositiveId,

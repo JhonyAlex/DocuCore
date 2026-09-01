@@ -68,6 +68,7 @@ function matchesSearch(event: CalendarEventOccurrence, search?: string): boolean
 /**
  * Fuente de lectura común del calendario. Consulta por rango y por proyecto,
  * normalizando todas las ocurrencias sin trasladar reglas de negocio a React.
+ * Los vencimientos documentales se derivan de la última versión vigente de cada documento.
  */
 export async function listCalendarOccurrences(db: DatabaseClient, input: CalendarListInput): Promise<CalendarListResult> {
   const now = assetEventClock()
@@ -124,15 +125,6 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
   ])
 
   const [manualEvents, documents, dateOccurrences, preventiveExecutions] = sources
-  const documentIds = documents.map((document) => document.id)
-  const assetIds = documents.flatMap((document) => document.assets.map((entry) => entry.assetId))
-  const acknowledgements = documentIds.length === 0 || assetIds.length === 0
-    ? []
-    : await db.assetEventAcknowledgement.findMany({
-      where: { assetId: { in: assetIds }, sourceKey: { in: documentIds.map((id) => `document:${id}`) } },
-      select: { assetId: true, sourceKey: true, completedAt: true, completedDate: true },
-    })
-  const acknowledgementByAsset = new Map(acknowledgements.map((entry) => [`${entry.assetId}:${entry.sourceKey}`, entry]))
 
   const events: CalendarEventOccurrence[] = [
     ...manualEvents.map((event) => createCalendarOccurrence({
@@ -150,15 +142,11 @@ export async function listCalendarOccurrences(db: DatabaseClient, input: Calenda
         title: document.eventTitle ?? document.name, sourceLabel: document.type, category, date: expiryDate,
         today: now, asset: null, location: docLocation, progress: null,
       })]
-      return document.assets.map((link) => {
-        const acknowledgement = acknowledgementByAsset.get(`${link.assetId}:document:${document.id}`)
-        return createCalendarOccurrence({
-          source: 'document', sourceId: document.id, projectId: document.projectId, assetId: link.assetId,
-          title: document.eventTitle ?? document.name, sourceLabel: document.type, category, date: expiryDate,
-          completedAt: acknowledgement?.completedAt, completedDate: acknowledgement?.completedDate, today: now,
-          asset: toAssetRef(link.asset), progress: null,
-        })
-      })
+      return document.assets.map((link) => createCalendarOccurrence({
+        source: 'document', sourceId: document.id, projectId: document.projectId, assetId: link.assetId,
+        title: document.eventTitle ?? document.name, sourceLabel: document.type, category, date: expiryDate,
+        today: now, asset: toAssetRef(link.asset), progress: null,
+      }))
     }),
     ...dateOccurrences.map((occurrence) => createCalendarOccurrence({
       source: 'dynamic-date', sourceId: occurrence.id, projectId: occurrence.schedule.asset.projectId, assetId: occurrence.schedule.assetId,
@@ -206,6 +194,9 @@ export interface CompleteCalendarOccurrenceInput {
 
 /** Shared mutation used by calendar and asset event panels. */
 export async function completeCalendarOccurrence(tx: Prisma.TransactionClient, input: CompleteCalendarOccurrenceInput): Promise<void> {
+  if (input.source === 'document') {
+    throw Object.assign(new Error('Los vencimientos documentales no se completan manualmente. Sube una nueva versión vigente o actualiza sus fechas.'), { status: 400 })
+  }
   const performed = asUtcDate(input.performedDate)
   let entityId = `event:${input.sourceId}`
   if (input.source === 'event') {
@@ -217,12 +208,6 @@ export async function completeCalendarOccurrence(tx: Prisma.TransactionClient, i
       await tx.event.create({ data: { title: event.title, date: nextDate, type: event.type, projectId: event.projectId, assetId: event.assetId, periodicity: event.periodicity, periodicityMode: event.periodicityMode } })
     }
     entityId = event.asset?.code ?? `event:${event.id}`
-  } else if (input.source === 'document') {
-    if (!input.assetId) throw Object.assign(new Error('A document occurrence requires an asset'), { status: 400 })
-    const document = await tx.documentItem.findFirst({ where: { documentId: input.sourceId, assetId: input.assetId, asset: { deletedAt: null, projectId: input.projectId } }, include: { asset: { select: { code: true } } } })
-    if (!document) throw Object.assign(new Error('Document does not belong to this asset'), { status: 404 })
-    await tx.assetEventAcknowledgement.upsert({ where: { assetId_sourceKey: { assetId: input.assetId, sourceKey: `document:${input.sourceId}` } }, create: { assetId: input.assetId, sourceKey: `document:${input.sourceId}`, completedDate: performed }, update: { completedAt: new Date(), completedDate: performed } })
-    entityId = document.asset.code
   } else if (input.source === 'dynamic-date') {
     if (!input.assetId) throw Object.assign(new Error('A date occurrence requires an asset'), { status: 400 })
     const occurrence = await tx.assetDateOccurrence.findFirst({ where: { id: input.sourceId, completedAt: null, schedule: { assetId: input.assetId, asset: { deletedAt: null, projectId: input.projectId } } }, include: { schedule: { include: { asset: { select: { code: true } } } } } })

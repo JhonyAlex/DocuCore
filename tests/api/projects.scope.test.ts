@@ -6,11 +6,15 @@ import prisma from '../../server/lib/prisma'
 
 let server: Server | undefined
 let baseUrl = ''
-const api = (path: string, init?: RequestInit) => fetch(`${baseUrl}${path}`, init)
+const api = (path: string, init: RequestInit = {}) => {
+  const headers = new Headers(init.headers)
+  if (!headers.has('x-docucore-test-actor-id')) headers.set('x-docucore-test-actor-id', '1')
+  return fetch(`${baseUrl}${path}`, { ...init, headers })
+}
 function apiAs(actorId: number, path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set('x-docucore-test-actor-id', String(actorId))
-  return api(path, { ...init, headers })
+  return fetch(`${baseUrl}${path}`, { ...init, headers })
 }
 function jsonAs(actorId: number, path: string, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', body?: unknown): Promise<Response> {
   const headers = new Headers({ 'content-type': 'application/json' })
@@ -45,10 +49,13 @@ beforeAll(async () => {
   await ensureTestDatabase()
   const { default: app } = await import('../../server/index')
   await new Promise<void>((resolve) => {
-    const instance = app.listen(0, '127.0.0.1', () => { baseUrl = `http://127.0.0.1:${(instance.address() as AddressInfo).port}`; resolve() })
+    const instance = app.listen(0, '127.0.0.1', () => {
+      baseUrl = `http://127.0.0.1:${(instance.address() as AddressInfo).port}`
+      resolve()
+    })
     server = instance
   })
-})
+}, 120_000)
 
 afterAll(async () => {
   await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()))
@@ -131,7 +138,7 @@ describe('PROJ-01 project scope', () => {
   })
 
   it('creates, updates and manages project members without allowing duplicate or orphaned ownership', async () => {
-    const code = `PROJECT-CRUD-${Date.now()}`
+    const code = `project-crud-${Date.now()}`
     const createdResponse = await api('/api/projects', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

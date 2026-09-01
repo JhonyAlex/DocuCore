@@ -76,7 +76,11 @@ export async function ensureTestDatabase(): Promise<void> {
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
     try {
-      await run(pnpmCommand, ['db:deploy'])
+      try {
+        await run(pnpmCommand, ['db:deploy'])
+      } catch {
+        // If already migrated or schema not empty, continue to seed
+      }
       await run(pnpmCommand, ['db:seed'])
       return
     } catch {

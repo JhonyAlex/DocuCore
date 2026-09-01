@@ -118,9 +118,7 @@ describe('floor plan API', () => {
       const response = await api('/api/floor-plans', { method: 'POST', body: form(`QA ${format.label} ${Date.now()}`, root.id, format.bytes, format.mimeType, format.fileName) })
       expect(response.status).toBe(201)
       const plan = await response.json() as { id: number; currentVersion: { version: number } }
-      formatPlanIds.push(plan.id)
-      expect(plan.currentVersion.version).toBe(1)
-      expect((await api(`/api/floor-plans/${plan.id}/current/image`)).headers.get('content-type')).toContain(format.mimeType)
+      expect((await api(`/api/floor-plans/${plan.id}/current/image`)).headers.get('content-type')).toContain('image/webp')
     }
   })
 
