@@ -18,3 +18,12 @@ export function useProject() {
   if (!context) throw new Error('useProject must be used within ProjectProvider')
   return context
 }
+
+/**
+ * Non-throwing variant for shared components that are also rendered outside
+ * the project-scoped layout (e.g. `ProjectsSelectionLayout`, which has no
+ * `ProjectProvider`). Callers must handle the `null` case.
+ */
+export function useProjectOptional() {
+  return useContext(ProjectContext)
+}
