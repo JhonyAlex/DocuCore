@@ -169,6 +169,7 @@ test.describe.serial('trash and modal fixes', () => {
     await expect(firstOption).toBeVisible()
     await firstOption.click()
     await expect(page.getByLabel('Quitar QA-PIK-ONE · Activo papelera QA-PIK-ONE')).toBeVisible()
-    await dialog.getByRole('button', { name: 'Cancelar' }).click()
+    // 5b60e8a renombró el botón del pie de «Gestionar documento» a «Cerrar».
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
   })
 })

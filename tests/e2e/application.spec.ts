@@ -67,8 +67,13 @@ test.describe('DocuCore application', () => {
     for (const destination of navDestinations) {
       await page.locator(`aside a[href="${destination.route}"]`).click()
       await expect(page).toHaveURL(new RegExp(`${destination.route}$`))
-      await expect(page.locator('header').getByText(destination.label, { exact: true })).toBeVisible()
-      await expect(page.getByRole('heading', { name: destination.heading ?? destination.label, exact: true })).toBeVisible()
+      // La barra compacta repite el rótulo de la sección en la miga de pan y
+      // en el título, y ese rótulo puede diferir del texto del enlace lateral
+      // («Planos interactivos» frente a «Planos»), por lo que se comprueba el
+      // rótulo de página resuelto y no la etiqueta del enlace.
+      const sectionLabel = destination.heading ?? destination.label
+      await expect(page.locator('header').getByRole('heading', { name: sectionLabel, exact: true })).toBeVisible()
+      await expect(page.locator('header').getByText(sectionLabel, { exact: true }).first()).toBeVisible()
     }
 
     expect(consoleIssues).toEqual([])
@@ -124,7 +129,9 @@ test.describe('DocuCore application', () => {
     await expect(dialog.getByRole('heading', { name: 'Próximos eventos', exact: true })).toBeVisible()
     await expect(dialog.getByText('Mantenimiento preventivo trimestral', { exact: true })).toBeVisible()
     await expect(dialog.getByText('Progreso de tareas', { exact: false })).toHaveCount(0)
-    await expect(dialog.getByText('Manual técnico Haas ST-20 v2', { exact: true })).toBeVisible()
+    // 4bce2fd separó el nombre y la insignia de versión en spans distintos.
+    await expect(dialog.getByText('Manual técnico Haas ST-20', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('v2', { exact: true })).toBeVisible()
 
     await dialog.getByText('Cerrar', { exact: true }).click()
     await expect(page.getByRole('heading', { name: 'Torno CNC Haas ST-20', exact: true })).toHaveCount(0)
@@ -466,9 +473,13 @@ test.describe('DocuCore application', () => {
     await page.locator('tbody tr').filter({ hasText: 'AST-001' }).click()
     const assetDialog = page.getByRole('dialog', { name: /Activo industrial 001/ })
     await expect(assetDialog.getByText('Próximos eventos', { exact: true })).toBeVisible()
-    await expect(assetDialog.getByText('Certificado E2E Documento-Activo', { exact: true })).toBeVisible()
+    // El documento figura en la ficha tanto por su fila como por el evento de
+    // vencimiento derivado (mismo rótulo), así que se comprueba la fila.
+    await expect(assetDialog.getByRole('button', { name: 'Gestionar Certificado E2E Documento-Activo' })).toBeVisible()
     await assetDialog.getByRole('button', { name: /Documentos.*1/ }).click()
-    await expect(assetDialog.getByText('Certificado E2E Documento-Activo v1', { exact: true })).toBeVisible()
+    // 4bce2fd separó el nombre y la insignia de versión en spans distintos.
+    await expect(assetDialog.getByText('Certificado E2E Documento-Activo', { exact: true })).toBeVisible()
+    await expect(assetDialog.getByText('v1', { exact: true })).toBeVisible()
 
     // Abrir el documento asociado desde la ficha no navega a Documentos ni
     // cierra la ficha: «Gestionar documento» se apila encima.
@@ -477,7 +488,9 @@ test.describe('DocuCore application', () => {
     await expect(nestedDocumentDialog).toBeVisible()
     await expect(assetDialog).toBeVisible()
     await expect(page).toHaveURL(/\/assets$/)
-    await nestedDocumentDialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+    // 5b60e8a renombró el botón del pie a «Cerrar» (en solo lectura es la única
+    // acción disponible) y convive con la × del cabecero, de ahí .last().
+    await nestedDocumentDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
     await expect(nestedDocumentDialog).toBeHidden()
     await expect(assetDialog).toBeVisible()
     await assetDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
@@ -553,7 +566,11 @@ test.describe('DocuCore application', () => {
     await linkDialog.getByLabel('Buscar documento').fill(docName)
     await page.getByRole('option', { name: new RegExp(docName) }).click()
     await expect(linkDialog).toBeHidden()
-    await expect(assetDialog.getByText(`${docName} v1`, { exact: true })).toBeVisible()
+    // 4bce2fd separó el nombre y la insignia de versión en spans distintos:
+    // la fila se identifica de forma unívoca por su etiqueta accesible.
+    const linkedRow = assetDialog.getByRole('button', { name: `Gestionar ${docName}` })
+    await expect(linkedRow).toBeVisible()
+    await expect(linkedRow.getByText('v1', { exact: true })).toBeVisible()
 
     const linkedAsset = await page.request.get(`/api/assets/${assetId}`)
     const linkedBody = await linkedAsset.json()
@@ -570,7 +587,7 @@ test.describe('DocuCore application', () => {
     const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
     await createDialog.getByRole('button', { name: 'Subir documento', exact: true }).last().click()
     expect((await createResponse).status()).toBe(201)
-    await expect(assetDialog.getByText(`${newDocName} v1`, { exact: true })).toBeVisible()
+    await expect(assetDialog.getByRole('button', { name: `Gestionar ${newDocName}` })).toBeVisible()
 
     const finalAsset = await page.request.get(`/api/assets/${assetId}`)
     expect((await finalAsset.json()).documentCount).toBe(before + 2)
@@ -620,8 +637,11 @@ test.describe('DocuCore application', () => {
     await expect(itemRow).toContainText('20/07/2026')
     await itemRow.click()
     const assetDialog = page.getByRole('dialog', { name: new RegExp(`Activo de paginación ${code}`) })
-    await expect(assetDialog.getByText(documentName, { exact: true })).toBeVisible()
-    await expect(assetDialog.getByText(/20\/07\/2026/)).toBeVisible()
+    // 4bce2fd expone el documento tanto en su fila como en el evento próximo
+    // derivado, así que cada superficie se comprueba por su propio control.
+    await expect(assetDialog.getByRole('button', { name: `Gestionar ${documentName}` })).toBeVisible()
+    await expect(assetDialog.getByRole('button', { name: 'Ver documento' })).toBeVisible()
+    await expect(assetDialog.getByText(/20\/07\/2026/).first()).toBeVisible()
     expect(consoleIssues).toEqual([])
   })
 
@@ -689,6 +709,9 @@ test.describe('DocuCore application', () => {
     await dialog.getByLabel('Tipo').selectOption({ label: 'Certificado' })
     await dialog.getByLabel('Emisión').fill('2026-07-15')
     await dialog.getByLabel('Periodicidad').selectOption({ label: 'Trimestral' })
+    // cf9caa1 fijó «Según subida» como modo por defecto; esta especificación
+    // verifica el cálculo por vencimiento vigente, así que el modo se elige.
+    await dialog.getByLabel('Modo').selectOption({ label: 'Según calendario' })
     await expect(dialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-10-15')
     await expect(dialog.getByText('Automático: trimestral · según vencimiento vigente')).toBeVisible()
     await dialog.getByLabel('Fichero').setInputFiles({ name: 'periodicidad-v1.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
