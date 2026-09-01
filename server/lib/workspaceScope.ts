@@ -1,4 +1,4 @@
-import type { BillingStatus, Workspace, WorkspaceRole } from "@prisma/client"
+import type { BillingStatus, Workspace, WorkspaceMemberStatus, WorkspaceRole } from "@prisma/client"
 import prisma from "./prisma"
 import { fetchWorkspaceCompliance, type ComplianceSnapshot } from "./entitlements"
 
@@ -16,6 +16,7 @@ export interface WorkspaceScope {
     id: number
     userId: number
     role: WorkspaceRole
+    status: WorkspaceMemberStatus
   }
   /** True only for an explicit PlatformAdmin support context without membership. */
   supportAccess: boolean
@@ -36,7 +37,7 @@ function platformSupportScope(workspace: Workspace, userId: number): WorkspaceSc
     workspaceId: workspace.id,
     workspace,
     // This is an authorization scope, never a persisted WorkspaceMember or seat.
-    membership: { id: 0, userId, role: "ADMIN" },
+    membership: { id: 0, userId, role: "ADMIN", status: "ACTIVE" },
     supportAccess: true,
   }
 }
@@ -132,11 +133,11 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
         include: { workspace: true },
       })
       if (selectedMembership) {
-        if (selectedMembership.status !== "ACTIVE") throw workspaceError("Workspace access denied", 403)
+        if (selectedMembership.status === "PLAN_LOCKED") throw workspaceError("Workspace access denied", 403)
         return {
           workspaceId: selectedMembership.workspaceId,
           workspace: selectedMembership.workspace,
-          membership: { id: selectedMembership.id, userId, role: selectedMembership.role },
+          membership: { id: selectedMembership.id, userId, role: selectedMembership.role, status: selectedMembership.status },
           supportAccess: false,
         }
       }
@@ -155,7 +156,7 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
       return {
         workspaceId: realMembership.workspaceId,
         workspace: realMembership.workspace,
-        membership: { id: realMembership.id, userId, role: realMembership.role },
+        membership: { id: realMembership.id, userId, role: realMembership.role, status: realMembership.status },
         supportAccess: false,
       }
     }
@@ -164,17 +165,18 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
     throw workspaceError("Platform admin must select a workspace before continuing", 409, "WORKSPACE_SELECTION_REQUIRED")
   }
 
-  // A normal user may only use an ACTIVE membership as their selected context.
+  // A suspended member keeps the selected context solely to consult and
+  // download information. PLAN_LOCKED remains an access-denied state.
   if (user.activeWorkspaceId) {
-    const activeMember = await prisma.workspaceMember.findUnique({
+    const selectedMember = await prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId: user.activeWorkspaceId, userId } },
       include: { workspace: true },
     })
-    if (activeMember && activeMember.status === "ACTIVE") {
+    if (selectedMember && selectedMember.status !== "PLAN_LOCKED") {
       return {
-        workspaceId: activeMember.workspaceId,
-        workspace: activeMember.workspace,
-        membership: { id: activeMember.id, userId, role: activeMember.role },
+        workspaceId: selectedMember.workspaceId,
+        workspace: selectedMember.workspace,
+        membership: { id: selectedMember.id, userId, role: selectedMember.role, status: selectedMember.status },
         supportAccess: false,
       }
     }
@@ -186,9 +188,20 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
     orderBy: { id: "asc" },
   })
   if (!membership) {
-    // A membership that exists but is not ACTIVE (SUSPENDED / PLAN_LOCKED) is
-    // an access-denied state, not a missing workspace: keep the 403 semantic
-    // that the scope resolvers rely on.
+    const suspendedMembership = await prisma.workspaceMember.findFirst({
+      where: { userId, status: "SUSPENDED" },
+      include: { workspace: true },
+      orderBy: { id: "asc" },
+    })
+    if (suspendedMembership) {
+      return {
+        workspaceId: suspendedMembership.workspaceId,
+        workspace: suspendedMembership.workspace,
+        membership: { id: suspendedMembership.id, userId, role: suspendedMembership.role, status: suspendedMembership.status },
+        supportAccess: false,
+      }
+    }
+    // PLAN_LOCKED is an access-denied state, not a missing workspace.
     const anyMembership = await prisma.workspaceMember.findFirst({ where: { userId }, select: { id: true } })
     if (anyMembership) throw workspaceError("Workspace access denied", 403)
     throw workspaceError("No workspace found for user", 404)
@@ -201,9 +214,20 @@ export async function getUserPrimaryWorkspace(userId: number): Promise<Workspace
       id: membership.id,
       userId: membership.userId,
       role: membership.role,
+      status: membership.status,
     },
     supportAccess: false,
   }
+}
+
+/** A suspended member may read/download, but cannot mutate workspace data. */
+export function assertWorkspaceMemberWriteAllowed(scope: Pick<WorkspaceScope, "membership">): void {
+  if (scope.membership.status !== "SUSPENDED") return
+  throw workspaceError(
+    "Tu acceso a este espacio está suspendido. Puedes consultar y descargar la información, pero no realizar cambios.",
+    403,
+    "WORKSPACE_MEMBER_SUSPENDED",
+  )
 }
 
 export async function resolveWorkspaceScope(workspaceId: number, actorId: number): Promise<WorkspaceScope> {
@@ -222,7 +246,7 @@ export async function resolveWorkspaceScope(workspaceId: number, actorId: number
   })
 
   if (membership) {
-    if (membership.status !== "ACTIVE") throw workspaceError("Workspace access denied", 403)
+    if (membership.status === "PLAN_LOCKED") throw workspaceError("Workspace access denied", 403)
     return {
       workspaceId,
       workspace,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { useProject } from '@/contexts/ProjectContext'
 
 export interface RowActionsMenuItem {
   label: string
@@ -31,6 +32,13 @@ interface MenuState {
  * en AssetsTable, DocumentsTable y futuras tablas con acciones por fila.
  */
 export default function RowActionsMenu({ items, ariaLabel }: RowActionsMenuProps) {
+  const { readOnly } = useProject()
+  // En un proyecto archivado, los menús de fila solo conservan acciones de
+  // consulta o descarga. Evita que las vistas de configuración dejen botones
+  // de editar/archivar expuestos por accidente.
+  const visibleItems = readOnly
+    ? items.filter((item) => /^(Gestionar|Ver|Descargar)\b/.test(item.label))
+    : items
   const [menu, setMenu] = useState<MenuState | null>(null)
   const ignoreOpeningScrollRef = useRef(false)
 
@@ -74,6 +82,8 @@ export default function RowActionsMenu({ items, ariaLabel }: RowActionsMenuProps
     })
   }
 
+  if (visibleItems.length === 0) return null
+
   return (
     <>
       <button type="button" aria-label={ariaLabel} aria-expanded={menu !== null} onClick={open} className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
@@ -83,7 +93,7 @@ export default function RowActionsMenu({ items, ariaLabel }: RowActionsMenuProps
         <>
           <button type="button" tabIndex={-1} aria-label="Cerrar menú de acciones" onClick={() => setMenu(null)} className="fixed inset-0 z-[60] cursor-default" />
           <div role="menu" className="fixed z-[70] rounded-lg border border-slate-200 bg-white p-1 text-left shadow-lg dark:border-slate-700 dark:bg-slate-900" style={{ top: menu.top, left: menu.left, width: menu.width }}>
-            {items.map((item) => (
+            {visibleItems.map((item) => (
               <button key={item.label} type="button" role="menuitem" onClick={() => { setMenu(null); item.onSelect() }} className={`w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 ${variantClass[item.variant ?? 'default']}`}>
                 {item.label}
               </button>

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { authenticatedUserId, hashToken } from '../lib/auth'
-import { assertWorkspaceWriteAllowed, getUserPrimaryWorkspace, resolveWorkspaceScope } from '../lib/workspaceScope'
+import { assertWorkspaceMemberWriteAllowed, assertWorkspaceWriteAllowed, getUserPrimaryWorkspace, resolveWorkspaceScope } from '../lib/workspaceScope'
 import {
   assertMemberSeatAvailable,
   computeCompliance,
@@ -25,6 +25,7 @@ function workspaceAdminError(): Error & { status: number; code: string } {
 async function requireWorkspaceAdmin(actorId: number) {
   const scope = await getUserPrimaryWorkspace(actorId)
   if (scope.membership.role !== 'OWNER' && scope.membership.role !== 'ADMIN') throw workspaceAdminError()
+  assertWorkspaceMemberWriteAllowed(scope)
   return scope
 }
 

@@ -5,7 +5,7 @@
 //   - 'Calendario': salta desde el vencimiento vigente (o la emisión si no hay).
 //   - 'Subida': salta desde la emisión de la nueva versión (por defecto hoy).
 
-export const PERIODICITIES = ['Diaria', 'Semanal', 'Quincenal', 'Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual'] as const
+export const PERIODICITIES = ['Diaria', 'Semanal', 'Quincenal', 'Mensual', 'Bimestral', 'Trimestral', 'Cuatrimestral', 'Semestral', 'Anual', 'Cada 2 años', 'Cada 3 años', 'Cada 4 años', 'Cada 5 años', 'Cada 10 años'] as const
 export type DocumentPeriodicity = (typeof PERIODICITIES)[number]
 
 export const PERIODICITY_MODES = ['Calendario', 'Subida'] as const
@@ -21,6 +21,11 @@ const PERIODICITY_MONTHS: Record<DocumentPeriodicity, number> = {
   Cuatrimestral: 4,
   Semestral: 6,
   Anual: 12,
+  'Cada 2 años': 24,
+  'Cada 3 años': 36,
+  'Cada 4 años': 48,
+  'Cada 5 años': 60,
+  'Cada 10 años': 120,
 }
 
 const PERIODICITY_DAYS: Partial<Record<DocumentPeriodicity, number>> = {

@@ -4,6 +4,8 @@ import type { ApiProjectSummary } from '@/lib/api'
 interface ProjectContextValue {
   projectId: number | null
   project: ApiProjectSummary | null
+  /** Project/archive or workspace/member entitlement prevents every mutation. */
+  readOnly: boolean
   loading: boolean
   error: string | null
   refresh: () => void

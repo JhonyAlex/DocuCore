@@ -93,6 +93,7 @@ export interface ApiSessionWorkspace {
   trialDaysLeft?: number
   isEntitledToWrite?: boolean
   entitlementReason?: string | null
+  membershipStatus?: 'ACTIVE' | 'SUSPENDED' | 'PLAN_LOCKED'
   role?: 'OWNER' | 'ADMIN' | 'MEMBER'
 }
 

@@ -5,7 +5,7 @@ import prisma from '../lib/prisma'
 import { asyncHandler } from '../lib/asyncHandler'
 import { clearProjectConfiguration, copyProjectConfiguration, createMinimalProjectConfiguration } from '../lib/projectConfiguration'
 import { actorIdFromRequest, parseProjectId, requireProjectCapability, resolveProjectScope } from '../lib/projectScope'
-import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace, assertWorkspaceWriteAllowed } from '../lib/workspaceScope'
+import { assertWorkspaceMemberWriteAllowed, evaluateWorkspaceEntitlement, getUserPrimaryWorkspace, assertWorkspaceWriteAllowed } from '../lib/workspaceScope'
 import { computeCompliance, lockWorkspaceForEntitlement, restoreProjectTransactional, fetchWorkspaceCompliance } from '../lib/entitlements'
 import { permanentlyDeleteProject } from '../lib/projectDeletion'
 import { isProjectThemeKey, projectThemeKeys } from '../../shared/projectThemes'
@@ -104,6 +104,9 @@ async function ensureWorkspaceMembersActive(
 async function ensureManagementScope(projectId: number, actorId: number, capability: 'MANAGE_PROJECT' | 'MANAGE_MEMBERS' | 'MANAGE_CONFIGURATION' = 'MANAGE_PROJECT') {
   const scope = await resolveProjectScope(projectId, actorId)
   requireProjectCapability(scope, capability)
+  assertWorkspaceMemberWriteAllowed({
+    membership: scope.workspaceMembership ?? { id: 0, userId: scope.membership.userId, role: 'ADMIN', status: 'ACTIVE' },
+  })
   return scope
 }
 
@@ -171,6 +174,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const actorId = actorIdFromRequest(req)
   const input = projectInputSchema.parse(req.body)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
 
   // Finding K: PlatformAdmin in pure support context cannot create project
   if (wsScope.supportAccess) {

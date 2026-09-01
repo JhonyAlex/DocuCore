@@ -3,7 +3,7 @@ import { z } from "zod"
 import prisma from "../lib/prisma"
 import { asyncHandler } from "../lib/asyncHandler"
 import { authenticatedUserId, requireAuth } from "../lib/auth"
-import { getUserPrimaryWorkspace } from "../lib/workspaceScope"
+import { assertWorkspaceMemberWriteAllowed, getUserPrimaryWorkspace } from "../lib/workspaceScope"
 import {
   applyPlanTransition,
   computeCompliance,
@@ -145,6 +145,7 @@ router.post("/initiate", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const input = initiateSchema.parse(req.body)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar planes.", code: "WORKSPACE_ACCESS_DENIED" })
   }
@@ -306,6 +307,7 @@ router.post("/resolve", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const input = applySchema.parse(req.body)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar planes.", code: "WORKSPACE_ACCESS_DENIED" })
   }
@@ -364,6 +366,7 @@ router.post("/swap", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const input = swapSchema.parse(req.body)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar planes.", code: "WORKSPACE_ACCESS_DENIED" })
   }

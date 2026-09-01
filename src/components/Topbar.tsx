@@ -15,7 +15,7 @@ export default function Topbar() {
   const navigate = useNavigate()
   const { requestCreate } = useAssetCreateRequest()
   const { unreadCount, isOpen, toggleOpen } = useNotifications()
-  const { project } = useProject()
+  const { project, readOnly } = useProject()
   const [searchOpen, setSearchOpen] = useState(false)
   const scopedPath = location.pathname.replace(/^\/projects\/\d+/, '') || '/dashboard'
   const label = pageLabels[scopedPath] ?? routeLabels[scopedPath] ?? 'Panel general'
@@ -33,7 +33,7 @@ export default function Topbar() {
   }, [])
 
   const openAssetForm = () => {
-    if (!project || project.status === 'ARCHIVED') {
+    if (!project || readOnly) {
       void navigate('/projects')
       return
     }
@@ -77,7 +77,7 @@ export default function Topbar() {
             <svg className={`h-4 w-4${!isDark ? ' hidden' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
           </button>
 
-          <button type="button" onClick={openAssetForm} disabled={!project || project.status === 'ARCHIVED'} title={project?.status === 'ARCHIVED' ? 'Los proyectos archivados no permiten altas' : undefined} className="flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={openAssetForm} disabled={!project || readOnly} title={readOnly ? 'Este espacio está en modo solo lectura' : undefined} className="flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50">
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             <span>Nuevo activo</span>
           </button>

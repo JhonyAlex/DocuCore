@@ -41,7 +41,8 @@ interface DocumentsTableProps {
   onSort?: (field: string) => void
   onRowClick: (document: ApiDocument) => void
   onDownload: (document: ApiDocument) => void
-  onDelete: (document: ApiDocument) => void
+  onDelete?: (document: ApiDocument) => void
+  readOnly?: boolean
   page?: number
   totalPages?: number
   total?: number
@@ -63,7 +64,7 @@ function pageWindow(current: number, total: number): PageToken[] {
   return pages
 }
 
-export default function DocumentsTable({ documents, selection, sortBy, sortOrder, onSort, onRowClick, onDownload, onDelete, page = 1, totalPages = 1, total = 0, limit = 5, onPageChange }: DocumentsTableProps) {
+export default function DocumentsTable({ documents, selection, sortBy, sortOrder, onSort, onRowClick, onDownload, onDelete, readOnly = false, page = 1, totalPages = 1, total = 0, limit = 5, onPageChange }: DocumentsTableProps) {
   const tableContainerRef = useTableDragScroll<HTMLDivElement>()
   const ids = documents.map((d) => d.id)
   const start = total === 0 ? 0 : (page - 1) * limit + 1
@@ -81,6 +82,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
                   type="checkbox"
                   aria-label="Seleccionar todos los documentos"
                   checked={selection.allSelected(ids)}
+                  disabled={readOnly}
                   ref={(node) => {
                     if (node) node.indeterminate = selection.someSelected(ids)
                   }}
@@ -121,7 +123,7 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
               const items: RowActionsMenuItem[] = [
                 { label: 'Gestionar documento', onSelect: () => onRowClick(document) },
                 { label: 'Descargar', onSelect: () => onDownload(document) },
-                { label: 'Eliminar', variant: 'danger', onSelect: () => onDelete(document) },
+                ...(onDelete ? [{ label: 'Eliminar', variant: 'danger' as const, onSelect: () => onDelete(document) }] : []),
               ]
 
               const assetList = document.assets && document.assets.length > 0 ? `${document.assets.map((asset) => `${asset.code} · ${asset.name}`).join(', ')}${(document.assetCount ?? document.assets.length) > document.assets.length ? ` +${(document.assetCount ?? 0) - document.assets.length}` : ''}` : '—'
@@ -133,7 +135,8 @@ export default function DocumentsTable({ documents, selection, sortBy, sortOrder
                       type="checkbox"
                       aria-label={`Seleccionar ${document.name}`}
                       checked={selection.isSelected(document.id)}
-                      onChange={() => selection.toggle(document.id)}
+                      disabled={readOnly}
+                  onChange={() => selection.toggle(document.id)}
                     />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">

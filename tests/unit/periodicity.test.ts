@@ -62,6 +62,11 @@ describe('calculateNextExpiry (server)', () => {
     expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Cuatrimestral').toISOString().slice(0, 10)).toBe('2026-05-01')
     expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Semestral').toISOString().slice(0, 10)).toBe('2026-07-01')
     expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Anual').toISOString().slice(0, 10)).toBe('2027-01-01')
+    expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Cada 2 años').toISOString().slice(0, 10)).toBe('2028-01-01')
+    expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Cada 3 años').toISOString().slice(0, 10)).toBe('2029-01-01')
+    expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Cada 4 años').toISOString().slice(0, 10)).toBe('2030-01-01')
+    expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Cada 5 años').toISOString().slice(0, 10)).toBe('2031-01-01')
+    expect(calculateNextExpiry(null, iso('2026-01-01'), 'Subida', 'Cada 10 años').toISOString().slice(0, 10)).toBe('2036-01-01')
   })
 })
 

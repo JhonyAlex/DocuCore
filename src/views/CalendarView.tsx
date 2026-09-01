@@ -19,7 +19,7 @@ const views: CalendarViewMode[] = ['month', 'week', 'day']
 function isCalendarView(value: string | null): value is CalendarViewMode { return value !== null && views.includes(value as CalendarViewMode) }
 
 export default function CalendarView() {
-  const { project, projectId, loading: projectLoading } = useProject()
+  const { project, projectId, readOnly, loading: projectLoading } = useProject()
   if (projectId === null) throw new Error('CalendarView requires a project scope')
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
@@ -59,7 +59,7 @@ export default function CalendarView() {
   const title = !date ? 'Calendario' : view === 'month' ? calendarMonthLabel(date) : view === 'week' ? `Semana del ${calendarLongDate(date)}` : calendarLongDate(date)
   const openNew = () => { setOperationError(null); setSelected(null); setForm(null) }
   const submitForm = async (values: CalendarEventFormValues) => {
-    if (!project || project.status === 'ARCHIVED') return
+    if (!project || readOnly) return
     setBusy(true); setOperationError(null)
     try {
       if (form && form.title) await updateCalendarEvent(projectId, selected?.sourceId ?? 0, values)
@@ -68,12 +68,12 @@ export default function CalendarView() {
     } catch (reason) { setOperationError(reason instanceof Error ? reason.message : 'No se pudo guardar el evento.') } finally { setBusy(false) }
   }
   const complete = async () => {
-    if (!selected) return
+    if (!selected || readOnly) return
     setBusy(true); setOperationError(null)
     try { await completeCalendarEvent({ source: selected.source, sourceId: selected.sourceId, assetId: selected.assetId, projectId, performedDate: data?.today ?? selected.date }); await reload() } catch (reason) { setOperationError(reason instanceof Error && reason.message.includes('409') ? 'Completa antes todas las tareas del preventivo.' : reason instanceof Error ? reason.message : 'No se pudo completar el evento.') } finally { setBusy(false) }
   }
   const remove = async () => {
-    if (!confirmDelete) return
+    if (!confirmDelete || readOnly) return
     setBusy(true); setOperationError(null)
     try { await deleteCalendarEvent(projectId, confirmDelete.sourceId); setConfirmDelete(null); setSelected(null); await reload() } catch (reason) { setOperationError(reason instanceof Error ? reason.message : 'No se pudo eliminar el evento.') } finally { setBusy(false) }
   }
@@ -82,9 +82,9 @@ export default function CalendarView() {
   if (projectLoading || !project || loading || !date || !data) return <section className="fade-in" aria-busy="true"><div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Cargando calendario…</div></section>
 
   return <section className="fade-in">
-    <SectionActions><div className="flex items-center gap-2"><div className="flex items-center bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-1">{views.map((option) => <button key={option} type="button" onClick={() => setContext(option, date)} className={`px-3 py-1.5 text-sm rounded-md ${view === option ? 'bg-brand-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{option === 'month' ? 'Mes' : option === 'week' ? 'Semana' : 'Día'}</button>)}</div><button type="button" onClick={() => openNew()} disabled={project.status === 'ARCHIVED'} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Nuevo evento</button></div></SectionActions>
+    <SectionActions><div className="flex items-center gap-2"><div className="flex items-center bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-1">{views.map((option) => <button key={option} type="button" onClick={() => setContext(option, date)} className={`px-3 py-1.5 text-sm rounded-md ${view === option ? 'bg-brand-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>{option === 'month' ? 'Mes' : option === 'week' ? 'Semana' : 'Día'}</button>)}</div><button type="button" onClick={() => openNew()} disabled={readOnly} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium flex items-center gap-1.5"><svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Nuevo evento</button></div></SectionActions>
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden"><CalendarToolbar view={view} title={title} activeCategories={categories} onPrevious={() => setContext(view, navigateCalendarDate(view, date, -1))} onNext={() => setContext(view, navigateCalendarDate(view, date, 1))} onToday={() => setContext(view, data.today)} onToggleCategory={toggleCategory} />{view === 'month' ? <CalendarMonthView date={date} today={data.today} events={selectedEvents} onOpenEvent={setSelected} onOpenDay={(day) => setContext('day', day)} /> : view === 'week' ? <CalendarWeekView date={date} events={selectedEvents} onOpenEvent={setSelected} onOpenDay={(day) => setContext('day', day)} /> : <CalendarDayView date={date} events={selectedEvents} onOpenEvent={setSelected} />}</div>
-    <CalendarEventDetails event={selected} busy={busy} error={operationError} onClose={closeLayers} onComplete={() => void complete()} onEdit={() => { if (!selected) return; setOperationError(null); setForm({ title: selected.title, date: selected.date, category: selected.category, assetId: selected.assetId, assetLabel: selected.asset ? `${selected.asset.code} · ${selected.asset.name}` : undefined, periodicity: selected.periodicity, periodicityMode: selected.periodicityMode }) }} onDelete={() => setConfirmDelete(selected)} onOpenAsset={() => { if (selected?.assetId) navigate(`/projects/${projectId}/assets?assetId=${selected.assetId}`) }} onOpenDomain={() => navigate(selected?.source === 'document' ? `/projects/${projectId}/docs?documentId=${selected.sourceId}` : `/projects/${projectId}/assets?assetId=${selected?.assetId ?? ''}${selected?.source === 'preventive' ? `&preventiveExecutionId=${selected.sourceId}` : ''}`)} />
+    <CalendarEventDetails event={selected} busy={busy} error={operationError} onClose={closeLayers} onComplete={() => void complete()} onEdit={() => { if (readOnly || !selected) return; setOperationError(null); setForm({ title: selected.title, date: selected.date, category: selected.category, assetId: selected.assetId, assetLabel: selected.asset ? `${selected.asset.code} · ${selected.asset.name}` : undefined, periodicity: selected.periodicity, periodicityMode: selected.periodicityMode }) }} onDelete={() => { if (!readOnly) setConfirmDelete(selected) }} onOpenAsset={() => { if (selected?.assetId) navigate(`/projects/${projectId}/assets?assetId=${selected.assetId}`) }} onOpenDomain={() => navigate(selected?.source === 'document' ? `/projects/${projectId}/docs?documentId=${selected.sourceId}` : `/projects/${projectId}/assets?assetId=${selected?.assetId ?? ''}${selected?.source === 'preventive' ? `&preventiveExecutionId=${selected.sourceId}` : ''}`)} />
     <CalendarEventFormModal open={form !== undefined} initialDate={date} initial={form ?? null} busy={busy} error={operationError} onClose={closeLayers} onSubmit={(values) => void submitForm(values)} />
     <ConfirmDialog open={confirmDelete !== null} title="Eliminar evento" message={`Eliminarás definitivamente «${confirmDelete?.title ?? ''}». Esta acción no se puede deshacer.`} confirmLabel="Eliminar evento" busy={busy} busyLabel="Eliminando…" error={operationError} onCancel={() => !busy && setConfirmDelete(null)} onConfirm={() => void remove()} />
   </section>

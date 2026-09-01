@@ -10,7 +10,7 @@ import {
   reconcileWorkspace,
   CheckoutCoordinator,
 } from "../lib/billing"
-import { evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from "../lib/workspaceScope"
+import { assertWorkspaceMemberWriteAllowed, evaluateWorkspaceEntitlement, getUserPrimaryWorkspace } from "../lib/workspaceScope"
 import { fetchWorkspaceCompliance } from "../lib/entitlements"
 import { getStripePriceIdForPlan, resolveWorkspacePlan } from "../lib/plans"
 import { PLAN_CATALOG } from "../../shared/planCatalog"
@@ -95,6 +95,7 @@ router.get("/status", asyncHandler(async (req, res) => {
 router.post("/checkout", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar suscripciones." })
   }
@@ -223,6 +224,7 @@ router.post("/checkout", asyncHandler(async (req, res) => {
 router.post("/portal", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden gestionar facturación." })
   }
@@ -248,6 +250,7 @@ router.post("/portal", asyncHandler(async (req, res) => {
 router.post("/reconcile", asyncHandler(async (req, res) => {
   const actorId = authenticatedUserId(req)
   const wsScope = await getUserPrimaryWorkspace(actorId)
+  assertWorkspaceMemberWriteAllowed(wsScope)
   if (wsScope.membership.role !== "OWNER" && wsScope.membership.role !== "ADMIN") {
     return res.status(403).json({ error: "Solo los administradores o propietarios de la cuenta pueden reconciliar la facturación.", code: "WORKSPACE_ACCESS_DENIED" })
   }

@@ -107,7 +107,7 @@ const icons = {
 
 export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalProps) {
   const navigate = useNavigate()
-  const { projectId } = useProject()
+  const { projectId, readOnly } = useProject()
   const { requestCreate } = useAssetCreateRequest()
   const { toggle: toggleTheme } = useTheme()
 
@@ -233,7 +233,7 @@ export default function GlobalSearchModal({ open, onClose }: GlobalSearchModalPr
       icon: icons.theme,
       run: () => toggleTheme(),
     },
-  ], [navigate, projectId, requestCreate, toggleTheme])
+  ].filter((action) => !readOnly || action.id === 'action-toggle-theme'), [navigate, projectId, readOnly, requestCreate, toggleTheme])
 
   // Agrupación y aplanamiento de items
   const items: SearchItem[] = useMemo(() => {

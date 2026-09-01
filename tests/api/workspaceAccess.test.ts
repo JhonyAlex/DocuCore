@@ -101,6 +101,48 @@ describe("workspace access & team management", () => {
     }
   })
 
+  it("keeps a suspended member's assigned project readable but closes every project write boundary", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const workspace = await makeWorkspace("SUS-RO", "Owner read-only")
+      const member = await prisma.user.create({
+        data: {
+          name: "Suspended reader",
+          email: `suspended-reader-${Date.now()}@docucore.test`,
+          passwordHash: await hashPassword("Password2026!"),
+          role: "Usuario",
+          initials: "SR",
+          color: "brand",
+          emailVerifiedAt: new Date(),
+        },
+      })
+      await prisma.workspaceMember.create({ data: { workspaceId: workspace.ws.id, userId: member.id, role: "MEMBER", status: "SUSPENDED" } })
+      const project = await prisma.project.create({ data: { workspaceId: workspace.ws.id, code: `SRO-${Date.now()}`.slice(0, 30), name: "Proyecto consultable", description: "", status: "ACTIVE" } })
+      await prisma.projectMember.create({ data: { projectId: project.id, userId: member.id, role: "EDITOR" } })
+      const headers = { "Content-Type": "application/json", "x-docucore-test-actor-id": String(member.id) }
+
+      expect((await fetch(`${baseUrl}/api/projects`, { headers })).status).toBe(200)
+      expect((await fetch(`${baseUrl}/api/projects/${project.id}/assets`, { headers })).status).toBe(200)
+
+      const createAsset = await fetch(`${baseUrl}/api/projects/${project.id}/assets`, {
+        method: "POST", headers, body: JSON.stringify({}),
+      })
+      expect(createAsset.status).toBe(403)
+      expect((await createAsset.json()).code).toBe("WORKSPACE_MEMBER_SUSPENDED")
+
+      const preferenceWrite = await fetch(`${baseUrl}/api/projects/${project.id}/floor-plan-preferences`, {
+        method: "PUT", headers, body: JSON.stringify({}),
+      })
+      expect(preferenceWrite.status).toBe(403)
+      expect((await preferenceWrite.json()).code).toBe("WORKSPACE_MEMBER_SUSPENDED")
+    } finally {
+      server.close()
+    }
+  })
+
   it("removing a member revokes their project memberships but keeps the global identity", async () => {
     const server = await startServer(0)
     const address = server.address()

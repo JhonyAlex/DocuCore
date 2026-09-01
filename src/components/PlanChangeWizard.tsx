@@ -14,6 +14,8 @@ interface PlanChangeWizardProps {
    * without creating a checkout or scheduling any Stripe change.
    */
   mode?: 'change' | 'resolve'
+  /** A compliance gate cannot be dismissed while the account is over capacity. */
+  dismissible?: boolean
   onClose: () => void
   onCompleted?: () => void
 }
@@ -24,7 +26,7 @@ interface PlanChangeWizardProps {
  * (PlanTransition), never in browser memory. A downgrade resolves BOTH
  * dimensions — projects and member seats — in the same wizard.
  */
-export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, mode = 'change', onClose, onCompleted }: PlanChangeWizardProps) {
+export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, mode = 'change', dismissible = true, onClose, onCompleted }: PlanChangeWizardProps) {
   const [step, setStep] = useState<Step>('overview')
   const [preview, setPreview] = useState<PlanChangePreview | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -135,9 +137,9 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, m
         <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
           {mode === 'resolve' ? 'Resolver exceso de plan' : `Cambio a ${targetPlanKey === 'STARTER' ? 'Starter' : 'Pro'}`}
         </h4>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="Cerrar">
+        {dismissible && <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="Cerrar">
           ✕
-        </button>
+        </button>}
       </div>
 
       {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-2.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
@@ -257,7 +259,7 @@ export default function PlanChangeWizard({ targetPlanKey, activeProjectsCount, m
         )}
         {step === 'select' && (
           <>
-            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium dark:border-slate-700">Cancelar</button>
+            {dismissible && <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium dark:border-slate-700">Cancelar</button>}
             <button
               type="button"
               disabled={!selectionValid || busy}

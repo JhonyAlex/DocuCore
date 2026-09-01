@@ -276,6 +276,10 @@ router.post("/verify-email", asyncHandler(async (req, res) => {
       trialStartedAt: ws.workspace.trialStartedAt?.toISOString(),
       trialEndsAt: ws.workspace.trialEndsAt?.toISOString(),
       trialDaysLeft: entitlement.trialDaysLeft ?? 14,
+      membershipStatus: ws.membership.status,
+      isEntitledToWrite: entitlement.isEntitledToWrite && ws.membership.status === "ACTIVE",
+      entitlementReason: ws.membership.status === "SUSPENDED" ? "WORKSPACE_MEMBER_SUSPENDED" : entitlement.reason,
+      role: ws.membership.role,
     }
   } catch {
     // Invitee verified with no workspace yet: the session is valid, the workspace
@@ -507,6 +511,9 @@ router.post("/login", asyncHandler(async (req, res) => {
       trialStartedAt: ws.workspace.trialStartedAt?.toISOString(),
       trialEndsAt: ws.workspace.trialEndsAt?.toISOString(),
       trialDaysLeft: entitlement.trialDaysLeft,
+      membershipStatus: ws.membership.status,
+      isEntitledToWrite: entitlement.isEntitledToWrite && ws.membership.status === "ACTIVE",
+      entitlementReason: ws.membership.status === "SUSPENDED" ? "WORKSPACE_MEMBER_SUSPENDED" : entitlement.reason,
       role: ws.membership.role,
     }
   } catch {
@@ -542,8 +549,9 @@ router.get("/session", asyncHandler(async (req, res) => {
       trialStartedAt: ws.workspace.trialStartedAt?.toISOString(),
       trialEndsAt: ws.workspace.trialEndsAt?.toISOString(),
       trialDaysLeft: entitlement.trialDaysLeft,
-      isEntitledToWrite: entitlement.isEntitledToWrite,
-      entitlementReason: entitlement.reason,
+      membershipStatus: ws.membership.status,
+      isEntitledToWrite: entitlement.isEntitledToWrite && ws.membership.status === "ACTIVE",
+      entitlementReason: ws.membership.status === "SUSPENDED" ? "WORKSPACE_MEMBER_SUSPENDED" : entitlement.reason,
       role: ws.membership.role,
     }
   } catch {

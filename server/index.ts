@@ -209,10 +209,9 @@ for (const [path, router] of [
   ['/history', historyRouter],
   ['/notifications', notificationsRouter],
 ] as const) app.use(`/api/projects/:projectId${path}`, operationalScope, router)
-// Personal display preferences remain available to every member, including a
-// viewer or a workspace that is otherwise read-only: they never mutate project
-// data or consume entitlement capacity.
-app.use('/api/projects/:projectId/floor-plan-preferences', requireProjectScope(), floorPlanPreferencesRouter)
+// Preferences are personal, but a suspended/read-only membership must not
+// retain any hidden write path.
+app.use('/api/projects/:projectId/floor-plan-preferences', projectScope(), floorPlanPreferencesRouter)
 for (const [path, router] of [
   ['/dynamic-fields', dynamicFieldsRouter],
   ['/asset-types', assetTypesRouter],

@@ -1,5 +1,6 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import TrialBanner from '@/components/TrialBanner'
+import PlanComplianceGate from '@/components/PlanComplianceGate'
 import { useSession } from '@/contexts/SessionContext'
 import { useTheme } from '@/hooks/useTheme'
 
@@ -94,6 +95,7 @@ export default function ProjectsSelectionLayout() {
           <Outlet />
         </div>
       </main>
+      <PlanComplianceGate />
     </div>
   )
 }

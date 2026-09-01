@@ -33,7 +33,7 @@ type PlacementPopover = { point: NormalizedPoint; anchor: FloorPlanOverlayAnchor
 type MarkerPopover = { markerId: number; anchor: FloorPlanOverlayAnchor }
 
 export default function PlansView() {
-  const { projectId } = useProject()
+  const { projectId, readOnly } = useProject()
   if (projectId === null) throw new Error('PlansView requires a project scope')
   const [searchParams] = useSearchParams()
   const requestedLocationId = Number(searchParams.get('locationId')) || null
@@ -176,12 +176,14 @@ export default function PlansView() {
   }, [editor.markers, focusedAssetId, plan, viewerActionState])
 
   const createPlan = async (input: FloorPlanWriteInput, file: File) => {
+    if (readOnly) return
     setCreateBusy(true); setCreateError(null)
     try { const created = await createFloorPlan(projectId, input, file); preferredPlanIdRef.current = created.id; setSelectedLocationId(input.locationId); await loadPlans(input.locationId, projectId, created.id); setCreateOpen(false) }
     catch { setCreateError('No se pudo crear el plano. Revisa el nombre, la ubicación y la imagen.') }
     finally { setCreateBusy(false) }
   }
   const uploadVersion = async (file: File | null) => {
+    if (readOnly) return
     if (!plan || !file) return
     setUploading(true); setError(null)
     try { await createFloorPlanVersion(projectId, plan.id, file); await refreshPlan() }
@@ -189,28 +191,33 @@ export default function PlansView() {
     finally { setUploading(false) }
   }
   const savePositions = async () => {
+    if (readOnly) return
     setSaving(true); setError(null)
     try { await editor.save(); await refreshPlan() } catch { setError('No se pudieron guardar las posiciones. No se han descartado los cambios locales.') } finally { setSaving(false) }
   }
   const removeAssociation = () => { if (markerRemovalId !== null) editor.remove(markerRemovalId); setMarkerRemovalId(null); setMarkerPopover(null) }
   const deleteCurrentPlan = async () => {
+    if (readOnly) return
     if (!plan) return
     setSaving(true); setError(null)
     try { await deleteFloorPlan(projectId, plan.id); setConfirmPlanDelete(false); await loadPlans(plan.locationId, projectId) }
     catch { setError('No se pudo eliminar el plano.') } finally { setSaving(false) }
   }
   const createLocationFromAssetForm = async (values: LocationFormValues) => {
+    if (readOnly) throw new Error('Los proyectos archivados son de solo lectura.')
     if (!catalog) throw new Error('No hay proyecto seleccionado.')
     const created = await createLocation(projectId, values)
     await loadCatalog()
     return created
   }
   const placeAsset = (asset: ApiFloorPlanAsset, point: NormalizedPoint) => {
+    if (readOnly) return
     editor.place(asset, point)
     setPlacementPopover(null); setPlacementTarget(null); setAssetSearch('')
   }
   const markViewerReady = useCallback((actions: FloorPlanViewerActions) => setViewerActionState(actions), [])
   const toggleBackgroundLayer = async () => {
+    if (readOnly) return
     if (!plan || backgroundPreferenceSaving) return
     const next = !backgroundDimmed
     setBackgroundDimmed(next)
@@ -227,8 +234,8 @@ export default function PlansView() {
 
   return <section className="fade-in">
     <SectionActions><div className="flex items-center gap-2">
-        <button type="button" disabled={!plan} onClick={() => setPdfImportOpen(true)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Importar desde PDF</button>
-        <label className={`px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm ${!plan || uploading ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>{uploading ? 'Subiendo…' : 'Subir nueva versión'}<input aria-label="Subir nueva versión" disabled={!plan || uploading} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void uploadVersion(event.target.files?.[0] ?? null).catch(() => undefined); event.currentTarget.value = '' }} /></label>
+        <button type="button" disabled={!plan || readOnly} onClick={() => setPdfImportOpen(true)} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm disabled:opacity-40">Importar desde PDF</button>
+        {!readOnly && <label className={`px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm ${!plan || uploading ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>{uploading ? 'Subiendo…' : 'Subir nueva versión'}<input aria-label="Subir nueva versión" disabled={!plan || uploading} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void uploadVersion(event.target.files?.[0] ?? null).catch(() => undefined); event.currentTarget.value = '' }} /></label>}
       </div></SectionActions>
     {error && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
     <div className={`grid grid-cols-1 gap-5 ${sidebarCollapsed ? 'xl:grid-cols-[2.5rem_minmax(0,1fr)]' : 'xl:grid-cols-4'}`}>
@@ -239,25 +246,25 @@ export default function PlansView() {
         <div className={sidebarCollapsed ? 'xl:hidden' : ''}>
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Edificio</label><select value={buildingId ?? ''} onChange={(event) => { const next = Number(event.target.value); const first = catalog?.locations.find((item) => rootLocationId(item.id, catalog.locations) === next); preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(first?.id ?? null) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{buildings.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
         <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Planta</label><select value={selectedLocationId ?? ''} onChange={(event) => { preferredPlanIdRef.current = null; setFocusedAssetId(null); setSelectedLocationId(Number(event.target.value)) }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm">{floors.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
-        <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Plano</label><select value={plan?.id ?? ''} onChange={(event) => { const value = event.target.value; if (value === '__new__') { setCreateError(null); setCreateOpen(true); return } const selected = plans.find((item) => item.id === Number(value)); if (selected) { preferredPlanIdRef.current = selected.id; setFocusedAssetId(null); void fetchFloorPlan(projectId, selected.id).then(setPlan) } }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"><option value="">Sin plano</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="__new__">＋ Crear nuevo plano…</option></select>{currentVersion && <div className="text-xs text-slate-500 mt-1">v{currentVersion.version} · Subido: {new Date(currentVersion.uploadedAt).toLocaleDateString('es-ES')} · {sizeLabel(currentVersion.sizeBytes)}</div>}</div>
+        <div className="mb-4"><label className="text-xs text-slate-500 uppercase tracking-wider">Plano</label><select value={plan?.id ?? ''} onChange={(event) => { const value = event.target.value; if (value === '__new__') { setCreateError(null); setCreateOpen(true); return } const selected = plans.find((item) => item.id === Number(value)); if (selected) { preferredPlanIdRef.current = selected.id; setFocusedAssetId(null); void fetchFloorPlan(projectId, selected.id).then(setPlan) } }} className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"><option value="">Sin plano</option>{plans.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{!readOnly && <option value="__new__">＋ Crear nuevo plano…</option>}</select>{currentVersion && <div className="text-xs text-slate-500 mt-1">v{currentVersion.version} · Subido: {new Date(currentVersion.uploadedAt).toLocaleDateString('es-ES')} · {sizeLabel(currentVersion.sizeBytes)}</div>}</div>
         {plan && <FloorPlanAssetPanel types={planTypes} statuses={statuses} visibleTypes={visibleTypes} alert={alertFilter} statusFilterId={statusFilterId} onToggleType={(typeId, visible) => setVisibleTypes((current) => { const next = new Set(current); if (visible) next.add(typeId); else next.delete(typeId); return next })} onAlertChange={setAlertFilter} onStatusFilterChange={setStatusFilterId} />}
         {plan?.markersTruncated && <button type="button" disabled={editor.dirty} onClick={() => void loadMoreMarkers()} className="mt-4 text-xs text-brand-600 hover:underline disabled:opacity-40">Cargar más marcadores</button>}
-        {plan && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
+        {plan && !readOnly && <button type="button" onClick={() => setConfirmPlanDelete(true)} className="mt-4 text-xs text-red-600 dark:text-red-400 hover:underline">Eliminar plano</button>}
         </div>
       </aside>
       <div className={`min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 ${sidebarCollapsed ? '' : 'xl:col-span-3'}`}>
-        <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Pan y zoom siempre disponibles · Coordenadas normalizadas (0–1)</span></div>{plan && <button type="button" aria-pressed={backgroundDimmed} disabled={backgroundPreferenceSaving} onClick={() => void toggleBackgroundLayer()} className="rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-500 transition hover:text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200">{backgroundDimmed ? 'Sin capa' : 'Capa fondo'}</button>}</div>
+        <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-sm"><div className="flex items-center gap-3"><PlanEditorControls dirty={editor.dirty} canUndo={editor.canUndo} canRedo={editor.canRedo} saving={saving || readOnly} actions={viewerActionState} onUndo={editor.undo} onRedo={editor.redo} onSave={() => void savePositions()} /><span className="text-xs text-slate-500">Pan y zoom siempre disponibles · Coordenadas normalizadas (0–1)</span></div>{plan && <button type="button" aria-pressed={backgroundDimmed} disabled={backgroundPreferenceSaving || readOnly} onClick={() => void toggleBackgroundLayer()} className="rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-500 transition hover:text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200">{backgroundDimmed ? 'Sin capa' : 'Capa fondo'}</button>}</div>
         {loading ? <div className="h-[600px] flex items-center justify-center text-sm text-slate-500">Cargando planos…</div> : plan && currentVersion ? <div className="relative">
-          <FloorPlanViewer dziUrl={floorPlanDziUrl(projectId, plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} highlightedAssetId={focusedAssetId} backgroundDimmed={backgroundDimmed} actionsRef={viewerActions} onReady={markViewerReady} onEmptyQuickClick={(point, anchor) => { setMarkerPopover(null); if (placementTarget && !editor.markers.some((marker) => marker.assetId === placementTarget.id)) { placeAsset(placementTarget, point); return } setPlacementPopover({ point, anchor }) }} onSelectMarker={(marker, anchor) => { setPlacementTarget(null); setPlacementPopover(null); setFocusedAssetId(marker.assetId); setMarkerPopover({ markerId: marker.id, anchor }) }} onMarkerDragStart={(markerId) => { setMarkerPopover(null); editor.beginMove(markerId) }} onMarkerDrag={(markerId, point) => editor.previewMove(markerId, point)} onMarkerDragEnd={() => editor.endMove()} />
-          <FloorPlanAssetSearch search={assetSearch} assets={searchedAssets} markers={editor.markers} onSearchChange={setAssetSearch} onFocusMarker={(marker) => { setMarkerPopover(null); viewerActions.current?.focus(marker) }} onStartPlacement={(asset) => { setAssetSearch(''); setPlacementPopover(null); setMarkerPopover(null); setPlacementTarget(asset) }} />
+          <FloorPlanViewer dziUrl={floorPlanDziUrl(projectId, plan.id, currentVersion.version)} width={currentVersion.width} height={currentVersion.height} markers={shownMarkers} highlightedAssetId={focusedAssetId} backgroundDimmed={backgroundDimmed} actionsRef={viewerActions} readOnly={readOnly} onReady={markViewerReady} onEmptyQuickClick={(point, anchor) => { if (readOnly) return; setMarkerPopover(null); if (placementTarget && !editor.markers.some((marker) => marker.assetId === placementTarget.id)) { placeAsset(placementTarget, point); return } setPlacementPopover({ point, anchor }) }} onSelectMarker={(marker, anchor) => { setPlacementTarget(null); setPlacementPopover(null); setFocusedAssetId(marker.assetId); setMarkerPopover({ markerId: marker.id, anchor }) }} onMarkerDragStart={(markerId) => { if (!readOnly) { setMarkerPopover(null); editor.beginMove(markerId) } }} onMarkerDrag={(markerId, point) => { if (!readOnly) editor.previewMove(markerId, point) }} onMarkerDragEnd={() => { if (!readOnly) editor.endMove() }} />
+          {!readOnly && <FloorPlanAssetSearch search={assetSearch} assets={searchedAssets} markers={editor.markers} onSearchChange={setAssetSearch} onFocusMarker={(marker) => { setMarkerPopover(null); viewerActions.current?.focus(marker) }} onStartPlacement={(asset) => { setAssetSearch(''); setPlacementPopover(null); setMarkerPopover(null); setPlacementTarget(asset) }} />}
           {placementTarget && <div className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-lg border border-brand-200 bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:border-brand-800 dark:bg-slate-900/95"><span>Elige una zona para <strong>{placementTarget.name}</strong></span><button type="button" onClick={() => setPlacementTarget(null)} className="text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancelar</button></div>}
           {placementPopover && <FloorPlanPlacementPopover anchor={placementPopover.anchor} searchAssets={async (query) => (await fetchFloorPlanAssets(projectId, plan.id, query)).data.filter((asset) => !editor.markers.some((marker) => marker.assetId === asset.id))} onChoose={(asset) => placeAsset(asset, placementPopover.point)} onClose={() => setPlacementPopover(null)} />}
           {activeMarker && markerPopover && <FloorPlanMarkerPopover marker={activeMarker} anchor={markerPopover.anchor} onClose={() => setMarkerPopover(null)} onView={() => { ficha.open(activeMarker.assetId); setMarkerPopover(null) }} onRemove={() => { setMarkerRemovalId(activeMarker.id); setMarkerPopover(null) }} />}
-        </div> : <div className="h-[600px] flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-center"><p className="text-sm font-medium">No hay un plano para esta ubicación.</p><p className="mt-1 text-sm text-slate-500">Crea el primer plano con una imagen PNG, JPEG o WebP.</p><button type="button" onClick={() => { setCreateError(null); setCreateOpen(true) }} className="mt-4 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm text-white"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Crear plano</button></div>}
+        </div> : <div className="h-[600px] flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-950 text-center"><p className="text-sm font-medium">No hay un plano para esta ubicación.</p><p className="mt-1 text-sm text-slate-500">{readOnly ? 'El proyecto archivado se consulta en modo solo lectura.' : 'Crea el primer plano con una imagen PNG, JPEG o WebP.'}</p>{!readOnly && <button type="button" onClick={() => { setCreateError(null); setCreateOpen(true) }} className="mt-4 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm text-white"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Crear plano</button>}</div>}
       </div>
     </div>
-    <FloorPlanCreateModal open={createOpen} locations={catalog?.locations ?? []} projectId={projectId} initialLocationId={selectedLocationId} busy={createBusy} error={createError} onClose={() => setCreateOpen(false)} onSubmit={createPlan} />
-    <FloorPlanPdfImportModal open={pdfImportOpen} onClose={() => setPdfImportOpen(false)} onImport={uploadVersion} />
+    {!readOnly && <FloorPlanCreateModal open={createOpen} locations={catalog?.locations ?? []} projectId={projectId} initialLocationId={selectedLocationId} busy={createBusy} error={createError} onClose={() => setCreateOpen(false)} onSubmit={createPlan} />}
+    {!readOnly && <FloorPlanPdfImportModal open={pdfImportOpen} onClose={() => setPdfImportOpen(false)} onImport={uploadVersion} />}
     <AssetModal asset={ficha.asset} statuses={statuses} onClose={ficha.close} onEdit={ficha.onEdit} onChangeStatus={ficha.changeStatus} onDelete={ficha.remove} onDocumentsChanged={ficha.documentsChanged} onImageChanged={ficha.replaceAsset} />
     {ficha.formMode && ficha.asset && catalog && <AssetFormModal mode="edit" asset={ficha.asset} types={types} statuses={statuses} locations={catalog.locations} projectName={catalog.project.name} responsibleName={ficha.asset.responsible?.name ?? ''} projectId={catalog.project.id} responsibleId={ficha.asset.responsibleId} users={users} onCreateLocation={createLocationFromAssetForm} optionsError={false} onClose={ficha.closeForm} onSubmit={ficha.save} />}
     <ConfirmDialog open={markerRemovalId !== null} title="Quitar activo del plano" message={<>El activo <span className="font-medium">{markerForRemoval?.asset.code} · {markerForRemoval?.asset.name}</span> dejará de estar colocado en este plano al guardar las posiciones. ¿Continuar?</>} confirmLabel="Quitar del plano" busy={false} onConfirm={removeAssociation} onCancel={() => setMarkerRemovalId(null)} />

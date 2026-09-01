@@ -3,6 +3,7 @@ import StatusChip from '@/components/StatusChip'
 import DocumentModal from '@/components/DocumentModal'
 import AssetImageBox from '@/components/AssetImageBox'
 import AssetImageViewer from '@/components/AssetImageViewer'
+import { useProject } from '@/contexts/ProjectContext'
 import AssetDocuments from '@/components/AssetDocuments'
 import AssetActionConfirmDialog, { type AssetConfirmedAction } from '@/components/AssetActionConfirmDialog'
 import SearchablePicker, { type SearchableOption } from '@/components/SearchablePicker'
@@ -51,6 +52,7 @@ interface AssetModalProps {
 }
 
 export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged, onImageChanged, initialPreventiveExecutionId = null }: AssetModalProps) {
+  const { readOnly } = useProject()
   const [activeTab, setActiveTab] = useState(0)
   const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -165,6 +167,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
   }
 
   const changeStatus = async (statusId: number) => {
+    if (readOnly) return
     setStatusError(null)
     setChangingStatus(true)
     try {
@@ -179,6 +182,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
 
   // ITEM-05: eliminar mueve el activo a la papelera; la vista cierra la ficha.
   const handleDelete = async () => {
+    if (readOnly) return
     setDeleteError(null)
     setDeleting(true)
     try {
@@ -264,7 +268,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                     <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                       <div className="text-xs text-slate-500">Estado</div>
                       <div ref={statusMenuRef} className="relative mt-1 inline-block">
-                        <button type="button" onClick={() => setShowStatusSelector((current) => !current)} aria-label="Cambiar estado" aria-haspopup="listbox" aria-expanded={showStatusSelector} className="flex items-center gap-1.5 cursor-pointer">
+                        <button type="button" onClick={() => setShowStatusSelector((current) => !current)} disabled={readOnly} aria-label="Cambiar estado" aria-haspopup="listbox" aria-expanded={showStatusSelector} className="flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed">
                           <StatusChip label={displayAsset.status} chipClass={displayAsset.statusChipClass} pulseDot={displayAsset.pulseDot} />
                           <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${showStatusSelector ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
                         </button>
@@ -272,7 +276,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
                           <ul role="listbox" aria-label="Seleccionar estado" className="absolute left-0 top-full z-10 mt-1 min-w-44 overflow-hidden rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg fade-in">
                             {statuses.map((status) => (
                               <li key={status.id}>
-                                <button type="button" role="option" aria-selected={status.id === asset.statusId} onClick={() => requestStatusChange(status)} disabled={changingStatus} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
+                                <button type="button" role="option" aria-selected={status.id === asset.statusId} onClick={() => requestStatusChange(status)} disabled={changingStatus || readOnly} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">
                                   <span className="flex-1">{status.name}</span>
                                   {status.id === asset.statusId && <span className="text-brand-600" aria-hidden="true">✓</span>}
                                 </button>
@@ -352,14 +356,14 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium">Documentos asociados</h4>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setLinkDialogOpen(true)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1">
+                {!readOnly && <button type="button" onClick={() => setLinkDialogOpen(true)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                   Vincular documento
-                </button>
-                <button type="button" onClick={documentDialog.openCreate} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium flex items-center gap-1">
+                </button>}
+                {!readOnly && <button type="button" onClick={documentDialog.openCreate} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                   Nuevo documento
-                </button>
+                </button>}
               </div>
             </div>
             <AssetDocuments asset={asset} openingId={documentDialog.openingId} onOpen={(documentId) => void documentDialog.openAssociated(documentId)} />
@@ -388,19 +392,19 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-4">
-              {isDecommissioned ? (
+              {!readOnly && (isDecommissioned ? (
                 <button type="button" onClick={() => activeStatus && void changeStatus(activeStatus.id)} disabled={changingStatus || !activeStatus} className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">Reactivar</button>
               ) : (
                 <button type="button" onClick={() => decommissionedStatus && requestStatusChange(decommissionedStatus)} disabled={changingStatus || !decommissionedStatus} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Dar de baja</button>
-              )}
+              ))}
               {/* ITEM-05: eliminar mueve a la papelera (recuperable 30 días). */}
-              <button type="button" onClick={() => { setDeleteError(null); setConfirmedAction({ kind: 'delete' }) }} disabled={deleting} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Eliminar</button>
+              {!readOnly && <button type="button" onClick={() => { setDeleteError(null); setConfirmedAction({ kind: 'delete' }) }} disabled={deleting} className="text-sm text-red-600 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed">Eliminar</button>}
             </div>
             {(statusError || deleteError) && <div role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">{statusError ?? deleteError}</div>}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">Cerrar</button>
-            <button type="button" onClick={onEdit} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Editar</button>
+            {!readOnly && <button type="button" onClick={onEdit} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Editar</button>}
           </div>
         </div>
       </div>

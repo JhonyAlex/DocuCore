@@ -57,6 +57,41 @@ describe("plan-change API (preview / initiate / resolve / swap)", () => {
     }
   })
 
+  it("exposes an already-effective Starter overage so the next owner session must choose the project to keep", async () => {
+    const server = await startServer(0)
+    const address = server.address()
+    if (!address || typeof address === "string") throw new Error("Invalid test server address")
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    try {
+      const { user, ws, projectIds } = await setup("PRO", 2)
+      // Simula el resultado de una prueba expirada o un downgrade confirmado
+      // por Stripe fuera de la pantalla que inició el cambio.
+      await prisma.workspace.update({ where: { id: ws.id }, data: { planKey: "STARTER" } })
+
+      const status = await fetch(`${baseUrl}/api/billing/status`, {
+        headers: { "x-docucore-test-actor-id": String(user.id) },
+      })
+      expect(status.status).toBe(200)
+      expect(await status.json()).toMatchObject({
+        planKey: "STARTER",
+        activeProjectsCount: 2,
+        complianceStatus: "PLAN_ACTION_REQUIRED",
+      })
+
+      const preview = await fetch(`${baseUrl}/api/billing/plan-change/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-docucore-test-actor-id": String(user.id) },
+        body: JSON.stringify({ targetPlanKey: "STARTER" }),
+      })
+      expect(preview.status).toBe(200)
+      const body = await preview.json()
+      expect(body.requiresProjectSelection).toBe(true)
+      expect(body.affectedProjects.map((project: { id: number }) => project.id).sort()).toEqual(projectIds.slice().sort())
+    } finally {
+      server.close()
+    }
+  })
+
   it("resolve leaves exactly one ACTIVE project and plan-locks the rest, never destroying data", async () => {
     const server = await startServer(0)
     const address = server.address()

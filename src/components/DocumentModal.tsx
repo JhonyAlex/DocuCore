@@ -26,7 +26,7 @@ function toUtcDateInput(value: string): Date {
 }
 
 export default function DocumentModal({ document, initialAssetIds = [], onClose, onChanged }: DocumentModalProps) {
-  const { projectId } = useProject()
+  const { projectId, readOnly } = useProject()
   if (projectId === null) throw new Error('DocumentModal requires a project scope')
   const [detail, setDetail] = useState<ApiDocumentDetail | null>(null)
   const [documentTypes, setDocumentTypes] = useState<ApiDocumentType[]>([])
@@ -54,6 +54,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const mountedRef = useRef(false)
   const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
+  const writeDisabled = saving || readOnly
   const [error, setError] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   // Guardia para el visor de vista previa: mientras está abierto, Escape lo
@@ -281,6 +282,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }
 
   const save = async () => {
+    if (readOnly) return
     setError(null)
     if (isNew && files.length === 0) return setError('Selecciona al menos un fichero para subir el documento.')
     setSaving(true)
@@ -297,6 +299,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   }
 
   const uploadNewVersion = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return
     const nextFiles = Array.from(event.target.files ?? [])
     if (!document || nextFiles.length === 0) return
     setError(null)
@@ -336,12 +339,12 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="document-dialog-title" tabIndex={-1} className="flex min-h-0 max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none">
         <div className="shrink-0 p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <h2 id="document-dialog-title" className="font-semibold text-lg">{isNew ? 'Subir documento' : 'Gestionar documento'}</h2>
+          <div><h2 id="document-dialog-title" className="font-semibold text-lg">{isNew ? 'Subir documento' : 'Gestionar documento'}</h2>{readOnly && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Proyecto archivado: la información se conserva en modo solo lectura.</p>}</div>
           <button type="button" aria-label="Cerrar" onClick={onClose} disabled={saving} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">×</button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-5 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="text-sm">Nombre<input ref={initialFocusRef} value={name} onChange={(event) => setName(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
+            <label className="text-sm">Nombre<input ref={initialFocusRef} value={name} onChange={(event) => setName(event.target.value)} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
             <label className="text-sm">Tipo<select id="doc-type" value={typeId !== null ? String(typeId) : type} onChange={(event) => {
               const selected = documentTypes.find((t) => String(t.id) === event.target.value || t.name === event.target.value)
               if (selected) {
@@ -351,14 +354,14 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
                 setType(event.target.value)
                 setTypeId(null)
               }
-            }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((dt) => <option key={dt.id} value={String(dt.id)}>{dt.name}</option>)}{type && !documentTypes.some((dt) => (typeId !== null && dt.id === typeId) || dt.name.toLowerCase() === type.toLowerCase()) && <option value={type}>{type}</option>}</select></label>
-            <label className="text-sm">Activos asociados<SearchableMultiPicker values={assets} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={saving} onSearch={searchAssets} onChange={setAssets} /></label>
-            <label className="text-sm">Ubicación asociada<SearchablePicker value={locationId === null ? null : String(locationId)} selectedLabel={locationLabel} ariaLabel="Ubicación asociada" placeholder="Buscar ubicación por nombre o código…" disabled={saving} allowClear clearLabel="Sin ubicación" onSearch={searchLocationOptions} onSelect={(option) => { setLocationId(option ? Number(option.value) : null); setLocationLabel(option?.label ?? null) }} /></label>
-            <label className="text-sm">Emisión<input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
-            <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => { setExpiryDate(event.target.value); setExpiryTouched(true) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" />{periodicity && !expiryTouched && <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}</span>}</label>
-            <label className="text-sm">Periodicidad<select value={periodicity ?? ''} onChange={(event) => { setPeriodicity(event.target.value === '' ? null : event.target.value as DocumentPeriodicity); setExpiryTouched(false) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{periodicityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            {periodicity && <label className="text-sm">Modo<select value={periodicityMode} onChange={(event) => { setPeriodicityMode(event.target.value as DocumentPeriodicityMode); setExpiryTouched(false) }} disabled={saving} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"><option value="Calendario">Según calendario</option><option value="Subida">Según subida</option></select></label>}
-            {isNew && <label className="text-sm">Fichero<input type="file" multiple accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} disabled={saving} className="mt-1 block w-full text-xs" /><span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Puedes seleccionar varios archivos para una misma entrega.</span>{files.length > 1 && <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{files.length} archivos seleccionados</span>}</label>}
+            }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((dt) => <option key={dt.id} value={String(dt.id)}>{dt.name}</option>)}{type && !documentTypes.some((dt) => (typeId !== null && dt.id === typeId) || dt.name.toLowerCase() === type.toLowerCase()) && <option value={type}>{type}</option>}</select></label>
+            <label className="text-sm">Activos asociados<SearchableMultiPicker values={assets} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={writeDisabled} onSearch={searchAssets} onChange={setAssets} /></label>
+            <label className="text-sm">Ubicación asociada<SearchablePicker value={locationId === null ? null : String(locationId)} selectedLabel={locationLabel} ariaLabel="Ubicación asociada" placeholder="Buscar ubicación por nombre o código…" disabled={writeDisabled} allowClear clearLabel="Sin ubicación" onSearch={searchLocationOptions} onSelect={(option) => { setLocationId(option ? Number(option.value) : null); setLocationLabel(option?.label ?? null) }} /></label>
+            <label className="text-sm">Emisión<input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
+            <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => { setExpiryDate(event.target.value); setExpiryTouched(true) }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" />{periodicity && !expiryTouched && <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}</span>}</label>
+            <label className="text-sm">Periodicidad<select value={periodicity ?? ''} onChange={(event) => { setPeriodicity(event.target.value === '' ? null : event.target.value as DocumentPeriodicity); setExpiryTouched(false) }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{periodicityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            {periodicity && <label className="text-sm">Modo<select value={periodicityMode} onChange={(event) => { setPeriodicityMode(event.target.value as DocumentPeriodicityMode); setExpiryTouched(false) }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"><option value="Calendario">Según calendario</option><option value="Subida">Según subida</option></select></label>}
+            {isNew && <label className="text-sm">Fichero<input type="file" multiple accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} disabled={writeDisabled} className="mt-1 block w-full text-xs" /><span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Puedes seleccionar varios archivos para una misma entrega.</span>{files.length > 1 && <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{files.length} archivos seleccionados</span>}</label>}
           </div>
           {!isNew && current?.currentVersion && <div>
             <h3 className="font-medium text-sm mb-2">Vista previa</h3>
@@ -402,7 +405,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               </li>
             )
           })}</ul></div>}
-          {!isNew && document && <div className="flex flex-wrap items-center gap-2"><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" multiple aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { void uploadNewVersion(event); event.currentTarget.value = '' }} disabled={saving} className="sr-only" /></label><button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar archivo principal</button></div>}
+          {!isNew && document && <div className="flex flex-wrap items-center gap-2">{!readOnly && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" multiple aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { void uploadNewVersion(event); event.currentTarget.value = '' }} disabled={saving} className="sr-only" /></label>}<button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar archivo principal</button></div>}
           {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}{historyVersion.attachments && historyVersion.attachments.length > 0 ? ` + ${historyVersion.attachments.length} adjunto(s)` : ''}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingTarget !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingTarget === `v-${historyVersion.version}` ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></div>{historyVersion.attachments && historyVersion.attachments.length > 0 && <ul className="mt-1 space-y-1 border-t border-slate-200 pt-1 text-xs dark:border-slate-700">{historyVersion.attachments.map((attachment) => {
             const isPreviewing = previewingTarget === `v-${historyVersion.version}-att-${attachment.id}`
             return (
@@ -431,7 +434,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
           })}</ul>}</li>)}</ul></div>}
           {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
-        <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cancelar</button><button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button></div>
+        <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cerrar</button>{!readOnly && <button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button>}</div>
       </div>
       {previewOpen && modalPreview && current && <DocumentPreviewModal name={modalPreview.name ?? current.name} version={modalPreview.version} mimeType={modalPreview.mimeType} objectUrl={modalPreview.objectUrl} text={modalPreview.text} blob={modalPreview.blob} onClose={closePreview} />}
     </div>

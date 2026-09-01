@@ -15,7 +15,7 @@ const LIMIT = 5
 
 export default function DocumentsView() {
   const [searchParams] = useSearchParams()
-  const { projectId } = useProject()
+  const { projectId, readOnly } = useProject()
   if (projectId === null) throw new Error('DocumentsView requires a project scope')
   const selection = useSelection<number>()
   const [documents, setDocuments] = useState<ApiDocument[]>([])
@@ -153,7 +153,7 @@ export default function DocumentsView() {
     <section className="fade-in">
       <SectionActions>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => { selection.clear(); setEditing(null) }} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5">
+          <button type="button" onClick={() => { selection.clear(); setEditing(null) }} disabled={readOnly} title={readOnly ? 'Los proyectos archivados no permiten subir documentos' : undefined} className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Subir documento
           </button>
@@ -172,7 +172,7 @@ export default function DocumentsView() {
       </div>
       <BulkActionBar selectedCount={selection.selectedCount} onClear={selection.clear}>
         <button type="button" onClick={() => void handleBulkDownload()} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium">Descargar</button>
-        <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>
+        {!readOnly && <button type="button" onClick={requestBulkDelete} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium">Eliminar</button>}
       </BulkActionBar>
       <DocumentsFilters
         filters={filters}
@@ -201,7 +201,8 @@ export default function DocumentsView() {
         onSort={handleSort}
         onRowClick={(document) => setEditing(document)}
         onDownload={(document) => void downloadDocument(projectId, document.id)}
-        onDelete={(document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
+        onDelete={readOnly ? undefined : (document) => { setDeleteError(null); setDeleteTarget({ ids: [document.id], label: document.name }) }}
+        readOnly={readOnly}
       />
       {editing !== undefined && <DocumentModal document={editing} onClose={() => setEditing(undefined)} onChanged={load} />}
       <ConfirmDialog

@@ -73,7 +73,7 @@ export default function LocationsView() {
   const [searchParams] = useSearchParams()
   const deepLinkedLocationId = Number(searchParams.get('locationId'))
   const { reload: reloadSession } = useSession()
-  const { projectId, refresh: refreshProject } = useProject()
+  const { projectId, readOnly, refresh: refreshProject } = useProject()
   if (projectId === null) throw new Error('LocationsView requires a project scope')
   const [catalog, setCatalog] = useState<ApiLocationsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -241,6 +241,7 @@ export default function LocationsView() {
   })
 
   const saveLocation = async (values: LocationFormValues) => {
+    if (readOnly) return
     if (!catalog) return
     try {
       if (formMode === 'edit') {
@@ -258,6 +259,7 @@ export default function LocationsView() {
   }
 
   const removeLocation = async () => {
+    if (readOnly) return
     if (!selectedId) return
     setDeleting(true)
     setDeleteError(null)
@@ -423,7 +425,7 @@ export default function LocationsView() {
                   <div className="text-xs text-slate-500 mt-0.5">{breadcrumb}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setFormMode('edit')} className="px-3 py-1.5 rounded-md text-xs bg-slate-100 dark:bg-slate-800">Editar</button>
+                  {!readOnly && <button type="button" onClick={() => setFormMode('edit')} className="px-3 py-1.5 rounded-md text-xs bg-slate-100 dark:bg-slate-800">Editar</button>}
                   <button
                     type="button"
                     onClick={() => { if (detail.hasFloorPlan) navigate(`/projects/${projectId}/plans?locationId=${detail.id}`) }}
@@ -458,7 +460,7 @@ export default function LocationsView() {
 
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-medium text-sm">Activos en esta ubicación</h3>
-                <button type="button" onClick={() => { setConfirmDelete(true); setDeleteError(null) }} className="text-xs text-red-600 hover:text-red-700">Eliminar ubicación</button>
+                {!readOnly && <button type="button" onClick={() => { setConfirmDelete(true); setDeleteError(null) }} className="text-xs text-red-600 hover:text-red-700">Eliminar ubicación</button>}
               </div>
               <div className="space-y-2">
                 {displayedAssets.map((asset) => (

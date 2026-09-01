@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from '@/components/Sidebar'
 import Topbar from '@/components/Topbar'
 import TrialBanner from '@/components/TrialBanner'
+import PlanComplianceGate from '@/components/PlanComplianceGate'
 import { AssetCreateProvider } from '@/contexts/AssetCreateProvider'
 import { NotificationProvider } from '@/contexts/NotificationProvider'
 import { ProjectProvider } from '@/contexts/ProjectProvider'
@@ -21,6 +22,7 @@ export default function AppLayout() {
                 <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
                   <Outlet />
                 </div>
+                <PlanComplianceGate />
               </main>
             </div>
           </AssetCreateProvider>

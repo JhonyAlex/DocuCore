@@ -1,8 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
-import type { ProjectRole, ProjectStatus, Workspace, WorkspaceRole } from '@prisma/client'
+import type { ProjectRole, ProjectStatus, Workspace, WorkspaceMemberStatus, WorkspaceRole } from '@prisma/client'
 import prisma from './prisma'
 import { authenticatedUserId } from './auth'
-import { evaluateWorkspaceEntitlement, assertWorkspaceWriteAllowed, getUserPrimaryWorkspace } from './workspaceScope'
+import { assertWorkspaceMemberWriteAllowed, evaluateWorkspaceEntitlement, assertWorkspaceWriteAllowed, getUserPrimaryWorkspace } from './workspaceScope'
 
 export function actorIdFromRequest(req: Request): number {
   return authenticatedUserId(req)
@@ -21,7 +21,7 @@ export interface ProjectScope {
   projectId: number
   project: { id: number; workspaceId: number; code: string; name: string; status: ProjectStatus; themeKey: string; workspace: Workspace }
   membership: { id: number; userId: number; role: ProjectRole }
-  workspaceMembership?: { id: number; userId: number; role: WorkspaceRole }
+  workspaceMembership?: { id: number; userId: number; role: WorkspaceRole; status: WorkspaceMemberStatus }
   supportAccess: boolean
 }
 
@@ -79,9 +79,9 @@ export async function resolveProjectScope(projectId: number, actorId: number): P
     }),
   ])
 
-  // A SUSPENDED workspace membership revokes access to every project of that
-  // workspace: suspension is the workspace-level enforcement boundary (§16).
-  if (workspaceMembership && workspaceMembership.status !== 'ACTIVE') {
+  // PLAN_LOCKED removes a seat. SUSPENDED preserves read/download access and
+  // is rejected centrally for every mutation below.
+  if (workspaceMembership && workspaceMembership.status === 'PLAN_LOCKED') {
     throw scopeError('Workspace access denied', 403)
   }
 
@@ -112,6 +112,9 @@ export function requireProjectScope(options: { write?: boolean; capability?: Pro
       if (options.capability) requireProjectCapability(scope, options.capability)
 
       if (options.write) {
+        assertWorkspaceMemberWriteAllowed({
+          membership: scope.workspaceMembership ?? { id: 0, userId: scope.membership.userId, role: 'ADMIN', status: 'ACTIVE' },
+        })
         const entitlement = evaluateWorkspaceEntitlement(scope.project.workspace)
         if (!entitlement.isEntitledToWrite) {
           return res.status(402).json({

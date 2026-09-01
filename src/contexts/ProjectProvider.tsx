@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useParams } from 'react-router-dom'
 import { fetchProject, type ApiProjectSummary } from '@/lib/api'
 import { ProjectContext } from './ProjectContext'
+import { useSession } from './SessionContext'
 
 const ACTIVE_PROJECT_STORAGE_KEY = 'docucore.activeProjectId'
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
+  const { workspace } = useSession()
   const { projectId: rawProjectId } = useParams()
   const projectId = rawProjectId && /^\d+$/.test(rawProjectId) ? Number(rawProjectId) : null
   const [project, setProject] = useState<ApiProjectSummary | null>(null)
@@ -49,7 +51,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
   }, [projectId, reloadToken])
 
-  const value = useMemo(() => ({ projectId, project, loading, error, refresh }), [error, loading, project, projectId, refresh])
+  const readOnly = project?.status === 'ARCHIVED' || workspace?.isEntitledToWrite === false || workspace?.membershipStatus === 'SUSPENDED'
+  const value = useMemo(() => ({ projectId, project, readOnly, loading, error, refresh }), [error, loading, project, projectId, readOnly, refresh])
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>
 }
 
