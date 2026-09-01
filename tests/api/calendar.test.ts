@@ -71,6 +71,23 @@ describe('calendar API', () => {
     createdEventId = undefined
   })
 
+  it('accepts the explicit nulls the event form sends for an event without periodicity', async () => {
+    // CalendarEventFormModal siempre serializa `periodicity: null` y
+    // `periodicityMode: null` cuando el evento no es periódico. El alta se
+    // rechazaba con 400 porque el schema solo toleraba la ausencia del campo.
+    const create = await api('/api/calendar/events', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Evento CAL sin periodicidad', date: '2026-07-16', category: 'review', assetId: null, periodicity: null, periodicityMode: null, projectId: 1 }),
+    })
+    expect(create.status).toBe(201)
+    const created = await create.json() as { sourceId: number; periodicity: string | null; periodicityMode: string | null }
+    expect(created.periodicity).toBeNull()
+    expect(created.periodicityMode).toBeNull()
+
+    const remove = await api(`/api/calendar/events/${created.sourceId}`, { method: 'DELETE' })
+    expect(remove.status).toBe(204)
+  })
+
   it('exposes a preventive execution and refuses completion while checklist tasks remain', async () => {
     const response = await api('/api/calendar?projectId=1&from=2026-08-05&to=2026-08-05&source=preventive')
     expect(response.status).toBe(200)
