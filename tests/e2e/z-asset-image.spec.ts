@@ -1,13 +1,14 @@
 import { expect, test } from './fixtures'
+import { createTestJpegBuffer, createTestPngBuffer } from '../helpers/imageFixtures'
 
 // IMG-01: hasta 5 imágenes por activo. El alta desde cero permite elegir múltiples
 // fotos en el formulario (se suben al guardar) y la ficha permite desplazarse entre
 // ellas con botones y miniaturas, así como abrir el visor ampliado con carrusel,
 // navegación por teclado y tira de miniaturas.
 
-// PNG 1x1 válido y un JPEG 1x1 de muestra.
-const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082', 'hex')
-const JPEG_BYTES = Buffer.from('ffd8ffe000104a46494600010100000100010000ffdb0043000b08080808080b0a0a0affc00011080001000103012200021101031101ffc4001f0000010501010101010100000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffc4001f0100030101010101010101010000000000000102030405060708090a0bffc400b51100020102040403040705040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda000c03010002110311003f00fd3ffd9', 'hex')
+// PNG y JPEG de muestra, generados con el mismo decodificador que usa el servidor.
+let PNG_BYTES: Buffer
+let JPEG_BYTES: Buffer
 
 async function createAsset(page: import('@playwright/test').Page, code: string, serialNumber: string) {
   const [typesRes, statusesRes] = await Promise.all([
@@ -35,6 +36,11 @@ async function createAsset(page: import('@playwright/test').Page, code: string, 
 }
 
 test.describe.serial('asset image', () => {
+  test.beforeAll(async () => {
+    PNG_BYTES = await createTestPngBuffer()
+    JPEG_BYTES = await createTestJpegBuffer()
+  })
+
   test('creates an asset from scratch choosing multiple images in the form', async ({ page, consoleIssues }) => {
     const code = `QA-IMG-${Date.now() % 100000}`
     const name = `E2E Imagen alta ${Date.now()}`
