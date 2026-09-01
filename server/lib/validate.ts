@@ -78,8 +78,11 @@ export const calendarCreateEventSchema = z.object({
   date: isoDateSchema,
   category: calendarCategorySchema,
   assetId: calendarOptionalAssetId,
-  periodicity: calendarOptionalPeriodicity,
-  periodicityMode: calendarOptionalPeriodicityMode,
+  // El formulario de alta envía `null` explícito cuando el evento no tiene
+  // periodicidad; aceptar solo la ausencia del campo devolvía 400 en el caso
+  // más habitual de creación de eventos.
+  periodicity: calendarNullableOptionalPeriodicity,
+  periodicityMode: calendarNullableOptionalPeriodicityMode,
   projectId: optionalCalendarProjectId,
 }).strict()
 

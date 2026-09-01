@@ -88,7 +88,9 @@ test.describe('Buscador Global y Búsqueda Diferida', () => {
     await expect(page).toHaveURL(/\/docs\?documentId=/)
     const docModal = page.getByRole('dialog').filter({ hasText: 'Gestionar documento' })
     await expect(docModal).toBeVisible()
-    await expect(docModal.getByText('Versión actual')).toBeVisible()
+    // DOC-03 incrustó la vista previa de la versión actual bajo Emisión: el
+    // bloque pasó a titularse «Vista previa».
+    await expect(docModal.getByRole('heading', { name: 'Vista previa', exact: true })).toBeVisible()
   })
 
   test('finds locations and navigates to locations view', async ({ page }) => {

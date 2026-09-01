@@ -1,6 +1,7 @@
 import { expect, test } from './fixtures'
 import { minimalPdf } from './pdf'
 import { createSampleWorkbookBuffer } from '../helpers/excelFixture'
+import { createTestPngBuffer } from '../helpers/imageFixtures'
 
 // DOC-03: vista previa de documentos. Al abrir «Gestionar documento», la
 // versión actual se muestra incrustada justo debajo del campo Emisión (PDF
@@ -10,10 +11,14 @@ import { createSampleWorkbookBuffer } from '../helpers/excelFixture'
 // sin botón previo; al tocar la vista previa se abre el visor ampliado. Escape
 // cierra solo el visor, sin cerrar el modal padre.
 
-// PNG 1x1 válido.
-const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082', 'hex')
+// PNG de muestra, generado con el mismo decodificador que usa el servidor.
+let PNG_BYTES: Buffer
 const XLSX_BYTES = createSampleWorkbookBuffer()
 const CORRUPTED_XLSX_BYTES = Buffer.from('PK\x03\x04CORRUPTED-ZIP-HEADER')
+
+test.beforeAll(async () => {
+  PNG_BYTES = await createTestPngBuffer()
+})
 
 async function createDocument(page: import('@playwright/test').Page, name: string, mimeType: string, bytes: Buffer, fileName: string): Promise<{ id: number }> {
   const response = await page.request.post('/api/documents', {
@@ -58,7 +63,7 @@ test.describe.serial('document preview', () => {
     await page.keyboard.press('Escape')
     await expect(previewDialog).toBeHidden()
     await expect(manageDialog).toBeVisible()
-    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
     expect(consoleIssues).toEqual([])
   })
 
@@ -91,7 +96,7 @@ test.describe.serial('document preview', () => {
     expect(await viewer.evaluate((element) => element.scrollTop)).toBe(0)
     await page.keyboard.press('Escape')
     await expect(pdfPreview).toBeHidden()
-    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
     expect(consoleIssues).toEqual([])
   })
 
@@ -142,13 +147,13 @@ test.describe.serial('document preview', () => {
     await page.keyboard.press('Escape')
     await expect(enlargedDialog).toBeHidden()
     await expect(manageDialog).toBeVisible()
-    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
 
     // Comprobar manejo de archivo Excel corrupto
     await page.getByText(corruptedName, { exact: true }).click()
     const corruptDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
     await expect(corruptDialog.getByText('No se pudo generar la vista previa de esta hoja de cálculo.')).toBeVisible()
-    await corruptDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await corruptDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
 
     expect(consoleIssues).toEqual([])
   })
@@ -168,7 +173,7 @@ test.describe.serial('document preview', () => {
     await expect(manageDialog.locator('pre')).toContainText('SEGUNDA VERSION')
     await expect(manageDialog.locator('pre')).not.toContainText('PRIMERA VERSION')
     await expect(manageDialog.getByText(/v2 · segunda-e2e\.txt/)).toBeVisible()
-    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
     expect(consoleIssues).toEqual([])
   })
 
@@ -205,7 +210,7 @@ test.describe.serial('document preview', () => {
     await historicalPreview.getByRole('button', { name: 'Cerrar vista previa' }).click()
     await expect(manageDialog).toBeVisible()
 
-    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+    await manageDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
     expect(consoleIssues).toEqual([])
   })
 })

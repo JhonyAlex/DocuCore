@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import ProjectFormModal from '@/components/ProjectFormModal'
 import SectionActions from '@/components/SectionActions'
+import { useProjectOptional } from '@/contexts/ProjectContext'
 import { archiveProject, ApiError, createProject, deleteProject, fetchBillingStatus, fetchProjects, restoreProject, updateProject, type ApiProjectSummary, type ProjectInput } from '@/lib/api'
 import { projectThemeClass } from '../../shared/projectThemes'
 
@@ -192,6 +193,9 @@ function FeaturedProjectCard({ project, onOpen, onEdit, onArchive, onDelete }: P
 
 export default function ProjectsView() {
   const navigate = useNavigate()
+  // Sin ProjectProvider la vista se monta en ProjectsSelectionLayout, que no
+  // tiene barra superior: la cabecera debe ir inline para no perder el título.
+  const projectScope = useProjectOptional()
   const [projects, setProjects] = useState<ApiProjectSummary[]>([])
   const [totalPages, setTotalPages] = useState(1)
   const [page, setPage] = useState(1)
@@ -318,6 +322,14 @@ export default function ProjectsView() {
 
   return (
     <section className="fade-in">
+      {!projectScope && (
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Proyectos</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Organiza instalaciones, plantas, clientes o proyectos documentales
+          </p>
+        </div>
+      )}
       <SectionActions>
         <button
           type="button"
