@@ -91,8 +91,8 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-0 flex-1 overflow-y-auto lg:overflow-hidden divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
-          {/* Columna Izquierda: Formulario de metadatos (42% en desktop) */}
-          <div className="lg:col-span-5 p-5 min-h-0 overflow-y-auto scrollbar-thin">
+          {/* Columna Izquierda: Formulario de metadatos + Historial de versiones (42% en desktop) */}
+          <div className="lg:col-span-5 p-5 min-h-0 overflow-y-auto scrollbar-thin space-y-6">
             <DocumentFormFields
               initialFocusRef={initialFocusRef}
               name={form.name}
@@ -127,24 +127,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               setFiles={form.setFiles}
               writeDisabled={form.writeDisabled}
             />
-          </div>
-
-          {/* Columna Derecha: Vista previa e Historial de versiones (58% en desktop) */}
-          <div className="lg:col-span-7 p-5 min-h-0 overflow-y-auto scrollbar-thin space-y-5 bg-slate-50/30 dark:bg-slate-900/40 flex flex-col">
-            <div className="shrink-0">
-              <DocumentPreviewPane
-                activePreview={preview.activePreviewItem}
-                loading={preview.previewLoading}
-                error={preview.previewError}
-                isNew={isNew}
-                hasNewFiles={form.files.length > 0}
-                onResetToCurrent={() => preview.closePreview()}
-                onExpand={preview.openPreview}
-              />
-            </div>
 
             {!isNew && (
-              <div className="flex-1 min-h-0">
+              <div className="pt-2">
                 <DocumentVersionsList
                   currentVersion={currentVersion ?? null}
                   detail={form.detail}
@@ -161,6 +146,21 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
                 />
               </div>
             )}
+          </div>
+
+          {/* Columna Derecha: Vista previa a toda la altura disponible (58% en desktop) */}
+          <div className="lg:col-span-7 p-5 min-h-0 overflow-y-auto scrollbar-thin bg-slate-50/30 dark:bg-slate-900/40 flex flex-col">
+            <div className="h-full flex-1 flex flex-col">
+              <DocumentPreviewPane
+                activePreview={preview.activePreviewItem}
+                loading={preview.previewLoading}
+                error={preview.previewError}
+                isNew={isNew}
+                hasNewFiles={form.files.length > 0}
+                onResetToCurrent={() => preview.closePreview()}
+                onExpand={preview.openPreview}
+              />
+            </div>
           </div>
         </div>
 
