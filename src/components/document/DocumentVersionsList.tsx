@@ -90,21 +90,18 @@ export default function DocumentVersionsList({
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">
-                        v{ver.version}
+                      <span className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100" title={ver.originalName}>
+                        v{ver.version} · {ver.originalName}
                       </span>
                       {isCurrent ? (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        <span className="shrink-0 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                           Vigente
                         </span>
                       ) : (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800">
+                        <span className="shrink-0 px-1.5 py-0.2 rounded text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800">
                           Histórica
                         </span>
                       )}
-                      <span className="truncate text-xs text-slate-600 dark:text-slate-400" title={ver.originalName}>
-                        · {ver.originalName}
-                      </span>
                     </div>
                     <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                       {formatDocumentSize(ver.sizeBytes)} · Subido {formatApiDate(ver.uploadedAt)}
@@ -115,7 +112,7 @@ export default function DocumentVersionsList({
                   <div className="flex shrink-0 items-center gap-2">
                     <button
                       type="button"
-                      aria-label={`Ver versión ${ver.version}`}
+                      aria-label={`Ver v${ver.version}`}
                       disabled={isTargetBusy}
                       onClick={() => (isCurrent ? onSelectCurrent() : onSelectVersion(ver))}
                       className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
@@ -128,7 +125,7 @@ export default function DocumentVersionsList({
                     </button>
                     <button
                       type="button"
-                      aria-label={`Descargar versión ${ver.version}`}
+                      aria-label={`Descargar v${ver.version}`}
                       onClick={() => onDownloadVersion(isCurrent ? undefined : ver.version)}
                       className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                       title="Descargar versión"

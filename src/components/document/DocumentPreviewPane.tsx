@@ -79,6 +79,7 @@ export default function DocumentPreviewPane({
           {isViewable && (
             <button
               type="button"
+              aria-label={`Abrir vista previa de ${activePreview?.title ?? ''}`}
               onClick={onExpand}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium transition-colors shadow-sm"
               title="Ampliar vista previa a pantalla completa"
@@ -154,7 +155,19 @@ export default function DocumentPreviewPane({
             </p>
           </div>
         ) : activePreview && isViewable ? (
-          <div className="w-full">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label={`Abrir vista previa de ${activePreview.title}`}
+            onClick={onExpand}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onExpand()
+              }
+            }}
+            className="w-full cursor-pointer overflow-hidden rounded-lg hover:ring-2 hover:ring-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
             <DocumentPreviewBody
               name={activePreview.title}
               mimeType={activePreview.mimeType}

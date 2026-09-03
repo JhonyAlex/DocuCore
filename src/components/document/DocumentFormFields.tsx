@@ -76,7 +76,7 @@ export default function DocumentFormFields({
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <label className="text-xs font-medium text-slate-700 dark:text-slate-300 sm:col-span-2">
-          Nombre del documento *
+          Nombre
           <input
             ref={initialFocusRef}
             value={name}
@@ -88,7 +88,7 @@ export default function DocumentFormFields({
         </label>
 
         <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-          Tipo de documento
+          Tipo
           <select
             id="doc-type"
             value={typeId !== null ? String(typeId) : type}
@@ -171,8 +171,8 @@ export default function DocumentFormFields({
             className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
           />
           {periodicity && !expiryTouched && (
-            <span className="block mt-1 text-[11px] text-brand-600 dark:text-brand-400">
-              ⚡ Calculado: {periodicity.toLowerCase()} ({periodicityMode === 'Calendario' ? 'según vencimiento' : 'según subida'})
+            <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}
             </span>
           )}
         </label>
@@ -217,7 +217,7 @@ export default function DocumentFormFields({
         {isNew && (
           <div className="sm:col-span-2 pt-2 border-t border-slate-200 dark:border-slate-800">
             <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block">
-              Ficheros a adjuntar *
+              Fichero
               <input
                 type="file"
                 multiple

@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
-import type { SearchableOption } from '@/components/SearchablePicker'
-import SearchablePicker from '@/components/SearchablePicker'
-import SearchableMultiPicker, { type SelectedValue } from '@/components/SearchableMultiPicker'
-import DocumentPreviewModal, { DocumentPreviewBody } from '@/components/DocumentPreviewModal'
-import { createDocument, createDocumentVersion, downloadDocument, downloadDocumentAttachment, fetchAssets, fetchDocument, fetchDocumentAttachmentPreview, fetchDocumentPreview, fetchDocumentTypes, searchLocations, updateDocument, type ApiDocument, type ApiDocumentDetail, type ApiDocumentType, type DocumentMetadataInput } from '@/lib/api'
-import { PERIODICITIES, calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
-import { isExcelMimeType, isPdfMimeType, isTextMimeType, isViewableMimeType } from '@/lib/documentPreview'
+import { useEffect, useRef } from 'react'
+import type { SelectedValue } from '@/components/SearchableMultiPicker'
+import DocumentHeader from '@/components/document/DocumentHeader'
+import DocumentFormFields from '@/components/document/DocumentFormFields'
+import DocumentPreviewPane from '@/components/document/DocumentPreviewPane'
+import DocumentVersionsList from '@/components/document/DocumentVersionsList'
+import DocumentPreviewModal from '@/components/DocumentPreviewModal'
+import { useDocumentPreview } from '@/hooks/useDocumentPreview'
+import { useDocumentForm } from '@/hooks/useDocumentForm'
+import { downloadDocument, downloadDocumentAttachment, type ApiDocument } from '@/lib/api'
+import { computeDocumentStatus, type DocumentValidityStatus } from '@/lib/documentStatus'
 import { useProject } from '@/contexts/ProjectContext'
 
 type DocumentModalProps = {
@@ -15,199 +18,45 @@ type DocumentModalProps = {
   onChanged: () => void | Promise<void>
 }
 
-const periodicityOptions = [{ value: '', label: 'Sin periodicidad' }, ...PERIODICITIES.map((value) => ({ value, label: value }))]
-
-function dateInput(value: string | null | undefined): string {
-  return value ? value.slice(0, 10) : ''
-}
-
-function toUtcDateInput(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`)
+function resolveDocumentValidityStatus(docStatus: string | undefined, expiryDate: string | null | undefined): DocumentValidityStatus {
+  if (docStatus === 'Por vencer' || docStatus === 'Próximo a vencer') return 'Próximo a vencer'
+  if (docStatus === 'Vigente') return 'Vigente'
+  if (docStatus === 'Vencido') return 'Vencido'
+  return computeDocumentStatus(expiryDate)
 }
 
 export default function DocumentModal({ document, initialAssetIds = [], onClose, onChanged }: DocumentModalProps) {
   const { projectId, readOnly } = useProject()
   if (projectId === null) throw new Error('DocumentModal requires a project scope')
-  const [detail, setDetail] = useState<ApiDocumentDetail | null>(null)
-  const [documentTypes, setDocumentTypes] = useState<ApiDocumentType[]>([])
-  const [name, setName] = useState(document?.name ?? '')
-  const [typeId, setTypeId] = useState<number | null>(document?.typeId ?? null)
-  const [type, setType] = useState(document?.type ?? '')
-  const [assets, setAssets] = useState<SelectedValue[]>(() => {
-    const seeded = [
-      ...(document?.assets ?? []).map((asset) => ({ id: asset.id, label: `${asset.code} · ${asset.name}` })),
-      ...initialAssetIds,
-    ]
-    const seen = new Set<number>()
-    return seeded.filter((value) => !seen.has(value.id) && seen.add(value.id))
-  })
-  const [locationId, setLocationId] = useState<number | null>(document?.location?.id ?? null)
-  const [locationLabel, setLocationLabel] = useState<string | null>(document?.location ? `${document.location.code} · ${document.location.label || document.location.name}` : null)
-  const [issueDate, setIssueDate] = useState(dateInput(document?.currentVersion?.issueDate) || new Date().toISOString().slice(0, 10))
-  const [expiryDate, setExpiryDate] = useState(dateInput(document?.currentVersion?.expiryDate))
-  // DOC-03: periodicidad y modo de cálculo del documento; expiryTouched marca
-  // una edición manual del vencimiento (deja de recalcularse) y mountedRef evita
-  // saltar el vencimiento vigente al abrir el modal de gestión.
-  const [periodicity, setPeriodicity] = useState<DocumentPeriodicity | null>(document?.periodicity ?? null)
-  const [periodicityMode, setPeriodicityMode] = useState<DocumentPeriodicityMode>(document?.periodicityMode ?? 'Subida')
-  const [expiryTouched, setExpiryTouched] = useState(false)
-  const mountedRef = useRef(false)
-  const [files, setFiles] = useState<File[]>([])
-  const [saving, setSaving] = useState(false)
-  const writeDisabled = saving || readOnly
-  const [error, setError] = useState<string | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  // Guardia para el visor de vista previa: mientras está abierto, Escape lo
-  // cierra a él (su propio listener) sin cerrar este modal (patrón de AssetModal).
-  const previewOpenRef = useRef(false)
-  // Contenido de la vista previa incrustada: se carga al abrir el documento y
-  // se comparte con el visor (no se vuelve a pedir el fichero al ampliar).
-  // PDF y Excel guardan el blob; imagen y texto conservan objectUrl/text.
-  const [preview, setPreview] = useState<{ objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
-  const [previewError, setPreviewError] = useState(false)
-  const [historyPreview, setHistoryPreview] = useState<{ name?: string; version: number; mimeType: string; objectUrl: string | null; text: string | null; blob: Blob | null } | null>(null)
-  const [previewingTarget, setPreviewingTarget] = useState<string | null>(null)
-  // `current` es el documento con la versión vigente: al subir una nueva
-  // versión se refresca para que la vista previa incrustada, el área según
-  // formato y el visor cambien de inmediato sin reabrir el modal.
-  const [current, setCurrent] = useState<ApiDocument | null>(document)
-  // Vencimiento vigente más reciente: el recálculo en vivo de DOC-04 salta
-  // siempre desde la versión actual, también tras una subida en este modal.
-  const currentExpiryRef = useRef<string | null>(document?.currentVersion?.expiryDate ?? null)
+
   const dialogRef = useRef<HTMLDivElement>(null)
   const initialFocusRef = useRef<HTMLInputElement>(null)
-  const previewUrlRef = useRef<string | null>(null)
-  const historyPreviewUrlRef = useRef<string | null>(null)
-  const previewRequestRef = useRef(0)
+
+  const form = useDocumentForm({
+    projectId,
+    document,
+    initialAssetIds,
+    readOnly,
+    onClose,
+    onChanged,
+  })
+
   const isNew = !document
-  const version = current?.currentVersion
-  const documentId = document?.id
-  const versionNumber = version?.version
-  const previewable = Boolean(version && isViewableMimeType(version.mimeType))
+  const currentDoc = form.current ?? document
+  const currentVersion = currentDoc?.currentVersion
+  const validityStatus = resolveDocumentValidityStatus(currentDoc?.status, currentVersion?.expiryDate)
 
-  useEffect(() => {
-    if (!documentId || !versionNumber) return
-    let active = true
-    setPreview(null)
-    setPreviewError(false)
-    fetchDocumentPreview(projectId, documentId)
-      .then((blob) => {
-        if (!active) return
-        if (isTextMimeType(blob.type)) {
-          void blob.text().then((text) => { if (active) setPreview({ objectUrl: null, text, blob: null }) })
-        } else if (isPdfMimeType(blob.type) || isExcelMimeType(blob.type)) {
-          setPreview({ objectUrl: null, text: null, blob })
-        } else {
-          setPreview({ objectUrl: URL.createObjectURL(blob), text: null, blob: null })
-        }
-      })
-      .catch(() => { if (active) setPreviewError(true) })
-    return () => { active = false }
-  }, [documentId, projectId, versionNumber])
-
-  // El object URL lo crea el efecto de carga y vive mientras exista `preview`.
-  useEffect(() => {
-    previewUrlRef.current = preview?.objectUrl ?? null
-    return () => {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-      previewUrlRef.current = null
-    }
-  }, [preview])
-
-  const openPreview = () => {
-    setHistoryPreview(null)
-    previewOpenRef.current = true
-    setPreviewOpen(true)
-  }
-
-  const closePreview = () => {
-    previewRequestRef.current += 1
-    if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
-    historyPreviewUrlRef.current = null
-    setHistoryPreview(null)
-    previewOpenRef.current = false
-    setPreviewOpen(false)
-  }
-
-  const openVersionPreview = async (historicalVersion: ApiDocumentDetail['versions'][number]) => {
-    if (!document || previewingTarget !== null) return
-    const targetKey = `v-${historicalVersion.version}`
-    const requestId = previewRequestRef.current + 1
-    previewRequestRef.current = requestId
-    setError(null)
-    setPreviewingTarget(targetKey)
-    try {
-      let objectUrl: string | null = null
-      let text: string | null = null
-      let blob: Blob | null = null
-      const previewableVersion = isViewableMimeType(historicalVersion.mimeType)
-      if (previewableVersion) {
-        const previewBlob = await fetchDocumentPreview(projectId, document.id, historicalVersion.version)
-        if (requestId !== previewRequestRef.current) return
-        if (isTextMimeType(previewBlob.type)) text = await previewBlob.text()
-        else if (isPdfMimeType(previewBlob.type) || isExcelMimeType(previewBlob.type)) blob = previewBlob
-        else objectUrl = URL.createObjectURL(previewBlob)
-      }
-      if (requestId !== previewRequestRef.current) {
-        if (objectUrl) URL.revokeObjectURL(objectUrl)
-        return
-      }
-      if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
-      historyPreviewUrlRef.current = objectUrl
-      setHistoryPreview({ name: document.name, version: historicalVersion.version, mimeType: historicalVersion.mimeType, objectUrl, text, blob })
-      previewOpenRef.current = true
-      setPreviewOpen(true)
-    } catch {
-      if (requestId === previewRequestRef.current) setError(`No se pudo abrir la vista previa de la versión ${historicalVersion.version}.`)
-    } finally {
-      if (requestId === previewRequestRef.current) setPreviewingTarget(null)
-    }
-  }
-
-  const openAttachmentPreview = async (targetVersion: number, attachment: { id: number; originalName: string; mimeType: string }) => {
-    if (!document || previewingTarget !== null) return
-    const targetKey = `v-${targetVersion}-att-${attachment.id}`
-    const requestId = previewRequestRef.current + 1
-    previewRequestRef.current = requestId
-    setError(null)
-    setPreviewingTarget(targetKey)
-    try {
-      let objectUrl: string | null = null
-      let text: string | null = null
-      let blob: Blob | null = null
-      const previewableAttachment = isViewableMimeType(attachment.mimeType)
-      if (previewableAttachment) {
-        const previewBlob = await fetchDocumentAttachmentPreview(projectId, document.id, targetVersion, attachment.id)
-        if (requestId !== previewRequestRef.current) return
-        if (isTextMimeType(previewBlob.type)) text = await previewBlob.text()
-        else if (isPdfMimeType(previewBlob.type) || isExcelMimeType(previewBlob.type)) blob = previewBlob
-        else objectUrl = URL.createObjectURL(previewBlob)
-      }
-      if (requestId !== previewRequestRef.current) {
-        if (objectUrl) URL.revokeObjectURL(objectUrl)
-        return
-      }
-      if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
-      historyPreviewUrlRef.current = objectUrl
-      setHistoryPreview({ name: `${document.name} · ${attachment.originalName}`, version: targetVersion, mimeType: attachment.mimeType, objectUrl, text, blob })
-      previewOpenRef.current = true
-      setPreviewOpen(true)
-    } catch {
-      if (requestId === previewRequestRef.current) setError(`No se pudo abrir la vista previa de ${attachment.originalName}.`)
-    } finally {
-      if (requestId === previewRequestRef.current) setPreviewingTarget(null)
-    }
-  }
-
-  useEffect(() => () => {
-    previewRequestRef.current += 1
-    if (historyPreviewUrlRef.current) URL.revokeObjectURL(historyPreviewUrlRef.current)
-  }, [])
+  const preview = useDocumentPreview({
+    projectId,
+    document: currentDoc,
+    currentVersion,
+    onError: form.setError,
+  })
 
   useEffect(() => {
     const previouslyFocused = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving && !previewOpenRef.current) onClose()
+      if (event.key === 'Escape' && !form.saving && !preview.previewOpenRef.current) onClose()
     }
     window.document.addEventListener('keydown', closeOnEscape)
     initialFocusRef.current?.focus()
@@ -215,228 +64,145 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       window.document.removeEventListener('keydown', closeOnEscape)
       previouslyFocused?.focus()
     }
-  }, [onClose, saving])
-
-  useEffect(() => {
-    let active = true
-    fetchDocumentTypes(projectId).then((types) => {
-      if (!active) return
-      setDocumentTypes(types)
-      if (!document && types.length > 0) {
-        setType(types[0].name)
-        setTypeId(types[0].id)
-      } else if (document) {
-        const match = types.find((t) => (document.typeId && t.id === document.typeId) || t.name.toLowerCase() === document.type.toLowerCase())
-        if (match) {
-          setType(match.name)
-          setTypeId(match.id)
-        } else {
-          setType(document.type)
-          setTypeId(document.typeId ?? null)
-        }
-      }
-    }).catch(() => {})
-    return () => { active = false }
-  }, [projectId, document])
-
-  useEffect(() => {
-    if (!document) return
-    let active = true
-    fetchDocument(projectId, document.id).then((next) => active && setDetail(next)).catch(() => active && setError('No se pudo cargar el historial de versiones.'))
-    return () => { active = false }
-  }, [document, projectId])
-
-  // DOC-03: precalcula el vencimiento con la periodicidad cuando cambian la
-  // regla, el modo o la emisión (salvo edición manual del propio campo).
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true
-      return
-    }
-    if (!periodicity || expiryTouched) return
-    const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
-    setExpiryDate(calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10))
-  }, [periodicity, periodicityMode, issueDate, expiryTouched])
-
-  const metadata = (): DocumentMetadataInput => ({
-    name,
-    type,
-    typeId: typeId ?? undefined,
-    projectId,
-    assetIds: assets.map((asset) => asset.id),
-    locationId: locationId ?? undefined,
-    issueDate,
-    expiryDate: expiryDate || undefined,
-    periodicity: periodicity || undefined,
-    periodicityMode: periodicity ? periodicityMode : undefined,
-  })
-
-  const searchAssets = async (query: string): Promise<SearchableOption[]> => {
-    const res = await fetchAssets(projectId, { search: query || undefined, limit: 20 })
-    return res.data.map((asset) => ({ value: String(asset.id), label: `${asset.code} · ${asset.name}`, hint: asset.location?.name }))
-  }
-
-  const searchLocationOptions = async (query: string): Promise<SearchableOption[]> => {
-    const response = await searchLocations(projectId, query)
-    return response.data.map((location) => ({ value: String(location.id), label: `${location.code} · ${location.label || location.name}`, hint: location.name }))
-  }
-
-  const save = async () => {
-    if (readOnly) return
-    setError(null)
-    if (isNew && files.length === 0) return setError('Selecciona al menos un fichero para subir el documento.')
-    setSaving(true)
-    try {
-      if (isNew && files.length > 0) await createDocument(projectId, metadata(), files)
-      if (!isNew && document) await updateDocument(projectId, document.id, { name, type, typeId: typeId ?? undefined, assetIds: assets.map((asset) => asset.id), locationId, issueDate, expiryDate: expiryDate || undefined, periodicity: periodicity ? periodicity : undefined, periodicityMode: periodicity ? periodicityMode : undefined })
-      await onChanged()
-      onClose()
-    } catch {
-      setError('No se pudo guardar el documento. Revisa los datos e inténtalo de nuevo.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const uploadNewVersion = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (readOnly) return
-    const nextFiles = Array.from(event.target.files ?? [])
-    if (!document || nextFiles.length === 0) return
-    setError(null)
-    setSaving(true)
-    try {
-      // DOC-03: al subir una versión con periodicidad y sin edición manual del
-      // vencimiento, la nueva fecha se calcula según el modo elegido.
-      let nextExpiry = expiryDate
-      if (periodicity && !expiryTouched) {
-        const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
-        nextExpiry = calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10)
-      }
-      await createDocumentVersion(projectId, document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFiles)
-      const next = await fetchDocument(projectId, document.id)
-      setCurrent(next)
-      setDetail(next)
-      // La versión vigente cambió: la vista previa incrustada se recarga sola
-      // (efecto con `versionNumber`) y el formulario refleja la nueva versión.
-      currentExpiryRef.current = next.currentVersion?.expiryDate ?? null
-      if (next.currentVersion) {
-        setIssueDate(dateInput(next.currentVersion.issueDate))
-        setExpiryDate(dateInput(next.currentVersion.expiryDate))
-      }
-      await onChanged()
-    } catch {
-      setError('No se pudo subir la nueva versión.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const modalPreview = historyPreview ?? (current?.currentVersion && preview
-    ? { name: current.name, version: current.currentVersion.version, mimeType: current.currentVersion.mimeType, objectUrl: preview.objectUrl, text: preview.text, blob: preview.blob }
-    : null)
+  }, [onClose, form.saving, preview.previewOpenRef])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(event) => event.target === event.currentTarget && !saving && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="document-dialog-title" tabIndex={-1} className="flex min-h-0 max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none">
-        <div className="shrink-0 p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div><h2 id="document-dialog-title" className="font-semibold text-lg">{isNew ? 'Subir documento' : 'Gestionar documento'}</h2>{readOnly && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Proyecto archivado: la información se conserva en modo solo lectura.</p>}</div>
-          <button type="button" aria-label="Cerrar" onClick={onClose} disabled={saving} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40">×</button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-5 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="text-sm">Nombre<input ref={initialFocusRef} value={name} onChange={(event) => setName(event.target.value)} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
-            <label className="text-sm">Tipo<select id="doc-type" value={typeId !== null ? String(typeId) : type} onChange={(event) => {
-              const selected = documentTypes.find((t) => String(t.id) === event.target.value || t.name === event.target.value)
-              if (selected) {
-                setType(selected.name)
-                setTypeId(selected.id)
-              } else {
-                setType(event.target.value)
-                setTypeId(null)
-              }
-            }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{documentTypes.map((dt) => <option key={dt.id} value={String(dt.id)}>{dt.name}</option>)}{type && !documentTypes.some((dt) => (typeId !== null && dt.id === typeId) || dt.name.toLowerCase() === type.toLowerCase()) && <option value={type}>{type}</option>}</select></label>
-            <label className="text-sm">Activos asociados<SearchableMultiPicker values={assets} ariaLabel="Activos asociados" placeholder="Buscar activos por nombre o código…" disabled={writeDisabled} onSearch={searchAssets} onChange={setAssets} /></label>
-            <label className="text-sm">Ubicación asociada<SearchablePicker value={locationId === null ? null : String(locationId)} selectedLabel={locationLabel} ariaLabel="Ubicación asociada" placeholder="Buscar ubicación por nombre o código…" disabled={writeDisabled} allowClear clearLabel="Sin ubicación" onSearch={searchLocationOptions} onSelect={(option) => { setLocationId(option ? Number(option.value) : null); setLocationLabel(option?.label ?? null) }} /></label>
-            <label className="text-sm">Emisión<input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" /></label>
-            <label className="text-sm">Vencimiento (opcional)<input type="date" value={expiryDate} onChange={(event) => { setExpiryDate(event.target.value); setExpiryTouched(true) }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2" />{periodicity && !expiryTouched && <span className="block mt-1 text-xs text-slate-500 dark:text-slate-400">Automático: {periodicity.toLowerCase()} · {periodicityMode === 'Calendario' ? 'según vencimiento vigente' : 'según fecha de subida'}</span>}</label>
-            <label className="text-sm">Periodicidad<select value={periodicity ?? ''} onChange={(event) => { setPeriodicity(event.target.value === '' ? null : event.target.value as DocumentPeriodicity); setExpiryTouched(false) }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">{periodicityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            {periodicity && <label className="text-sm">Modo<select value={periodicityMode} onChange={(event) => { setPeriodicityMode(event.target.value as DocumentPeriodicityMode); setExpiryTouched(false) }} disabled={writeDisabled} className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"><option value="Calendario">Según calendario</option><option value="Subida">Según subida</option></select></label>}
-            {isNew && <label className="text-sm">Fichero<input type="file" multiple accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} disabled={writeDisabled} className="mt-1 block w-full text-xs" /><span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Puedes seleccionar varios archivos para una misma entrega.</span>{files.length > 1 && <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{files.length} archivos seleccionados</span>}</label>}
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-3 sm:p-5"
+      onClick={(event) => event.target === event.currentTarget && !form.saving && onClose()}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="document-dialog-title"
+        tabIndex={-1}
+        className="flex min-h-0 max-h-[92vh] w-full max-w-5xl 2xl:max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none"
+      >
+        <DocumentHeader
+          isNew={isNew}
+          name={currentDoc?.name ?? form.name}
+          type={form.type}
+          versionNumber={currentVersion?.version}
+          validityStatus={validityStatus}
+          readOnly={readOnly}
+          saving={form.saving}
+          onClose={onClose}
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-0 flex-1 overflow-y-auto lg:overflow-hidden divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+          {/* Columna Izquierda: Formulario de metadatos (42% en desktop) */}
+          <div className="lg:col-span-5 p-5 min-h-0 overflow-y-auto scrollbar-thin">
+            <DocumentFormFields
+              initialFocusRef={initialFocusRef}
+              name={form.name}
+              setName={form.setName}
+              typeId={form.typeId}
+              setTypeId={form.setTypeId}
+              type={form.type}
+              setType={form.setType}
+              documentTypes={form.documentTypes}
+              assets={form.assets}
+              setAssets={form.setAssets}
+              onSearchAssets={form.searchAssets}
+              locationId={form.locationId}
+              locationLabel={form.locationLabel}
+              onSelectLocation={(opt) => {
+                form.setLocationId(opt ? Number(opt.value) : null)
+                form.setLocationLabel(opt?.label ?? null)
+              }}
+              onSearchLocations={form.searchLocationOptions}
+              issueDate={form.issueDate}
+              setIssueDate={form.setIssueDate}
+              expiryDate={form.expiryDate}
+              setExpiryDate={form.setExpiryDate}
+              periodicity={form.periodicity}
+              setPeriodicity={form.setPeriodicity}
+              periodicityMode={form.periodicityMode}
+              setPeriodicityMode={form.setPeriodicityMode}
+              expiryTouched={form.expiryTouched}
+              setExpiryTouched={form.setExpiryTouched}
+              isNew={isNew}
+              files={form.files}
+              setFiles={form.setFiles}
+              writeDisabled={form.writeDisabled}
+            />
           </div>
-          {!isNew && current?.currentVersion && <div>
-            <h3 className="font-medium text-sm mb-2">Vista previa</h3>
-            {previewable ? (
-              preview ? (
-                <div role="button" tabIndex={0} aria-label={`Abrir vista previa de ${current.name}`} onClick={openPreview} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPreview() } }} className="cursor-pointer overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 hover:ring-2 hover:ring-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500">
-                  <DocumentPreviewBody name={current.name} mimeType={current.currentVersion.mimeType} objectUrl={preview.objectUrl} text={preview.text} blob={preview.blob} compact />
-                </div>
-              ) : previewError ? (
-                <p role="alert" className="text-sm text-red-600 dark:text-red-400">No se pudo cargar la vista previa.</p>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">Cargando vista previa…</p>
-              )
-            ) : (
-              <div className="select-none cursor-not-allowed rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-6 text-center text-sm text-slate-400">Sin vista previa para este formato. Descarga el archivo para visualizarlo.</div>
+
+          {/* Columna Derecha: Vista previa e Historial de versiones (58% en desktop) */}
+          <div className="lg:col-span-7 p-5 min-h-0 overflow-y-auto scrollbar-thin space-y-5 bg-slate-50/30 dark:bg-slate-900/40 flex flex-col">
+            <div className="shrink-0">
+              <DocumentPreviewPane
+                activePreview={preview.activePreviewItem}
+                loading={preview.previewLoading}
+                error={preview.previewError}
+                isNew={isNew}
+                hasNewFiles={form.files.length > 0}
+                onResetToCurrent={() => preview.closePreview()}
+                onExpand={preview.openPreview}
+              />
+            </div>
+
+            {!isNew && (
+              <div className="flex-1 min-h-0">
+                <DocumentVersionsList
+                  currentVersion={currentVersion ?? null}
+                  detail={form.detail}
+                  activeTargetKey="current"
+                  previewingTarget={preview.previewingTarget}
+                  saving={form.saving}
+                  readOnly={readOnly}
+                  onSelectCurrent={preview.openPreview}
+                  onSelectVersion={preview.openVersionPreview}
+                  onSelectAttachment={preview.openAttachmentPreview}
+                  onDownloadVersion={(v) => void downloadDocument(projectId, currentDoc!.id, v)}
+                  onDownloadAttachment={(v, attId) => void downloadDocumentAttachment(projectId, currentDoc!.id, v, attId)}
+                  onUploadNewVersion={form.uploadNewVersion}
+                />
+              </div>
             )}
-          </div>}
-          {!isNew && current?.currentVersion && current.currentVersion.attachments && current.currentVersion.attachments.length > 0 && <div><h3 className="mb-2 text-sm font-medium">Archivos complementarios de la entrega</h3><ul className="space-y-1 text-sm">{current.currentVersion.attachments.map((attachment) => {
-            const isPreviewing = previewingTarget === `v-${current.currentVersion!.version}-att-${attachment.id}`
-            return (
-              <li key={attachment.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50">
-                <span className="min-w-0 truncate" title={attachment.originalName}>{attachment.originalName}</span>
-                <span className="flex shrink-0 items-center gap-3">
-                  <button
-                    type="button"
-                    aria-label={`Ver ${attachment.originalName}`}
-                    disabled={previewingTarget !== null}
-                    className="text-brand-600 disabled:opacity-40"
-                    onClick={() => void openAttachmentPreview(current.currentVersion!.version, attachment)}
-                  >
-                    {isPreviewing ? 'Abriendo…' : 'Ver'}
-                  </button>
-                  <button
-                    type="button"
-                    className="shrink-0 text-brand-600"
-                    onClick={() => void downloadDocumentAttachment(projectId, current.id, current.currentVersion!.version, attachment.id)}
-                  >
-                    Descargar
-                  </button>
-                </span>
-              </li>
-            )
-          })}</ul></div>}
-          {!isNew && document && <div className="flex flex-wrap items-center gap-2">{!readOnly && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><span>Subir nueva versión</span><input type="file" multiple aria-label="Nueva versión" accept=".pdf,.xlsx,.xls,.txt,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/plain,image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { void uploadNewVersion(event); event.currentTarget.value = '' }} disabled={saving} className="sr-only" /></label>}<button type="button" onClick={() => void downloadDocument(projectId, document.id)} disabled={saving} className="px-3 py-2 rounded-lg text-brand-600 text-sm">Descargar archivo principal</button></div>}
-          {detail && document && <div><h3 className="font-medium text-sm mb-2">Historial de versiones</h3><ul className="space-y-1 text-sm">{detail.versions.map((historyVersion) => <li key={historyVersion.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"><div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate" title={historyVersion.originalName}>v{historyVersion.version} · {historyVersion.originalName}{historyVersion.attachments && historyVersion.attachments.length > 0 ? ` + ${historyVersion.attachments.length} adjunto(s)` : ''}</span><span className="flex shrink-0 items-center gap-3"><button type="button" aria-label={`Ver v${historyVersion.version}`} disabled={previewingTarget !== null} className="text-brand-600 disabled:opacity-40" onClick={() => void openVersionPreview(historyVersion)}>{previewingTarget === `v-${historyVersion.version}` ? 'Abriendo…' : 'Ver'}</button><button type="button" aria-label={`Descargar v${historyVersion.version}`} className="text-brand-600" onClick={() => void downloadDocument(projectId, document.id, historyVersion.version)}>Descargar</button></span></div>{historyVersion.attachments && historyVersion.attachments.length > 0 && <ul className="mt-1 space-y-1 border-t border-slate-200 pt-1 text-xs dark:border-slate-700">{historyVersion.attachments.map((attachment) => {
-            const isPreviewing = previewingTarget === `v-${historyVersion.version}-att-${attachment.id}`
-            return (
-              <li key={attachment.id} className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate">{attachment.originalName}</span>
-                <span className="flex shrink-0 items-center gap-3">
-                  <button
-                    type="button"
-                    aria-label={`Ver ${attachment.originalName}`}
-                    disabled={previewingTarget !== null}
-                    className="text-brand-600 disabled:opacity-40"
-                    onClick={() => void openAttachmentPreview(historyVersion.version, attachment)}
-                  >
-                    {isPreviewing ? 'Abriendo…' : 'Ver'}
-                  </button>
-                  <button
-                    type="button"
-                    className="shrink-0 text-brand-600"
-                    onClick={() => void downloadDocumentAttachment(projectId, document.id, historyVersion.version, attachment.id)}
-                  >
-                    Descargar
-                  </button>
-                </span>
-              </li>
-            )
-          })}</ul>}</li>)}</ul></div>}
-          {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          </div>
         </div>
-        <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">Cerrar</button>{!readOnly && <button type="button" onClick={() => void save()} disabled={saving} className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium disabled:opacity-40">{saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}</button>}</div>
+
+        {/* Footer del diálogo */}
+        <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-900/80">
+          <div className="min-w-0 flex-1">
+            {form.error && <p role="alert" className="text-sm font-medium text-red-600 dark:text-red-400 truncate">{form.error}</p>}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={form.saving}
+              className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
+              Cerrar
+            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => void form.save()}
+                disabled={form.saving}
+                className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium transition-colors shadow-sm disabled:opacity-40"
+              >
+                {form.saving ? 'Guardando…' : isNew ? 'Subir documento' : 'Guardar cambios'}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-      {previewOpen && modalPreview && current && <DocumentPreviewModal name={modalPreview.name ?? current.name} version={modalPreview.version} mimeType={modalPreview.mimeType} objectUrl={modalPreview.objectUrl} text={modalPreview.text} blob={modalPreview.blob} onClose={closePreview} />}
+
+      {preview.previewOpen && preview.modalPreview && currentDoc && (
+        <DocumentPreviewModal
+          name={preview.modalPreview.name ?? currentDoc.name}
+          version={preview.modalPreview.version}
+          mimeType={preview.modalPreview.mimeType}
+          objectUrl={preview.modalPreview.objectUrl}
+          text={preview.modalPreview.text}
+          blob={preview.modalPreview.blob}
+          onClose={preview.closePreview}
+        />
+      )}
     </div>
   )
 }
