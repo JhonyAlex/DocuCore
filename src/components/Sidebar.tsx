@@ -52,10 +52,10 @@ export default function Sidebar() {
       className={`relative flex shrink-0 flex-col overflow-visible border-r border-slate-200 bg-white transition-[width] duration-200 dark:border-slate-800 dark:bg-slate-900 ${collapsed ? 'w-16 cursor-e-resize' : 'w-64'}`}
     >
       <div className={`flex items-center border-b border-slate-200 py-4 dark:border-slate-800 ${collapsed ? 'justify-center px-2' : 'gap-3 px-5'}`}>
-        <img src="/logo.png" className="h-9 w-9 rounded-lg" alt="DocuCore" />
+        <img src="/icon.png" className="h-9 w-9 rounded-lg" alt="Report Map Online" />
         <div className={collapsed ? 'hidden' : ''}>
-          <div className="font-semibold tracking-tight">DocuCore</div>
-          <div className="-mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Gestión Documental · v0.1</div>
+          <div className="font-semibold tracking-tight">Report Map Online</div>
+          <div className="-mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Gestión de Activos y Planos · v0.1</div>
         </div>
         <button type="button" onClick={toggle} aria-label={collapsed ? 'Desplegar panel lateral' : 'Plegar panel lateral'} aria-pressed={collapsed} title={collapsed ? 'Desplegar panel lateral' : 'Plegar panel lateral'} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 ${collapsed ? 'absolute right-1 top-1' : 'ml-auto'}`}>
           <svg className={`h-3.5 w-3.5 transition-transform ${collapsed ? '' : 'rotate-180'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>

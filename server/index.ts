@@ -238,7 +238,7 @@ app.use(errorHandler)
 
 export function startServer(port: number | string = process.env.PORT ?? 3001) {
   return app.listen(port, () => {
-    console.log(`DocuCore API listening on port ${port}`)
+    console.log(`Report Map Online API listening on port ${port}`)
   })
 }
 

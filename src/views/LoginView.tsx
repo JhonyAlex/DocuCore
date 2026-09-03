@@ -32,7 +32,7 @@ export default function LoginView() {
   return <main className="flex min-h-screen items-center justify-center bg-slate-50 p-5 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
     <button type="button" onClick={toggle} className="absolute right-5 top-5 rounded-lg p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800" aria-label="Cambiar tema">{isDark ? '☀' : '☾'}</button>
     <form onSubmit={(event) => void submit(event)} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
-      <div className="mb-7 flex items-center gap-3"><Link to="/"><img src="/logo.png" className="h-11 w-11 rounded-xl" alt="Report Map Online" /></Link><div><h1 className="text-xl font-semibold tracking-tight">Report Map Online</h1><p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Accede a tus proyectos y planos industriales.</p></div></div>
+      <div className="mb-7 flex items-center gap-3"><Link to="/"><img src="/icon.png" className="h-11 w-11 rounded-xl" alt="Report Map Online" /></Link><div><h1 className="text-xl font-semibold tracking-tight">Report Map Online</h1><p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Accede a tus proyectos y planos industriales.</p></div></div>
       {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
       <div className="space-y-4">
         <div>

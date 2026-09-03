@@ -248,7 +248,7 @@ export default function AccountView() {
               className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 cursor-not-allowed dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
             />
             <span className="mt-1 block text-[11px] text-slate-400">
-              El correo electrónico identifica tu cuenta de acceso a DocuCore.
+              El correo electrónico identifica tu cuenta de acceso a Report Map Online.
             </span>
           </label>
 

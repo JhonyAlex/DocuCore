@@ -16,7 +16,7 @@ export default function LandingView() {
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/80">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-3">
-            <img src="/logo.png" className="h-9 w-9 rounded-xl shadow-sm" alt="Report Map Online" />
+            <img src="/icon.png" className="h-9 w-9 rounded-xl shadow-sm" alt="Report Map Online" />
             <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
               Report Map Online
             </span>

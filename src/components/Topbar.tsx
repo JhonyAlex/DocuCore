@@ -19,7 +19,7 @@ export default function Topbar() {
   const [searchOpen, setSearchOpen] = useState(false)
   const scopedPath = location.pathname.replace(/^\/projects\/\d+/, '') || '/dashboard'
   const label = pageLabels[scopedPath] ?? routeLabels[scopedPath] ?? 'Panel general'
-  const description = pageDescriptions[scopedPath] ?? 'Espacio de trabajo DocuCore'
+  const description = pageDescriptions[scopedPath] ?? 'Espacio de trabajo Report Map Online'
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -45,7 +45,7 @@ export default function Topbar() {
     <>
       <header className="grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-200 bg-white/80 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 md:px-6">
         <div className="flex min-w-0 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-          <span className="hidden sm:inline">DocuCore</span>
+          <span className="hidden sm:inline">Report Map Online</span>
           <svg className="hidden h-3 w-3 opacity-50 sm:inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
           <span className="truncate font-medium text-slate-800 dark:text-slate-200">{label}</span>
         </div>

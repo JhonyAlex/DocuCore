@@ -37,7 +37,7 @@ export default function ForgotPasswordView() {
 
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
         <div className="mb-6 flex items-center gap-3">
-          <img src="/logo.png" className="h-10 w-10 rounded-xl" alt="Report Map Online" />
+          <img src="/icon.png" className="h-10 w-10 rounded-xl" alt="Report Map Online" />
           <div>
             <h1 className="text-lg font-bold tracking-tight">Recuperar contraseña</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">Report Map Online</p>

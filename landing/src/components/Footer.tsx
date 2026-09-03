@@ -10,7 +10,7 @@ export default function Footer() {
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 pb-8 border-b border-slate-100 dark:border-slate-900">
           <div className="max-w-sm">
             <div className="flex items-center gap-2.5">
-              <img src="/logo.png" className="h-7 w-7 rounded-lg" alt="Report Map Online" />
+              <img src="/icon.png" className="h-7 w-7 rounded-lg" alt="Report Map Online" />
               <span className="text-sm font-bold text-slate-900 dark:text-white">Report Map Online</span>
             </div>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">

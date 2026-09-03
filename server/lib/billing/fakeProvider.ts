@@ -14,7 +14,7 @@ import type {
 type FakeSchedule = { workspaceId: number; transitionId: string; managedBy: "docucore" }
 
 function fakeScheduleConflict(): Error & { status: number; code: string } {
-  return Object.assign(new Error("La suscripción ya tiene una programación Stripe no gestionada por DocuCore."), { status: 409, code: "STRIPE_SCHEDULE_CONFLICT" })
+  return Object.assign(new Error("La suscripción ya tiene una programación Stripe no gestionada por Report Map Online."), { status: 409, code: "STRIPE_SCHEDULE_CONFLICT" })
 }
 
 export class FakeBillingProvider implements BillingProvider {
@@ -145,7 +145,7 @@ export class FakeBillingProvider implements BillingProvider {
                 userId: zombie.actorId,
                 action: "Transición de plan cancelada (schedule liberado)",
                 entityId: `plan-transition:${zombie.id}`,
-                detail: JSON.stringify({ scheduleId: ws.stripeScheduleId, motivo: "schedule DocuCore liberado por cambio a Pro" }),
+                detail: JSON.stringify({ scheduleId: ws.stripeScheduleId, motivo: "schedule Report Map Online liberado por cambio a Pro" }),
                 timestamp: new Date(),
               },
             })

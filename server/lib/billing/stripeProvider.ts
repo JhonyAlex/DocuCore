@@ -356,14 +356,14 @@ export class StripeBillingProvider implements BillingProvider {
                   userId: zombie.actorId,
                   action: "Transición de plan cancelada (schedule liberado)",
                   entityId: `plan-transition:${zombie.id}`,
-                  detail: JSON.stringify({ scheduleId, motivo: "schedule DocuCore liberado por cambio a Pro" }),
+                  detail: JSON.stringify({ scheduleId, motivo: "schedule Report Map Online liberado por cambio a Pro" }),
                   timestamp: new Date(),
                 },
               })
             }
           }
         } else {
-          throw scheduleConflict("La suscripción ya tiene una programación Stripe no gestionada por DocuCore.")
+          throw scheduleConflict("La suscripción ya tiene una programación Stripe no gestionada por Report Map Online.")
         }
       }
 
@@ -462,7 +462,7 @@ export class StripeBillingProvider implements BillingProvider {
             throw scheduleConflict("La suscripción ya tiene una programación Stripe no gestionada por DocuCore.")
           }
           if (!scheduleTransitionMatches(schedule, params.transitionId)) {
-            throw scheduleConflict("La programación DocuCore existente pertenece a otra transición y requiere resolución explícita.")
+            throw scheduleConflict("La programación Report Map Online existente pertenece a otra transición y requiere resolución explícita.")
           }
         }
       } else {

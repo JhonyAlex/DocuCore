@@ -22,10 +22,10 @@ export default function ProjectsSelectionLayout() {
       <TrialBanner />
       <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/80 px-6 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" className="h-9 w-9 rounded-lg" alt="DocuCore" />
+          <img src="/icon.png" className="h-9 w-9 rounded-lg" alt="Report Map Online" />
           <div>
-            <div className="font-semibold tracking-tight">DocuCore</div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 -mt-0.5">Gestión Documental y de Activos</div>
+            <div className="font-semibold tracking-tight">Report Map Online</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 -mt-0.5">Gestión de Activos y Planos</div>
           </div>
         </div>
 

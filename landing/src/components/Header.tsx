@@ -7,7 +7,7 @@ export default function Header() {
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/85">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-3 group">
-          <img src="/logo.png" className="h-9 w-9 rounded-xl shadow-sm transition-transform group-hover:scale-105" alt="Report Map Online Logo" />
+          <img src="/icon.png" className="h-9 w-9 rounded-xl shadow-sm transition-transform group-hover:scale-105" alt="Report Map Online Logo" />
           <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
             Report Map Online
           </span>

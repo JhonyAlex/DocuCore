@@ -1,6 +1,6 @@
-# DocuCore
+# Report Map Online
 
-DocuCore es una plataforma de gestión documental y activos industriales. La interfaz React replica el HTML aprobado y los activos se gestionan mediante Express, Prisma y PostgreSQL.
+Report Map Online es una plataforma de gestión documental, inventario de activos industriales, mantenimiento preventivo y planos interactivos con Deep Zoom.
 
 ## Inicio rápido
 
