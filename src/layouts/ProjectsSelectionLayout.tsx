@@ -25,7 +25,6 @@ export default function ProjectsSelectionLayout() {
           <img src="/icon.png" className="h-9 w-9 rounded-lg" alt="Report Map Online" />
           <div>
             <div className="font-semibold tracking-tight">Report Map Online</div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 -mt-0.5">Gestión de Activos y Planos</div>
           </div>
         </div>
 
@@ -95,6 +94,9 @@ export default function ProjectsSelectionLayout() {
           <Outlet />
         </div>
       </main>
+      <footer className="border-t border-slate-200 py-3 px-6 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+        Gestión de Activos y Planos · v0.1
+      </footer>
       <PlanComplianceGate />
     </div>
   )

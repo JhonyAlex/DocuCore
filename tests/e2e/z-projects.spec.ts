@@ -83,10 +83,23 @@ test.describe('PROJ-01 proyectos', () => {
     await card.hover()
     await card.getByRole('button', { name: 'Archivar' }).click()
     await page.getByRole('button', { name: 'Archivar' }).last().click()
+    // El proyecto archivado debe ocultarse del panel de proyectos activos
+    await expect(card).toHaveCount(0)
+
+    // Acceder al apartado de proyectos archivados
+    await page.getByRole('button', { name: 'Archivados' }).click()
+    await expect(card).toBeVisible()
     await expect(card).toContainText('Archivo')
+
+    // Reactivar el proyecto desde archivados
     await card.hover()
     await card.getByRole('button', { name: 'Reactivar' }).click()
     await page.getByRole('button', { name: 'Reactivar' }).last().click()
+    await expect(card).toHaveCount(0)
+
+    // Al volver a proyectos activos, el proyecto reactivado vuelve a mostrarse
+    await page.getByRole('button', { name: 'Proyectos activos' }).click()
+    await expect(card).toBeVisible()
     await expect(card).toContainText('Activo')
     expect(consoleIssues).toEqual([])
   })
