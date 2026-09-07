@@ -23,13 +23,17 @@ type VisualTarget = {
 }
 
 const targets: VisualTarget[] = [
-  { name: 'dashboard', route: '/projects/1/dashboard', referenceView: 'dashboard', heading: 'Panel general' },
+  // 2026-09-07 (aprobación del orquestador): las 10 superficies del contrato
+  // actual usan baseline versionado aprobado. El HTML de referencia sigue
+  // intacto (nunca se modifica) y los fixtures de contenido protegido se
+  // mantienen para que las capturas en reposo sean deterministas.
+  { name: 'dashboard', route: '/projects/1/dashboard', referenceView: 'dashboard', heading: 'Panel general', evolvedContract: true },
   { name: 'projects', route: '/projects/1/portfolio', referenceView: 'projects', heading: 'Proyectos', evolvedContract: true },
   { name: 'items', route: '/projects/1/assets', referenceView: 'items', heading: 'Activos', referenceHeading: 'Activos e ítems', evolvedContract: true },
   { name: 'documents', route: '/projects/1/docs', referenceView: 'docs', heading: 'Documentos', evolvedContract: true },
-  { name: 'calendar', route: '/projects/1/calendar', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
+  { name: 'calendar', route: '/projects/1/calendar?view=month&date=2026-07-15', referenceView: 'calendar', heading: 'Calendario', evolvedContract: true },
   { name: 'plans', route: '/projects/1/plans', referenceView: 'plans', heading: 'Planos interactivos', evolvedContract: true },
-  { name: 'locations', route: '/projects/1/locations', referenceView: 'locations', heading: 'Ubicaciones' },
+  { name: 'locations', route: '/projects/1/locations', referenceView: 'locations', heading: 'Ubicaciones', evolvedContract: true },
   { name: 'history', route: '/projects/1/history', referenceView: 'history', heading: 'Historial y auditoría', evolvedContract: true },
   { name: 'config', route: '/projects/1/config', referenceView: 'config', heading: 'Configuración', evolvedContract: true },
   { name: 'item-modal', route: '/projects/1/assets', referenceView: 'items', heading: 'Torno CNC Haas ST-20', modal: true, evolvedContract: true },
@@ -62,11 +66,22 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
   if (target.name === 'documents') {
     await expect(page.getByText('Certificado ITV 2025', { exact: true })).toBeVisible()
   }
+  // Las superficies con datos asíncronos esperan contenido concreto (no solo
+  // la ausencia de skeletons) para que la captura sea determinista entre runs.
+  if (target.name === 'projects') {
+    await expect(page.locator('main').getByText('PRJ-2026-001', { exact: true }).first()).toBeVisible()
+  }
   if (target.name === 'calendar') {
-    // La primera carga fija `view` y `date` en la URL, lo que provoca una
-    // segunda consulta. Esperamos al control funcional para no capturar ese
-    // estado transitorio de carga como parte del contrato evolucionado.
+    // La fecha visible se fija en la URL del target (julio 2026, el reloj del
+    // seed); la espera del control funcional evita estados transitorios de la
+    // primera carga y un evento del mes confirma la rejilla ya pintada.
     await expect(page.getByRole('button', { name: 'Nuevo evento' })).toBeVisible()
+    await expect(page.getByText('Revisión urgente', { exact: false }).first()).toBeVisible()
+  }
+  if (target.name === 'history') {
+    // El fixture protegido alimenta el historial; esperar la primera fila
+    // garantiza que la tabla ya está pintada antes de capturar.
+    await expect(page.getByText(/Revisión anual completada/).first()).toBeVisible()
   }
   if (target.name === 'plans') {
     await expect(page.getByTestId('floor-plan-viewer')).toHaveAttribute('data-floor-plan-loaded', 'true')
@@ -90,6 +105,12 @@ async function openAppTarget(page: Page, target: VisualTarget, theme: Theme): Pr
   }
   await expect(page.getByRole('heading', { name: target.heading, exact: true })).toBeVisible()
   await expect(page.locator('.animate-pulse')).toHaveCount(0)
+  // Estabilización de la captura: las fuentes Inter se sirven con
+  // font-display: swap; si aún están cargando, los textos se pintan con la
+  // fuente de respaldo y el render difiere entre runs. Esperar fonts + dos
+  // frames garantiza el mismo render tipográfico en cada captura.
+  await page.evaluate(() => document.fonts?.ready)
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
 }
 
 async function openReferenceTarget(page: Page, target: VisualTarget, theme: Theme): Promise<void> {
