@@ -895,9 +895,15 @@ model Notification {
 
 // COM-01: comentarios multilínea sobre Activos o Documentos. Una fila se
 // asocia siempre a una única entidad (`assetId` XOR `documentId`), nunca a
-// ambas; la exclusividad se valida en la API. El borrado del activo,
-// documento, proyecto o autor arrastra sus comentarios (Cascade), como el
-// resto de contenido dependiente.
+// ambas; la exclusividad se valida en la API Y en la base de datos mediante
+// el CHECK `Comment_host_xor_check` (`num_nonnulls("assetId","documentId") = 1`)
+// creado en la migración 20260907120000_comments.
+// ⚠ Prisma no modela CHECKs nativamente: este constraint NO aparece en el DDL
+// que genera Prisma. Si una migración futura regenera esta tabla (reset del
+// esquema, split, etc.) debe volver a añadirlo explícitamente, igual que la
+// nota al inicio de esa migración. El borrado del activo, documento, proyecto
+// o autor arrastra sus comentarios (Cascade), como el resto de contenido
+// dependiente.
 model Comment {
   id         Int      @id @default(autoincrement())
   projectId  Int

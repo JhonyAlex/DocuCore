@@ -1,4 +1,10 @@
 
+-- COM-01: comentarios sobre Activos o Documentos (nunca ambos, nunca ninguno).
+-- La exclusividad se garantiza en la BD con un CHECK sobre los ids de las
+-- entidades anfitrionas: num_nonnulls = 1 exige exactamente un anfitrión.
+-- ⚠ Prisma no modela CHECKs nativamente: si una migración futura regenera
+-- esta tabla (p. ej. un reset del esquema), debe volver a añadir esta
+-- constraint; el modelo `Comment` en prisma/schema.prisma lo documenta.
 -- CreateTable
 CREATE TABLE "Comment" (
     "id" SERIAL NOT NULL,
@@ -10,7 +16,8 @@ CREATE TABLE "Comment" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Comment_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Comment_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "Comment_host_xor_check" CHECK (num_nonnulls("assetId", "documentId") = 1)
 );
 
 -- CreateIndex
