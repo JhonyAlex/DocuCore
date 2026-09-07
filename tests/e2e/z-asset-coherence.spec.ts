@@ -23,9 +23,16 @@ test.describe('coherencia funcional de la ficha del activo', () => {
 
     await assetDialog.getByRole('button', { name: 'Resumen' }).click()
     await expect(assetDialog.getByText('Progreso de tareas', { exact: false })).toHaveCount(0)
-    await assetDialog.getByRole('button', { name: 'Ver', exact: true }).first().click()
-    await expect(page.getByRole('dialog', { name: 'Gestionar documento' })).toBeVisible()
-    await page.getByRole('dialog', { name: 'Gestionar documento' }).getByRole('button', { name: 'Cerrar' }).click()
+    // La fila de «Documentos recientes» abre la gestión del documento
+    // asociado a CNC-05 (seed canónico «Manual técnico Haas ST-20»); el
+    // diálogo se titula con el nombre del documento.
+    const manageDocumentButton = assetDialog.getByRole('button', { name: 'Gestionar Manual técnico Haas ST-20' })
+    await expect(manageDocumentButton).toBeVisible()
+    await manageDocumentButton.click()
+    const documentDialog = page.getByRole('dialog', { name: 'Manual técnico Haas ST-20' })
+    await expect(documentDialog).toBeVisible()
+    await documentDialog.getByRole('button', { name: 'Cerrar' }).last().click()
+    await expect(documentDialog).toBeHidden()
 
     await assetDialog.getByRole('button', { name: /^Eventos/ }).click()
     await assetDialog.getByRole('button', { name: 'Ver preventivo' }).click()

@@ -154,7 +154,8 @@ test.describe.serial('trash and modal fixes', () => {
 
     await page.goto('/docs')
     await page.locator('tbody tr', { hasText: 'Documento portal QA' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    // El diálogo de gestión se titula con el nombre del documento.
+    const dialog = page.getByRole('dialog', { name: 'Documento portal QA' })
     await expect(dialog).toBeVisible()
 
     // El listbox viaja en un portal a document.body: el modal con overflow no lo recorta.

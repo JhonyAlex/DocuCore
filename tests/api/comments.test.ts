@@ -355,3 +355,70 @@ describe('COM-01 comments on documents', () => {
     expect((await json(EDITOR_A, commentPath(2, 'document', documentId), 'POST', { body: 'En el p2' })).status).toBe(201)
   })
 })
+
+// COM-01: el invariante `assetId XOR documentId` está garantizado también en
+// PostgreSQL (CHECK num_nonnulls(...) = 1 de la migración), no solo por la
+// API. Estos casos escriben directamente contra la BD para comprobar que el
+// motor rechaza los estados inválidos.
+describe('COM-01 database XOR constraint', () => {
+  let xorAssetId: number
+  let xorDocumentId: number
+
+  beforeAll(async () => {
+    xorAssetId = await createAsset(1, OWNER, `C-XOR-${suffix}`)
+    xorDocumentId = await createDocument(1, OWNER, `COM-XOR-${suffix}`)
+  })
+
+  afterAll(async () => {
+    await api(scoped(1, `/documents/${xorDocumentId}`), { method: 'DELETE' }).catch(() => undefined)
+  })
+
+  it('accepts a comment attached to exactly one asset', async () => {
+    const created = await prisma.comment.create({
+      data: { projectId: 1, authorId: OWNER, assetId: xorAssetId, body: 'xor asset ok' },
+    })
+    expect(created.assetId).toBe(xorAssetId)
+    expect(created.documentId).toBeNull()
+    await prisma.comment.delete({ where: { id: created.id } })
+  })
+
+  it('accepts a comment attached to exactly one document', async () => {
+    const created = await prisma.comment.create({
+      data: { projectId: 1, authorId: OWNER, documentId: xorDocumentId, body: 'xor document ok' },
+    })
+    expect(created.documentId).toBe(xorDocumentId)
+    expect(created.assetId).toBeNull()
+    await prisma.comment.delete({ where: { id: created.id } })
+  })
+
+  it('rejects a comment without any host entity (both null)', async () => {
+    await expect(prisma.comment.create({
+      data: { projectId: 1, authorId: OWNER, body: 'sin anfitrión' },
+    })).rejects.toThrow()
+    const total = await prisma.comment.count({ where: { body: 'sin anfitrión' } })
+    expect(total).toBe(0)
+
+    // La causa es el CHECK de la migración (23514), no una validación ajena.
+    const cause = await prisma.$executeRaw`INSERT INTO "Comment" ("projectId","authorId","body","createdAt","updatedAt") VALUES (1, 1, 'sin anfitrión raw', NOW(), NOW())`
+      .catch((error: unknown) => error)
+    const known = cause as { code?: string; meta?: { code?: string; message?: string } }
+    expect(known?.code).toBe('P2010')
+    expect(known?.meta?.code).toBe('23514')
+    expect(known?.meta?.message ?? '').toContain('Comment_host_xor_check')
+  })
+
+  it('rejects a comment attached to both an asset and a document', async () => {
+    await expect(prisma.comment.create({
+      data: { projectId: 1, authorId: OWNER, assetId: xorAssetId, documentId: xorDocumentId, body: 'doble anfitrión' },
+    })).rejects.toThrow()
+    const total = await prisma.comment.count({ where: { body: 'doble anfitrión' } })
+    expect(total).toBe(0)
+
+    const cause = await prisma.$executeRaw`INSERT INTO "Comment" ("projectId","authorId","assetId","documentId","body","createdAt","updatedAt") VALUES (1, 1, ${xorAssetId}, ${xorDocumentId}, 'doble anfitrión raw', NOW(), NOW())`
+      .catch((error: unknown) => error)
+    const known = cause as { code?: string; meta?: { code?: string; message?: string } }
+    expect(known?.code).toBe('P2010')
+    expect(known?.meta?.code).toBe('23514')
+    expect(known?.meta?.message ?? '').toContain('Comment_host_xor_check')
+  })
+})

@@ -84,13 +84,14 @@ test.describe('Buscador Global y Búsqueda Diferida', () => {
     // Seleccionar el documento
     await docOption.click()
 
-    // Verificar que navega a /docs y abre el modal del documento
+    // Verificar que navega a /docs y abre el modal del documento. El diálogo
+    // se titula con el nombre del documento encontrado (ITV).
     await expect(page).toHaveURL(/\/docs\?documentId=/)
-    const docModal = page.getByRole('dialog').filter({ hasText: 'Gestionar documento' })
+    const docModal = page.getByRole('dialog').filter({ hasText: /ITV/ })
     await expect(docModal).toBeVisible()
     // DOC-03 incrustó la vista previa de la versión actual bajo Emisión: el
-    // bloque pasó a titularse «Vista previa».
-    await expect(docModal.getByRole('heading', { name: 'Vista previa', exact: true })).toBeVisible()
+    // bloque se titula con el nombre del documento y expone su control de visor.
+    await expect(docModal.getByRole('button', { name: /Abrir vista previa de .*ITV/ }).first()).toBeVisible()
   })
 
   test('finds locations and navigates to locations view', async ({ page }) => {
