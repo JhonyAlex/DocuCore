@@ -104,6 +104,18 @@ jobs:
       - name: Run E2E Tests
         run: pnpm exec playwright test --grep-invert @visual --reporter=list,github
 
+      # La regresión visual compara contra baselines capturados sobre el
+      # dataset canónico: los E2E dejan filas QA en la BD (activos, documentos,
+      # auditoría) que alterarían los conteos del shell y los listados de las
+      # capturas. Se restaura el seed canónico antes del paso visual.
+      - name: Reseed Database for Visual Regression
+        env:
+          DATABASE_URL: postgresql://docucore:docucore@127.0.0.1:5436/docucore?schema=public
+          DOCUCORE_DESTRUCTIVE_TARGET: "127.0.0.1:5436/docucore"
+          DOCUMENT_STORAGE_PATH: test-results/e2e-documents
+          FLOOR_PLAN_STORAGE_PATH: test-results/e2e-floor-plans
+        run: pnpm db:seed
+
       - name: Run Visual Regression Tests
         run: pnpm exec playwright test --grep @visual --reporter=list,github
 
