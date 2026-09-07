@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications, type NotificationFilter } from '@/contexts/NotificationContext'
 import { useProject } from '@/contexts/ProjectContext'
+import { formatRelativeTime } from '@/lib/time'
 import type { ApiNotification } from '@/types'
 
 function getCategoryIcon(notification: ApiNotification) {
@@ -48,26 +49,6 @@ function getCategoryIcon(notification: ApiNotification) {
       </svg>
     </div>
   )
-}
-
-function formatRelativeTime(dateIso: string): string {
-  const d = new Date(dateIso)
-  if (Number.isNaN(d.getTime())) return ''
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMinutes = Math.floor(diffMs / (1000 * 60))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-  if (diffMinutes < 1) return 'Ahora mismo'
-  if (diffMinutes < 60) return `Hace ${diffMinutes} min`
-  if (diffHours < 24) return `Hace ${diffHours} h`
-  if (diffDays === 1) return 'Ayer'
-  if (diffDays < 7) return `Hace ${diffDays} días`
-
-  const day = String(d.getUTCDate()).padStart(2, '0')
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${day}/${month}`
 }
 
 export default function NotificationsPopover() {

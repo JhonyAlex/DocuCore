@@ -14,6 +14,7 @@ import AssetHistoryPanel from '@/components/AssetHistoryPanel'
 import { fetchDocument, fetchDocuments, updateDocument, type ApiAsset, type ApiStatus } from '@/lib/api'
 import { formatApiDate, mapApiAssetEventToDisplay, mapApiAssetToDisplay } from '@/lib/assetMappers'
 import useAssetDocumentDialog from '@/hooks/useAssetDocumentDialog'
+import EntityCommentsPanel from '@/components/comments/EntityCommentsPanel'
 
 // El visor de planos incorpora OpenSeadragon; la pestaña solo se monta bajo
 // interacción explícita, por lo que se mantiene fuera del bundle inicial.
@@ -52,7 +53,10 @@ interface AssetModalProps {
 }
 
 export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeStatus, onDelete, onDocumentsChanged, onImageChanged, initialPreventiveExecutionId = null }: AssetModalProps) {
-  const { readOnly } = useProject()
+  const { readOnly, project } = useProject()
+  // COM-01: un VIEWER lee comentarios pero no escribe; el servidor lo vuelve a
+  // garantizar en cada mutación (política central OPERATE + regla autor/ADMIN).
+  const canComment = project?.currentRole !== 'VIEWER'
   const [activeTab, setActiveTab] = useState(0)
   const [showStatusSelector, setShowStatusSelector] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -262,7 +266,11 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
         </div>
 
         {activeTab === 0 && (
-          <div className="min-h-0 flex-1 p-5 overflow-y-auto scrollbar-thin">
+          // COM-01: la pestaña Resumen reparte el contenido en dos columnas en
+          // desktop (≈62 % información + ≈38 % comentarios con scroll propio);
+          // en tablet/móvil los comentarios se apilan debajo, sin columnas.
+          <div className="min-h-0 flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+            <div className="w-full lg:w-[62%] lg:min-w-0 lg:overflow-y-auto scrollbar-thin p-5 border-t lg:border-t-0 lg:border-r border-slate-200 dark:border-slate-800">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
               <div className="md:col-span-2 grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
@@ -342,6 +350,19 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             <h4 className="font-medium mb-3">Documentos recientes</h4>
             <AssetDocuments asset={asset} limit={2} openingId={documentDialog.openingId} onOpen={(documentId) => void documentDialog.openAssociated(documentId)} />
             {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
+            </div>
+
+            <aside className="w-full lg:w-[38%] min-h-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 p-5 pt-4 lg:pt-5">
+              {/* COM-01: se monta con el activo abierto y la pestaña Resumen visible. */}
+              <EntityCommentsPanel
+                projectId={asset.projectId}
+                entityType="asset"
+                entityId={asset.id}
+                readOnly={readOnly}
+                canComment={canComment}
+                className="min-h-0 flex-1"
+              />
+            </aside>
           </div>
         )}
 
