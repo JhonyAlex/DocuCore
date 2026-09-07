@@ -6,6 +6,18 @@
 > el bloqueo visual actual. Las métricas históricas de este documento no
 > sustituyen ese relevo.
 
+## Fecha: 2026-09-07
+
+## COM-01 — Comentarios en Activos y Documentos: FUNCIONAL (pendiente de validación manual)
+
+- **Entidad y migración**: `Comment` reutilizable con `projectId`, `authorId` y `assetId` XOR `documentId` (nunca ambos, validado por API), Cascade en `Project`/`User`/`Asset`/`Document`, índices de paginación `(projectId, assetId|documentId, createdAt DESC, id DESC)` + `assetId`/`documentId`/`authorId`; migración `20260907120000_comments` (forward-only, sin tocar datos existentes).
+- **API**: comentarios fuera del DTO de Asset/Document. Listado/alta anidados por entidad (`/assets/:id/comments`, `/documents/:id/comments`), count ligero en documentos, y `PATCH/DELETE /comments/:commentId` bajo la política central (`projectScope` OPERATE + regla autor/ADMIN/OWNER). Paginación por cursor `(createdAt DESC, id DESC)` sin OFFSET, 20/página (máx. 100), sin duplicados ni pérdidas entre páginas; id de otro proyecto responde 404.
+- **Permisos**: VIEWER lee (sin `canEdit/canDelete` en el DTO); EDITOR+ crea; el autor edita/elimina lo suyo; ADMIN/OWNER gestiona cualquier comentario; archivado (409), plan/suspensión (402/403) y proyecto ajeno (404/403) bloqueados por la política existente.
+- **UI**: `EntityCommentsPanel` compartido para activos y documentos. Activos: columna derecha (~38 %) en la pestaña Resumen (solo en desktop; en tablet/móvil se apila debajo). Documentos: botón de cabecera «Comentarios · N» que abre panel lateral colapsable (360 px) — drawer con backdrop en móvil — y la lista se carga solo al abrirlo; contador vía `/comments/count`. URLs http/https clicables y seguras, texto multilínea, autor con iniciales, fecha relativa + exacta en tooltip, «Editado», edición inline, menú ⋯ y borrado con `ConfirmDialog`. Sin respuestas/hilos, menciones, reacciones ni adjuntos (fuera de alcance).
+- **Auditoría**: alta/edición/borrado registrados (`comment:N`) sin duplicar el texto en `AuditLog`.
+- **Validación**: lint ✅, typecheck ✅, build ✅, `pnpm test` **595/595** ✅ (13 API + 9 unit nuevos), E2E `z-comments.spec.ts` **2/2** ✅. Visual: sin baselines nuevos; objetivos `item-modal`/`documents` siguen en desfase autorizado (el panel solo aparece con la ficha abierta o el drawer abierto).
+- **Pendiente**: validación manual del usuario (añadir/editar/eliminar en activo y documento, URLs, indicador «Editado», cierre por capas con Escape) y despliegue de la migración en los entornos persistente/producción vía pipeline (forward-only).
+
 ## AUTH-01 — Usuarios, autenticación y permisos reales
 
 Implementado: autenticación con sesiones persistentes revocables, pantalla Login, protección de rutas, usuario real en Sidebar, cierre de sesión, cambio de contraseña, gestión básica de usuarios/membresías y eliminación del actor fijo productivo. Validación AUTH-01: Prisma validate, lint, typecheck y build; Vitest **243/243**; E2E **81/81**; visual **30/30** bajo el umbral inmutable del 0,5 %. La documentación operativa está en `AUTH-01.md`.
