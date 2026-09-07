@@ -116,18 +116,8 @@ jobs:
           FLOOR_PLAN_STORAGE_PATH: test-results/e2e-floor-plans
         run: pnpm db:seed
 
-      - name: Run Visual Regression Tests (approve baselines on linux runner)
-        env:
-          APPROVE_EVOLVED_VISUAL_BASELINES: "1"
+      - name: Run Visual Regression Tests
         run: pnpm exec playwright test --grep @visual --reporter=list,github
-
-      - name: Upload approved baselines artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: visual-baselines-approved
-          path: tests/visual/baselines/release-01/*.png
-          retention-days: 7
 
       - name: Upload Test Results
         if: always()
