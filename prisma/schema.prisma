@@ -226,6 +226,7 @@ model User {
   updatedAt       DateTime  @updatedAt
 
   assetsOwned             Asset[]                  @relation("AssetResponsible")
+  authoredComments        Comment[]
   memberships             ProjectMember[]
   workspaceMemberships    WorkspaceMember[]
   auditLogs               AuditLog[]
@@ -273,6 +274,7 @@ model Project {
 
   workspace                      Workspace                        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   assets                         Asset[]
+  comments                       Comment[]
   members                        ProjectMember[]
   documents                      Document[]
   events                         Event[]
@@ -437,6 +439,7 @@ model Asset {
   updatedAt     DateTime  @updatedAt
 
   images                AssetImage[]
+  comments              Comment[]
   type                  AssetType                   @relation(fields: [typeId], references: [id])
   status                Status                      @relation(fields: [statusId], references: [id])
   location              Location                    @relation(fields: [locationId], references: [id], onDelete: Restrict)
@@ -509,6 +512,7 @@ model Document {
   updatedAt       DateTime @updatedAt
 
   assets       DocumentItem[]
+  comments     Comment[]
   project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   location     Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
   documentType DocumentType?     @relation(fields: [typeId], references: [id], onDelete: Restrict)
@@ -887,4 +891,33 @@ model Notification {
 
   @@index([projectId, readAt])
   @@index([projectId, createdAt(sort: Desc)])
+}
+
+// COM-01: comentarios multilínea sobre Activos o Documentos. Una fila se
+// asocia siempre a una única entidad (`assetId` XOR `documentId`), nunca a
+// ambas; la exclusividad se valida en la API. El borrado del activo,
+// documento, proyecto o autor arrastra sus comentarios (Cascade), como el
+// resto de contenido dependiente.
+model Comment {
+  id         Int      @id @default(autoincrement())
+  projectId  Int
+  authorId   Int
+  assetId    Int?
+  documentId Int?
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  asset    Asset?    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // Paginación por cursor (createdAt DESC, id DESC) acotada al proyecto y a la
+  // entidad anfitriona; los índices de las FKs mantienen el Cascade barato.
+  @@index([projectId, assetId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([projectId, documentId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([assetId])
+  @@index([documentId])
+  @@index([authorId])
 }

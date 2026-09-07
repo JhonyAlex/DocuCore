@@ -8,6 +8,16 @@ import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicity
 import { createDocumentMetadataSchema, documentListQuerySchema, documentVersionMetadataSchema, updateDocumentMetadataSchema } from '../lib/validate'
 import { LOCATION_PREVIEW_SIZE } from '../lib/performance'
 import { actorIdFromRequest, requireDocumentInProject, scopedProjectId } from '../lib/projectScope'
+import {
+  commentActorContext,
+  commentAuthorSelect,
+  commentPageLimit,
+  commentWriteSchema,
+  encodeCommentCursor,
+  listCommentPage,
+  parseCommentCursor,
+  serializeComment,
+} from '../lib/comments'
 import { normalizeFileName } from '../lib/textEncoding'
 import { computeDocumentStatus, nowClock, DOCUMENT_EXPIRY_THRESHOLD_DAYS } from '../lib/documentStatus'
 
@@ -682,6 +692,75 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     ...version.attachments.map((attachment) => removeDocumentFile(attachment.storageKey)),
   ]))
   res.status(204).end()
+}))
+
+// COM-01: comentarios del documento, fuera del DTO pesado de Document.
+// Listado paginado por cursor y alta aquí; edición/borrado viven en
+// /api/projects/:projectId/comments/:commentId (rutas/comments.ts). El
+// contador es una consulta ligera para la cabecera del modal, nunca lista
+// los cuerpos de los comentarios.
+async function requireCommentableDocument(req: Request): Promise<{ id: number; projectId: number; name: string }> {
+  const id = parseId(req.params.id)
+  if (id === null) throw Object.assign(new Error('Invalid id'), { status: 400 })
+  const document = await prisma.document.findFirst({
+    where: { id, projectId: scopedProjectId(req) },
+    select: { id: true, projectId: true, name: true },
+  })
+  if (!document) throw Object.assign(new Error('Document not found in project'), { status: 404 })
+  return document
+}
+
+router.get('/:id/comments/count', asyncHandler(async (req, res) => {
+  const document = await requireCommentableDocument(req)
+  const count = await prisma.comment.count({ where: { projectId: document.projectId, documentId: document.id } })
+  res.json({ count })
+}))
+
+router.get('/:id/comments', asyncHandler(async (req, res) => {
+  const document = await requireCommentableDocument(req)
+  const rawCursor = req.query.cursor
+  if (rawCursor !== undefined && parseCommentCursor(rawCursor) === null) {
+    res.status(400).json({ error: 'Invalid cursor' })
+    return
+  }
+  const { rows, hasMore } = await listCommentPage({
+    projectId: document.projectId,
+    documentId: document.id,
+    cursor: parseCommentCursor(rawCursor),
+    limit: commentPageLimit(req.query.limit),
+  })
+  const actor = commentActorContext(req.projectScope!)
+  res.json({
+    data: rows.map((row) => serializeComment(row, actor)),
+    hasMore,
+    nextCursor: hasMore && rows.length > 0 ? encodeCommentCursor({ createdAt: rows[rows.length - 1].createdAt, id: rows[rows.length - 1].id }) : null,
+  })
+}))
+
+router.post('/:id/comments', asyncHandler(async (req, res) => {
+  const document = await requireCommentableDocument(req)
+  const input = commentWriteSchema.parse(req.body)
+  const actorId = actorIdFromRequest(req)
+  const comment = await prisma.$transaction(async (tx) => {
+    const created = await tx.comment.create({
+      data: { projectId: document.projectId, authorId: actorId, documentId: document.id, body: input.body },
+      include: { author: { select: commentAuthorSelect } },
+    })
+    await tx.auditLog.create({
+      data: {
+        projectId: document.projectId,
+        userId: actorId,
+        // COM-01: se audita la operación sin duplicar el texto del comentario
+        // en los registros; la referencia del comentario permite trazarla.
+        action: 'Comentario añadido',
+        entityId: `comment:${created.id}`,
+        detail: `Comentario en documento "${document.name}"`,
+        timestamp: new Date(),
+      },
+    })
+    return created
+  })
+  res.status(201).json(serializeComment(comment, commentActorContext(req.projectScope!)))
 }))
 
 export default router
