@@ -33,7 +33,12 @@ async function createAsset(page: import('@playwright/test').Page, code: string, 
 
 async function searchAssets(page: import('@playwright/test').Page, placeholder: string, search: string): Promise<void> {
   const response = page.waitForResponse((candidate) => candidate.url().includes('/api/assets?') && candidate.url().includes(`search=${encodeURIComponent(search)}`) && candidate.request().method() === 'GET')
-  await page.getByPlaceholder(placeholder).fill(search)
+  const input = page.getByPlaceholder(placeholder)
+  // El campo puede conservar el valor buscado (p. ej. al volver de la
+  // papelera): rellenarlo con el mismo texto no dispara onChange y la
+  // petición nunca llega. Un primer fill a vacío fuerza el cambio.
+  await input.fill('')
+  await input.fill(search)
   await response
 }
 
