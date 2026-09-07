@@ -9,6 +9,10 @@ interface DocumentHeaderProps {
   validityStatus?: DocumentValidityStatus
   readOnly?: boolean
   saving?: boolean
+  /** COM-01: acción «Comentarios · N» del panel lateral (solo documentos existentes). */
+  commentsOpen?: boolean
+  commentsCount?: number | null
+  onToggleComments?: () => void
   onClose: () => void
 }
 
@@ -20,6 +24,9 @@ export default function DocumentHeader({
   validityStatus,
   readOnly,
   saving,
+  commentsOpen = false,
+  commentsCount = null,
+  onToggleComments,
   onClose,
 }: DocumentHeaderProps) {
   return (
@@ -49,6 +56,27 @@ export default function DocumentHeader({
           </p>
         )}
       </div>
+
+      {!isNew && onToggleComments && (
+        <button
+          type="button"
+          onClick={onToggleComments}
+          disabled={saving}
+          aria-expanded={commentsOpen}
+          aria-controls="document-comments-panel"
+          className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-40 ${
+            commentsOpen
+              ? 'border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300'
+              : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          <span>Comentarios</span>
+          {commentsCount !== null && commentsCount > 0 && <span className="text-slate-400 dark:text-slate-500">· {commentsCount}</span>}
+        </button>
+      )}
 
       <button
         type="button"

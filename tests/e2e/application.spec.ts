@@ -440,6 +440,9 @@ test.describe('DocuCore application', () => {
   })
 
   test('uploads, versions, downloads, persists, and detaches a document from an asset', async ({ page, consoleIssues }) => {
+    // El diálogo de gestión se titula con el nombre del documento (rediseño
+    // de DocumentModal), no con «Gestionar documento».
+    const documentName = 'Certificado E2E Documento-Activo'
     const firstBytes = minimalPdf()
     const secondBytes = minimalPdf()
     const asset = await page.request.get('/api/assets?search=AST-001&limit=1')
@@ -484,7 +487,7 @@ test.describe('DocuCore application', () => {
     // Abrir el documento asociado desde la ficha no navega a Documentos ni
     // cierra la ficha: «Gestionar documento» se apila encima.
     await assetDialog.getByRole('button', { name: 'Gestionar Certificado E2E Documento-Activo' }).click()
-    const nestedDocumentDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const nestedDocumentDialog = page.getByRole('dialog', { name: documentName })
     await expect(nestedDocumentDialog).toBeVisible()
     await expect(assetDialog).toBeVisible()
     await expect(page).toHaveURL(/\/assets$/)
@@ -497,7 +500,7 @@ test.describe('DocuCore application', () => {
 
     await page.goto('/docs')
     await page.getByText('Certificado E2E Documento-Activo', { exact: true }).click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name: documentName })
     await expect(manageDialog.getByText('v1 · known-v1.pdf', { exact: true })).toBeVisible()
     await manageDialog.getByLabel('Vencimiento (opcional)').fill('2026-09-20')
     const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${documentId}/versions`))
@@ -518,7 +521,7 @@ test.describe('DocuCore application', () => {
     expect(itemAfterVersionBody.nextEvents).toEqual(expect.arrayContaining([expect.objectContaining({ id: `document:${documentId}`, date: '2026-09-20T00:00:00.000Z' })]))
 
     await page.getByText('Certificado E2E Documento-Activo', { exact: true }).click()
-    const detachDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const detachDialog = page.getByRole('dialog', { name: documentName })
     await detachDialog.getByLabel('Quitar AST-001 · Activo industrial 001').click()
     const detachConfirm = page.getByRole('dialog', { name: 'Quitar activo asociado' })
     await expect(detachConfirm).toBeVisible()
@@ -614,7 +617,7 @@ test.describe('DocuCore application', () => {
 
     await page.goto('/docs')
     await page.getByText(documentName, { exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const dialog = page.getByRole('dialog', { name: documentName })
     await dialog.getByLabel('Activos asociados').fill(code)
     await page.getByRole('option', { name: new RegExp(code) }).click()
     await dialog.getByLabel('Vencimiento (opcional)').fill('2026-07-20')
@@ -675,7 +678,7 @@ test.describe('DocuCore application', () => {
     await expect(row).toContainText('AST-001 · Activo industrial 001')
     await expect(row).toContainText('CNC-05 · Torno CNC Haas ST-20')
     await row.click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name: documentName })
     await expect(manageDialog.getByLabel('Quitar AST-001 · Activo industrial 001')).toBeVisible()
     await expect(manageDialog.getByLabel('Quitar CNC-05 · Torno CNC Haas ST-20')).toBeVisible()
 
@@ -711,7 +714,7 @@ test.describe('DocuCore application', () => {
     await dialog.getByLabel('Periodicidad').selectOption({ label: 'Trimestral' })
     // cf9caa1 fijó «Según subida» como modo por defecto; esta especificación
     // verifica el cálculo por vencimiento vigente, así que el modo se elige.
-    await dialog.getByLabel('Modo').selectOption({ label: 'Según calendario' })
+    await dialog.getByLabel('Modo').selectOption({ label: 'Según calendario (vencimiento anterior)' })
     await expect(dialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-10-15')
     await expect(dialog.getByText('Automático: trimestral · según vencimiento vigente')).toBeVisible()
     await dialog.getByLabel('Fichero').setInputFiles({ name: 'periodicidad-v1.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
@@ -729,7 +732,7 @@ test.describe('DocuCore application', () => {
     expect(created.currentVersion.expiryDate).toBe('2026-10-15T00:00:00.000Z')
 
     await row.click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name: documentName })
     const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${created.id}/versions`))
     await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'periodicidad-v2.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
     expect((await versionResponse).status()).toBe(201)
@@ -749,7 +752,7 @@ test.describe('DocuCore application', () => {
     await dialog.getByLabel('Nombre').fill(documentName)
     await dialog.getByLabel('Emisión').fill('2026-07-15')
     await dialog.getByLabel('Periodicidad').selectOption({ label: 'Trimestral' })
-    await dialog.getByLabel('Modo').selectOption({ label: 'Según subida' })
+    await dialog.getByLabel('Modo').selectOption({ label: 'Según subida (fecha de emisión)' })
     await expect(dialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-10-15')
     await dialog.getByLabel('Fichero').setInputFiles({ name: 'subida-v1.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
     const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))
@@ -760,7 +763,7 @@ test.describe('DocuCore application', () => {
     expect(created.currentVersion.expiryDate).toBe('2026-10-15T00:00:00.000Z')
 
     await page.locator('tbody tr').filter({ hasText: documentName }).click()
-    let manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    let manageDialog = page.getByRole('dialog', { name: documentName })
     await manageDialog.getByLabel('Vencimiento (opcional)').fill('2026-11-20')
     const updateResponse = page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().endsWith(`/api/documents/${created.id}`))
     await manageDialog.getByRole('button', { name: 'Guardar cambios', exact: true }).click()
@@ -769,8 +772,8 @@ test.describe('DocuCore application', () => {
     expect(edited.currentVersion.expiryDate).toBe('2026-11-20T00:00:00.000Z')
 
     await page.locator('tbody tr').filter({ hasText: documentName }).click()
-    manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
-    await manageDialog.getByLabel('Emisión').fill('2026-08-05')
+    manageDialog = page.getByRole('dialog', { name: documentName })
+    await manageDialog.getByLabel('Fecha de emisión', { exact: true }).fill('2026-08-05')
     await expect(manageDialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-11-05')
     const versionResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes(`/api/documents/${created.id}/versions`))
     await manageDialog.getByLabel('Nueva versión').setInputFiles({ name: 'subida-v2.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })

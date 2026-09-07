@@ -53,11 +53,11 @@ test.describe.serial('document preview', () => {
     await expect(page.getByText(docName, { exact: true })).toBeVisible()
 
     await page.getByText(docName, { exact: true }).click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name: docName })
     const embeddedImage = manageDialog.getByRole('img', { name: docName })
     await expect(embeddedImage).toBeVisible()
     await expect(embeddedImage).toHaveAttribute('src', /^blob:/)
-    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${docName}` }).click()
+    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${docName}` }).first().click()
     const previewDialog = page.getByRole('dialog', { name: `Vista previa de ${docName}` })
     await expect(previewDialog.getByRole('img', { name: docName })).toBeVisible()
     await page.keyboard.press('Escape')
@@ -74,11 +74,11 @@ test.describe.serial('document preview', () => {
 
     await page.goto('/docs')
     await page.getByText(pdfName, { exact: true }).click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name: pdfName })
     // La vista previa del PDF se renderiza con pdf.js (canvas propios, sin el
     // visor nativo): cada página pinta un canvas.
     await expect(manageDialog.locator('.pdf-preview canvas')).toHaveCount(3, { timeout: 10_000 })
-    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${pdfName}` }).click()
+    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${pdfName}` }).first().click()
     const pdfPreview = page.getByRole('dialog', { name: `Vista previa de ${pdfName}` })
     const viewer = pdfPreview.locator('.pdf-preview')
     await expect(viewer.locator('canvas')).toHaveCount(3, { timeout: 10_000 })
@@ -91,7 +91,7 @@ test.describe.serial('document preview', () => {
     await expect(pdfPreview).toBeHidden()
     // Al reabrir el visor, el documento vuelve a empezar arriba (no conserva
     // la posición de scroll de la apertura anterior).
-    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${pdfName}` }).click()
+    await manageDialog.getByRole('button', { name: `Abrir vista previa de ${pdfName}` }).first().click()
     await expect(viewer.locator('canvas')).toHaveCount(3, { timeout: 10_000 })
     expect(await viewer.evaluate((element) => element.scrollTop)).toBe(0)
     await page.keyboard.press('Escape')
@@ -110,10 +110,12 @@ test.describe.serial('document preview', () => {
 
     await page.goto('/docs')
     await page.getByText(xlsxName, { exact: true }).click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name: xlsxName })
 
     // Vista previa incrustada en el modal de gestión
-    const previewBtn = manageDialog.getByRole('button', { name: `Abrir vista previa de ${xlsxName}` })
+    // El div de la vista previa incrustada comparte aria-label con el botón de la
+    // barra de herramientas: el contenido verificable es el div (último).
+    const previewBtn = manageDialog.getByRole('button', { name: `Abrir vista previa de ${xlsxName}` }).last()
     await expect(previewBtn).toBeVisible({ timeout: 10_000 })
     await expect(previewBtn.getByText('Resumen de Equipos y Calibración')).toBeVisible()
     await expect(previewBtn.getByText('MG-203')).toBeVisible()
@@ -151,7 +153,7 @@ test.describe.serial('document preview', () => {
 
     // Comprobar manejo de archivo Excel corrupto
     await page.getByText(corruptedName, { exact: true }).click()
-    const corruptDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const corruptDialog = page.getByRole('dialog', { name: corruptedName })
     await expect(corruptDialog.getByText('No se pudo generar la vista previa de esta hoja de cálculo.')).toBeVisible()
     await corruptDialog.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
 
@@ -164,7 +166,7 @@ test.describe.serial('document preview', () => {
 
     await page.goto('/docs')
     await page.getByText(name, { exact: true }).click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name })
     await expect(manageDialog.locator('pre')).toContainText('PRIMERA VERSION')
 
     // Subir una nueva versión de otro contenido: la vista previa incrustada
@@ -189,18 +191,20 @@ test.describe.serial('document preview', () => {
 
     await page.goto('/docs')
     await page.getByText(name, { exact: true }).click()
-    const manageDialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    const manageDialog = page.getByRole('dialog', { name })
 
     // Nombres de fichero largos: el historial los trunca con ellipsis (title
-    // con el nombre completo) y las acciones «Ver»/«Descargar» permanecen dentro.
+    // con el nombre completo) y las acciones «Ver»/«Descargar» permanecen
+    // dentro del diálogo: alcanzables con scroll propio de la columna.
     const rows = manageDialog.locator('ul li')
     await expect(rows).toHaveCount(2)
     await expect(rows.nth(0).locator('span[title]')).toHaveAttribute('title', longName2)
     await expect(rows.nth(1).locator('span[title]')).toHaveAttribute('title', longName1)
-    await expect(manageDialog.getByRole('button', { name: 'Ver v2' })).toBeInViewport()
-    await expect(manageDialog.getByRole('button', { name: 'Descargar v2' })).toBeInViewport()
-    await expect(manageDialog.getByRole('button', { name: 'Ver v1' })).toBeInViewport()
-    await expect(manageDialog.getByRole('button', { name: 'Descargar v1' })).toBeInViewport()
+    for (const actionName of ['Ver v2', 'Descargar v2', 'Ver v1', 'Descargar v1']) {
+      const action = manageDialog.getByRole('button', { name: actionName })
+      await action.scrollIntoViewIfNeeded()
+      await expect(action).toBeInViewport()
+    }
 
     // La vista histórica usa sus propios bytes y deja el modal de gestión abierto.
     await manageDialog.getByRole('button', { name: 'Ver v1' }).click()

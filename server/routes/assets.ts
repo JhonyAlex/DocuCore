@@ -15,6 +15,16 @@ import { isLocationDescendantOf } from '../lib/locationTree'
 import { MAX_AUTOCOMPLETE_SIZE } from '../lib/performance'
 import { nextAssetEventsById } from '../lib/nextAssetEvents'
 import { actorIdFromRequest, scopedProjectId } from '../lib/projectScope'
+import {
+  commentActorContext,
+  commentPageLimit,
+  commentWriteSchema,
+  encodeCommentCursor,
+  listCommentPage,
+  parseCommentCursor,
+  serializeComment,
+  commentAuthorSelect,
+} from '../lib/comments'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -527,6 +537,68 @@ router.get(
 
 // Unified history: every source has a completed/pending occurrence. Documents
 // use acknowledgements because their evidence remains version-owned.
+// COM-01: comentarios del activo, fuera del DTO pesado de Asset. Listado
+// paginado por cursor (más recientes primero) y alta; edición/borrado viven
+// en /api/projects/:projectId/comments/:commentId (rutas/comments.ts).
+async function requireCommentableAsset(req: Request): Promise<{ id: number; projectId: number; code: string }> {
+  const id = toNumberId(req.params.id)
+  if (id === null) throw Object.assign(new Error('Invalid id'), { status: 400 })
+  const asset = await prisma.asset.findFirst({
+    where: { id, projectId: scopedProjectId(req), deletedAt: null },
+    select: { id: true, projectId: true, code: true },
+  })
+  if (!asset) throw Object.assign(new Error('Asset not found in project'), { status: 404 })
+  return asset
+}
+
+router.get('/:id/comments', asyncHandler(async (req, res) => {
+  const asset = await requireCommentableAsset(req)
+  const rawCursor = req.query.cursor
+  if (rawCursor !== undefined && parseCommentCursor(rawCursor) === null) {
+    res.status(400).json({ error: 'Invalid cursor' })
+    return
+  }
+  const { rows, hasMore } = await listCommentPage({
+    projectId: asset.projectId,
+    assetId: asset.id,
+    cursor: parseCommentCursor(rawCursor),
+    limit: commentPageLimit(req.query.limit),
+  })
+  const actor = commentActorContext(req.projectScope!)
+  res.json({
+    data: rows.map((row) => serializeComment(row, actor)),
+    hasMore,
+    nextCursor: hasMore && rows.length > 0 ? encodeCommentCursor({ createdAt: rows[rows.length - 1].createdAt, id: rows[rows.length - 1].id }) : null,
+  })
+}))
+
+router.post('/:id/comments', asyncHandler(async (req, res) => {
+  const asset = await requireCommentableAsset(req)
+  const input = commentWriteSchema.parse(req.body)
+  const actorId = actorIdFromRequest(req)
+  const comment = await prisma.$transaction(async (tx) => {
+    const created = await tx.comment.create({
+      data: { projectId: asset.projectId, authorId: actorId, assetId: asset.id, body: input.body },
+      include: { author: { select: commentAuthorSelect } },
+    })
+    await tx.auditLog.create({
+      data: {
+        projectId: asset.projectId,
+        userId: actorId,
+        // COM-01: se audita la operación con la referencia del comentario y la
+        // etiqueta de su anfitrión, sin duplicar el texto (información
+        // sensible) dentro de los registros.
+        action: 'Comentario añadido',
+        entityId: `comment:${created.id}`,
+        detail: `Comentario en activo "${asset.code}"`,
+        timestamp: new Date(),
+      },
+    })
+    return created
+  })
+  res.status(201).json(serializeComment(comment, commentActorContext(req.projectScope!)))
+}))
+
 router.get('/:id/events', asyncHandler(async (req, res) => {
   const id = toNumberId(req.params.id)
   if (id === null) return res.status(400).json({ error: 'Invalid id' })

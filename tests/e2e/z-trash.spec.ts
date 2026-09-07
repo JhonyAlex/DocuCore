@@ -33,7 +33,12 @@ async function createAsset(page: import('@playwright/test').Page, code: string, 
 
 async function searchAssets(page: import('@playwright/test').Page, placeholder: string, search: string): Promise<void> {
   const response = page.waitForResponse((candidate) => candidate.url().includes('/api/assets?') && candidate.url().includes(`search=${encodeURIComponent(search)}`) && candidate.request().method() === 'GET')
-  await page.getByPlaceholder(placeholder).fill(search)
+  const input = page.getByPlaceholder(placeholder)
+  // El campo puede conservar el valor buscado (p. ej. al volver de la
+  // papelera): rellenarlo con el mismo texto no dispara onChange y la
+  // petición nunca llega. Un primer fill a vacío fuerza el cambio.
+  await input.fill('')
+  await input.fill(search)
   await response
 }
 
@@ -154,7 +159,8 @@ test.describe.serial('trash and modal fixes', () => {
 
     await page.goto('/docs')
     await page.locator('tbody tr', { hasText: 'Documento portal QA' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Gestionar documento' })
+    // El diálogo de gestión se titula con el nombre del documento.
+    const dialog = page.getByRole('dialog', { name: 'Documento portal QA' })
     await expect(dialog).toBeVisible()
 
     // El listbox viaja en un portal a document.body: el modal con overflow no lo recorta.

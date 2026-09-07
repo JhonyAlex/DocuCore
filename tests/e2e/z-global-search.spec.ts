@@ -84,13 +84,14 @@ test.describe('Buscador Global y Búsqueda Diferida', () => {
     // Seleccionar el documento
     await docOption.click()
 
-    // Verificar que navega a /docs y abre el modal del documento
+    // Verificar que navega a /docs y abre el modal del documento. El diálogo
+    // se titula con el nombre del documento encontrado (ITV).
     await expect(page).toHaveURL(/\/docs\?documentId=/)
-    const docModal = page.getByRole('dialog').filter({ hasText: 'Gestionar documento' })
+    const docModal = page.getByRole('dialog').filter({ hasText: /ITV/ })
     await expect(docModal).toBeVisible()
     // DOC-03 incrustó la vista previa de la versión actual bajo Emisión: el
-    // bloque pasó a titularse «Vista previa».
-    await expect(docModal.getByRole('heading', { name: 'Vista previa', exact: true })).toBeVisible()
+    // bloque se titula con el nombre del documento y expone su control de visor.
+    await expect(docModal.getByRole('button', { name: /Abrir vista previa de .*ITV/ }).first()).toBeVisible()
   })
 
   test('finds locations and navigates to locations view', async ({ page }) => {
@@ -132,7 +133,10 @@ test.describe('Buscador Global y Búsqueda Diferida', () => {
 
     // Debe navegar a /history
     await expect(page).toHaveURL(/\/history/)
-    await expect(page.getByRole('heading', { name: 'Historial y auditoría' })).toBeVisible()
+    // La vista se verifica por su UI real (filtro de la tabla). El heading del
+    // breadcrumb del shell puede estar transicionando en CI y no es la
+    // superficie que el teclado debe garantizar.
+    await expect(page.getByRole('combobox', { name: 'Filtrar por tipo de acción' })).toBeVisible()
   })
 
   test('shows empty state when no matching results are found', async ({ page }) => {

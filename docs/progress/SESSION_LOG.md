@@ -1,5 +1,13 @@
 # SESSION_LOG — Fase 4
 
+## 2026-09-07 — COM-01: comentarios en Activos y Documentos
+
+- Entidad reutilizable `Comment` (projectId, authorId, assetId XOR documentId, body) con relaciones `Project`/`User`/`Asset`/`Document` en `onDelete: Cascade` e índices de paginación `(projectId, entity, createdAt DESC, id DESC)` + FKs; migración `20260907120000_comments` forward-only, verificada contra la BD E2E desechable (5436).
+- API propia fuera del DTO pesado: `GET/POST /projects/:projectId/assets/:assetId/comments`, `GET/POST /projects/:projectId/documents/:documentId/comments` (+ `/comments/count` ligero), `PATCH/DELETE /projects/:projectId/comments/:commentId`. Listado por cursor opaco (createdAt,id, sin OFFSET, 20 por página, máx. 100), más recientes primero. Permisos sobre la política central existente: VIEWER lee; EDITOR+ crea; autor o ADMIN/OWNER gestiona; archivado/plan/suspensión bloquean escrituras (402/409 centrales). Cuerpo validado (trim, no vacío, máx. 4000) y renderizado siempre como texto; las URLs http/https se enlazan de forma segura en el cliente.
+- Auditoría de creación/edición/eliminación (`Comentario añadido/editado/eliminado`, `entityId: comment:N`) **sin duplicar el texto** del comentario en los registros.
+- Frontend: `EntityCommentsPanel` compartido (estados loading/error/vacío/anteriores/creando/editando/eliminando, avatar de iniciales, fecha relativa con fecha exacta en tooltip, «Editado», menú ⋯, edición inline y `ConfirmDialog`). En `AssetModal` la pestaña Resumen reparte ~62/38 en desktop con scroll propio del panel (apilado en tablet/móvil); en `DocumentModal` acción de cabecera «Comentarios · N» con contador ligero y panel lateral colapsable (drawer en móvil); la lista solo se pide al abrir el panel. Helpers compartidos `src/lib/time.ts` (extraído de NotificationsPopover) y `src/lib/comments.ts`.
+- Validación: lint ✅, typecheck (app + server) ✅, build ✅, `pnpm test` **595/595** (74 archivos; 13 API + 9 unit nuevos de COM-01), E2E `z-comments` **2/2** ✅. Visual: sin baselines nuevos; la columna de comentarios de la ficha y el drawer de documentos evolucionan objetivos ya en desfase autorizado (`item-modal`, `documents`) — pendiente de validación manual del usuario.
+
 ## AUTH-01
 
 - Se reemplazó el actor provisional por identidad obtenida de sesión HTTP-only persistida en PostgreSQL.

@@ -10,8 +10,10 @@ test.describe('Dashboard (Panel general)', () => {
 
     // Heading and project summary with formatted date
     await expect(main.getByRole('heading', { name: 'Panel general', exact: true })).toBeVisible()
-    await expect(main.getByText('Planta Industrial Norte', { exact: true })).toBeVisible()
-    await expect(main.getByText(/miércoles, 15 de julio de 2026/i)).toBeVisible()
+    await expect(main.getByText('Resumen y actividad del proyecto activo', { exact: true })).toBeVisible()
+    // 74da646 trasladó el nombre del proyecto al selector del shell (ya no se
+    // imprime dentro del panel): se verifica el proyecto activo real en él.
+    await expect(page.getByRole('button', { name: /Planta Industrial Norte PRJ-2026-001/ })).toBeVisible()
 
     // 4 KPIs
     await expect(main.getByText('Activos totales', { exact: true })).toBeVisible()
@@ -52,7 +54,7 @@ test.describe('Dashboard (Panel general)', () => {
     await page.goto('/dashboard')
     const documentsResponse = page.waitForResponse((response) => {
       const url = new URL(response.url())
-      return url.pathname === '/api/projects/1/documents'
+      return url.pathname === '/api/documents'
         && !url.searchParams.has('typeId')
         && !url.searchParams.has('locationId')
     })

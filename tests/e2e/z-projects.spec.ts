@@ -86,8 +86,10 @@ test.describe('PROJ-01 proyectos', () => {
     // El proyecto archivado debe ocultarse del panel de proyectos activos
     await expect(card).toHaveCount(0)
 
-    // Acceder al apartado de proyectos archivados
-    await page.getByRole('button', { name: 'Archivados' }).click()
+    // Acceder al apartado de proyectos archivados. La cartera tiene dos
+    // controles con rótulos parecidos («Proyectos archivados» en la cabecera
+    // y la pestaña «Archivados N» con el contador): se usa la pestaña real.
+    await page.getByRole('button', { name: /^Archivados \d+$/ }).click()
     await expect(card).toBeVisible()
     await expect(card).toContainText('Archivo')
 
@@ -98,7 +100,7 @@ test.describe('PROJ-01 proyectos', () => {
     await expect(card).toHaveCount(0)
 
     // Al volver a proyectos activos, el proyecto reactivado vuelve a mostrarse
-    await page.getByRole('button', { name: 'Proyectos activos' }).click()
+    await page.getByRole('button', { name: /^Proyectos activos \d+$/ }).click()
     await expect(card).toBeVisible()
     await expect(card).toContainText('Activo')
     expect(consoleIssues).toEqual([])

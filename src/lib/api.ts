@@ -1630,3 +1630,75 @@ export async function downloadHistoryCsv(projectId: number, query: ApiHistoryQue
   document.body.removeChild(a)
   window.URL.revokeObjectURL(url)
 }
+
+// COM-01: comentarios de activos/documentos. Endpoints propios, paginados por
+// cursor (createdAt DESC, id DESC); nunca forman parte del DTO de la entidad.
+export type ApiCommentEntityType = 'asset' | 'document'
+
+export interface ApiComment {
+  id: number
+  projectId: number
+  authorId: number
+  assetId: number | null
+  documentId: number | null
+  body: string
+  createdAt: string
+  updatedAt: string
+  edited: boolean
+  author: ApiUserRef
+  /** El servidor decide quién puede gestionar cada comentario (autor o ADMIN/OWNER). */
+  canEdit: boolean
+  canDelete: boolean
+}
+
+export interface ApiCommentPage {
+  data: ApiComment[]
+  hasMore: boolean
+  nextCursor: string | null
+}
+
+export interface ApiCommentCount {
+  count: number
+}
+
+export interface FetchCommentsParams {
+  entityType: ApiCommentEntityType
+  entityId: number
+  cursor?: string | null
+  limit?: number
+}
+
+function commentEntityPath(entityType: ApiCommentEntityType, entityId: number): string {
+  return entityType === 'asset' ? `/assets/${entityId}/comments` : `/documents/${entityId}/comments`
+}
+
+export async function fetchEntityComments(projectId: number, params: FetchCommentsParams): Promise<ApiCommentPage> {
+  const q = new URLSearchParams()
+  if (params.cursor) q.set('cursor', params.cursor)
+  if (params.limit) q.set('limit', String(params.limit))
+  const qs = q.toString()
+  return request<ApiCommentPage>(`${projectPath(projectId, commentEntityPath(params.entityType, params.entityId))}${qs ? `?${qs}` : ''}`)
+}
+
+export async function createEntityComment(projectId: number, params: { entityType: ApiCommentEntityType; entityId: number; body: string }): Promise<ApiComment> {
+  return request<ApiComment>(projectPath(projectId, commentEntityPath(params.entityType, params.entityId)), {
+    method: 'POST',
+    body: JSON.stringify({ body: params.body }),
+  })
+}
+
+export async function updateComment(projectId: number, commentId: number, body: string): Promise<ApiComment> {
+  return request<ApiComment>(projectPath(projectId, `/comments/${commentId}`), {
+    method: 'PATCH',
+    body: JSON.stringify({ body }),
+  })
+}
+
+export async function deleteComment(projectId: number, commentId: number): Promise<void> {
+  return request<void>(projectPath(projectId, `/comments/${commentId}`), { method: 'DELETE' })
+}
+
+/** Consulta ligera de contador para la cabecera de DocumentModal (índice, sin cuerpos). */
+export async function fetchCommentCount(projectId: number, params: { entityType: ApiCommentEntityType; entityId: number }): Promise<ApiCommentCount> {
+  return request<ApiCommentCount>(`${projectPath(projectId, commentEntityPath(params.entityType, params.entityId))}/count`)
+}

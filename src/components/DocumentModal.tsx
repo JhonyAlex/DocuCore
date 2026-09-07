@@ -1,13 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SelectedValue } from '@/components/SearchableMultiPicker'
 import DocumentHeader from '@/components/document/DocumentHeader'
 import DocumentFormFields from '@/components/document/DocumentFormFields'
 import DocumentPreviewPane from '@/components/document/DocumentPreviewPane'
 import DocumentVersionsList from '@/components/document/DocumentVersionsList'
 import DocumentPreviewModal from '@/components/DocumentPreviewModal'
+import EntityCommentsPanel from '@/components/comments/EntityCommentsPanel'
 import { useDocumentPreview } from '@/hooks/useDocumentPreview'
 import { useDocumentForm } from '@/hooks/useDocumentForm'
-import { downloadDocument, downloadDocumentAttachment, type ApiDocument } from '@/lib/api'
+import { downloadDocument, downloadDocumentAttachment, fetchCommentCount, type ApiDocument } from '@/lib/api'
 import { computeDocumentStatus, type DocumentValidityStatus } from '@/lib/documentStatus'
 import { useProject } from '@/contexts/ProjectContext'
 
@@ -26,11 +27,34 @@ function resolveDocumentValidityStatus(docStatus: string | undefined, expiryDate
 }
 
 export default function DocumentModal({ document, initialAssetIds = [], onClose, onChanged }: DocumentModalProps) {
-  const { projectId, readOnly } = useProject()
+  const { projectId, readOnly, project } = useProject()
   if (projectId === null) throw new Error('DocumentModal requires a project scope')
+  // COM-01: un VIEWER lee comentarios pero no escribe (el servidor lo exige).
+  const canComment = project?.currentRole !== 'VIEWER'
 
   const dialogRef = useRef<HTMLDivElement>(null)
   const initialFocusRef = useRef<HTMLInputElement>(null)
+
+  const isNew = !document
+  const documentId = document?.id ?? 0
+
+  // COM-01: el contador del header es una consulta ligera (`/comments/count`);
+  // la lista solo se pide al abrir el panel, que se monta bajo demanda.
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [commentsCount, setCommentsCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (documentId === 0) {
+      setCommentsCount(null)
+      return
+    }
+    let active = true
+    setCommentsCount(null)
+    fetchCommentCount(projectId, { entityType: 'document', entityId: documentId })
+      .then((result) => { if (active) setCommentsCount(result.count) })
+      .catch(() => { if (active) setCommentsCount(null) })
+    return () => { active = false }
+  }, [documentId, projectId])
 
   const form = useDocumentForm({
     projectId,
@@ -41,7 +65,6 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
     onChanged,
   })
 
-  const isNew = !document
   const currentDoc = form.current ?? document
   const currentVersion = currentDoc?.currentVersion
   const validityStatus = resolveDocumentValidityStatus(currentDoc?.status, currentVersion?.expiryDate)
@@ -56,7 +79,14 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   useEffect(() => {
     const previouslyFocused = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !form.saving && !preview.previewOpenRef.current) onClose()
+      if (event.key !== 'Escape' || form.saving || preview.previewOpenRef.current) return
+      // COM-01: con el panel de comentarios abierto, Escape cierra solo esa
+      // capa (igual que el visor ampliado); un segundo Escape cierra el modal.
+      if (commentsOpen) {
+        setCommentsOpen(false)
+        return
+      }
+      onClose()
     }
     window.document.addEventListener('keydown', closeOnEscape)
     initialFocusRef.current?.focus()
@@ -64,7 +94,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
       window.document.removeEventListener('keydown', closeOnEscape)
       previouslyFocused?.focus()
     }
-  }, [onClose, form.saving, preview.previewOpenRef])
+  }, [onClose, form.saving, preview.previewOpenRef, commentsOpen])
 
   return (
     <div
@@ -87,10 +117,14 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
           validityStatus={validityStatus}
           readOnly={readOnly}
           saving={form.saving}
+          commentsOpen={commentsOpen}
+          commentsCount={commentsCount}
+          onToggleComments={() => setCommentsOpen((open) => !open)}
           onClose={onClose}
         />
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-0 flex-1 overflow-y-auto lg:overflow-hidden divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
+        <div className="min-h-0 flex-1 min-w-0 flex">
+          <div className="grid grid-cols-1 lg:grid-cols-12 min-h-0 flex-1 min-w-0 overflow-y-auto lg:overflow-hidden divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
           {/* Columna Izquierda: Formulario de metadatos + Historial de versiones (42% en desktop) */}
           <div className="lg:col-span-5 p-5 min-h-0 overflow-y-auto scrollbar-thin space-y-6">
             <DocumentFormFields
@@ -162,7 +196,37 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               />
             </div>
           </div>
+          </div>
+
+          {/* COM-01: panel de comentarios del documento. Solo se monta (y por
+              tanto solo carga la lista) al abrirlo. En desktop es una columna
+              lateral de 360 px que redistribuye el contenido; al cerrarla la
+              vista previa recupera su ancho completo. En móvil se convierte en
+              drawer lateral sobre el modal (z-[60], capa propia). */}
+          {!isNew && commentsOpen && (
+            <aside
+              aria-label="Comentarios del documento"
+              className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-[420px] sm:w-[400px] min-h-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-2xl lg:static lg:z-auto lg:w-[360px] lg:shrink-0 lg:shadow-none"
+            >
+              <EntityCommentsPanel
+                projectId={projectId}
+                entityType="document"
+                entityId={documentId}
+                readOnly={readOnly}
+                canComment={canComment}
+                count={commentsCount}
+                onClose={() => setCommentsOpen(false)}
+                onCountChange={(delta) => setCommentsCount((current) => (current === null ? null : Math.max(0, current + delta)))}
+                className="min-h-0 flex-1"
+              />
+            </aside>
+          )}
         </div>
+
+        {/* Backdrop solo móvil/tablet: en desktop el panel es una columna más. */}
+        {!isNew && commentsOpen && (
+          <div aria-hidden="true" onClick={() => setCommentsOpen(false)} className="fixed inset-0 z-[55] bg-slate-900/50 backdrop-blur-sm lg:hidden" />
+        )}
 
         {/* Footer del diálogo */}
         <div className="shrink-0 p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-900/80">

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { randomBytes } from 'node:crypto'
 import assetsRouter from './routes/assets'
 import documentsRouter from './routes/documents'
+import commentsRouter from './routes/comments'
 import locationsRouter from './routes/locations'
 import metaRouter from './routes/meta'
 import dynamicFieldsRouter from './routes/dynamicFields'
@@ -201,6 +202,7 @@ const configurationScope = projectScope('MANAGE_CONFIGURATION')
 for (const [path, router] of [
   ['/assets', assetsRouter],
   ['/documents', documentsRouter],
+  ['/comments', commentsRouter],
   ['/locations', locationsRouter],
   ['/floor-plans', floorPlansRouter],
   ['/calendar', calendarRouter],
