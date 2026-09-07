@@ -133,7 +133,10 @@ test.describe('Buscador Global y Búsqueda Diferida', () => {
 
     // Debe navegar a /history
     await expect(page).toHaveURL(/\/history/)
-    await expect(page.getByRole('heading', { name: 'Historial y auditoría' })).toBeVisible()
+    // La vista se verifica por su UI real (filtro de la tabla). El heading del
+    // breadcrumb del shell puede estar transicionando en CI y no es la
+    // superficie que el teclado debe garantizar.
+    await expect(page.getByRole('combobox', { name: 'Filtrar por tipo de acción' })).toBeVisible()
   })
 
   test('shows empty state when no matching results are found', async ({ page }) => {
