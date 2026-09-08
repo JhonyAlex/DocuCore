@@ -267,7 +267,9 @@ test.describe.serial('comments', () => {
     await docCommentsA.getByLabel('Nuevo comentario').fill('Borrador pendiente en documento A')
 
     // Cerrar doc A y abrir doc B: el panel de comentarios debe estar CERRADO y su borrador limpio.
-    await docDialogA.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await expect(docDialogA).toBeHidden()
     await page.getByText(docB, { exact: true }).click()
     const docDialogB = page.getByRole('dialog', { name: docB })
     // El panel de comentarios debe arrancar cerrado en el nuevo documento.
@@ -331,6 +333,67 @@ test.describe.serial('comments', () => {
     expect(assetMobileOverflow).toBe(false)
     const assetComments = assetModal.getByRole('region', { name: 'Comentarios' })
     await expect(assetComments).toBeVisible()
+
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('validates form and preview useful width before and after comments across all standard viewports', async ({ page, consoleIssues }) => {
+    const docName = `E2E Viewports Doc ${Date.now()}`
+    await createDocument(page, docName)
+
+    const viewports = [
+      { width: 1280, height: 800, expectedMode: 'drawer' },
+      { width: 1366, height: 768, expectedMode: 'drawer' },
+      { width: 1440, height: 900, expectedMode: 'inline' },
+      { width: 1536, height: 864, expectedMode: 'inline' },
+      { width: 1920, height: 1080, expectedMode: 'inline' },
+    ]
+
+    for (const vp of viewports) {
+      await page.setViewportSize({ width: vp.width, height: vp.height })
+      await page.goto('/docs')
+      await page.getByText(docName, { exact: true }).click()
+
+      const dialog = page.getByRole('dialog', { name: docName })
+      await expect(dialog).toBeVisible()
+
+      const formCol = dialog.locator('div.lg\\:col-span-5').first()
+      const previewCol = dialog.locator('div.lg\\:col-span-7').first()
+
+      const beforeForm = (await formCol.boundingBox())!.width
+      const beforePreview = (await previewCol.boundingBox())!.width
+
+      // Abrir comentarios
+      await dialog.getByRole('button', { name: 'Comentarios', exact: true }).click()
+      const commentsAside = dialog.getByRole('complementary', { name: 'Comentarios del documento' })
+      await expect(commentsAside).toBeVisible()
+
+      // Verificar modo (drawer vs inline 3ª columna)
+      const asidePosition = await commentsAside.evaluate((el) => window.getComputedStyle(el).position)
+      if (vp.expectedMode === 'drawer') {
+        expect(asidePosition).toBe('fixed')
+      } else {
+        expect(asidePosition).toBe('static')
+      }
+
+      // Medir ancho tras abrir comentarios
+      const afterForm = (await formCol.boundingBox())!.width
+      const afterPreview = (await previewCol.boundingBox())!.width
+
+      // En NINGÚN viewport se pierde ancho útil de forma apreciable (tolerancia estricta <= 10 px, < 1% de la columna)
+      expect(Math.abs(afterForm - beforeForm)).toBeLessThanOrEqual(10)
+      expect(Math.abs(afterPreview - beforePreview)).toBeLessThanOrEqual(10)
+
+      // Cero desbordamiento horizontal
+      const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
+      expect(hasOverflow).toBe(false)
+
+      // Cerrar comentarios (1er Escape) y cerrar diálogo (2º Escape)
+      await page.keyboard.press('Escape')
+      await expect(commentsAside).toBeHidden()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+    }
 
     expect(consoleIssues).toEqual([])
   })
