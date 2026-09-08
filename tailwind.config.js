@@ -22,6 +22,9 @@ export default {
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui'],
       },
+      screens: {
+        'modal-3col': '1440px',
+      },
     },
   },
   plugins: [],

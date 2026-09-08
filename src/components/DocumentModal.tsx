@@ -44,6 +44,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
   const [commentsCount, setCommentsCount] = useState<number | null>(null)
 
   useEffect(() => {
+    setCommentsOpen(false)
     if (documentId === 0) {
       setCommentsCount(null)
       return
@@ -107,7 +108,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         aria-modal="true"
         aria-labelledby="document-dialog-title"
         tabIndex={-1}
-        className="flex min-h-0 max-h-[92vh] w-full max-w-5xl 2xl:max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none"
+        className={`flex min-h-0 max-h-[92vh] w-full flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none ${
+          commentsOpen ? 'max-w-5xl modal-3col:max-w-[1400px] 2xl:max-w-[1520px]' : 'max-w-5xl 2xl:max-w-6xl'
+        }`}
       >
         <DocumentHeader
           isNew={isNew}
@@ -199,16 +202,19 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
           </div>
 
           {/* COM-01: panel de comentarios del documento. Solo se monta (y por
-              tanto solo carga la lista) al abrirlo. En desktop es una columna
-              lateral de 360 px que redistribuye el contenido; al cerrarla la
-              vista previa recupera su ancho completo. En móvil se convierte en
-              drawer lateral sobre el modal (z-[60], capa propia). */}
+              tanto solo carga la lista) al abrirlo. En escritorio amplio (modal-3col: >= 1440 px)
+              es una columna lateral de 360 px que acompaña a la expansión horizontal del modal,
+              preservando el 100% del ancho útil del formulario y vista previa sin comprimirlos;
+              al cerrarla el modal recupera su tamaño normal. En portátiles (1280x800, 1366x768),
+              tablets y móviles se convierte en drawer lateral flotante (z-[60], capa propia)
+              sobre el modal, garantizando que el formulario y la vista previa nunca pierdan ancho útil. */}
           {!isNew && commentsOpen && (
             <aside
               aria-label="Comentarios del documento"
-              className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-[420px] sm:w-[400px] min-h-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-2xl lg:static lg:z-auto lg:w-[360px] lg:shrink-0 lg:shadow-none"
+              className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-[420px] sm:w-[400px] min-h-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-2xl modal-3col:static modal-3col:z-auto modal-3col:w-[360px] modal-3col:shrink-0 modal-3col:shadow-none"
             >
               <EntityCommentsPanel
+                key={`document-${documentId}`}
                 projectId={projectId}
                 entityType="document"
                 entityId={documentId}
@@ -223,9 +229,9 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
           )}
         </div>
 
-        {/* Backdrop solo móvil/tablet: en desktop el panel es una columna más. */}
+        {/* Backdrop solo móvil/tablet/portátil compacto (< modal-3col): en desktop amplio el panel es una columna más tras la expansión. */}
         {!isNew && commentsOpen && (
-          <div aria-hidden="true" onClick={() => setCommentsOpen(false)} className="fixed inset-0 z-[55] bg-slate-900/50 backdrop-blur-sm lg:hidden" />
+          <div aria-hidden="true" onClick={() => setCommentsOpen(false)} className="fixed inset-0 z-[55] bg-slate-900/50 backdrop-blur-sm modal-3col:hidden" />
         )}
 
         {/* Footer del diálogo */}
