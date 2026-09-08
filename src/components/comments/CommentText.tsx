@@ -23,5 +23,5 @@ export default function CommentText({ body, id }: { body: string; id?: string })
       <span key={`${id ?? 'comment'}-${index}`}>{segment.value}</span>
     )
   ))
-  return <p className="whitespace-pre-wrap break-words text-sm text-slate-700 dark:text-slate-200">{content}</p>
+  return <p className="whitespace-pre-wrap break-words text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{content}</p>
 }

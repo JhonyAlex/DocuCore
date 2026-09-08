@@ -353,7 +353,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
             </div>
 
-            <aside className="w-full lg:w-[350px] shrink-0 min-h-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 p-5 pt-4 lg:pt-5">
+            <aside className="w-full lg:w-[280px] shrink-0 min-h-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 p-3.5 sm:p-4">
               {/* COM-01: se monta con el activo abierto y la pestaña Resumen visible. */}
               <EntityCommentsPanel
                 key={`asset-${asset.id}`}

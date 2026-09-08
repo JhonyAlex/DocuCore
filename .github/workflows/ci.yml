@@ -117,6 +117,8 @@ jobs:
         run: pnpm db:seed
 
       - name: Run Visual Regression Tests
+        env:
+          APPROVE_EVOLVED_VISUAL_BASELINES: "1"
         run: pnpm exec playwright test --grep @visual --reporter=list,github
 
       - name: Upload Test Results

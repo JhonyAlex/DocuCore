@@ -157,15 +157,15 @@ test.describe.serial('comments', () => {
     const commentsPanel = assetDialog.locator('aside')
     const commentsBox = await commentsPanel.boundingBox()
     expect(commentsBox).not.toBeNull()
-    // Ancho cómodo y estable a la derecha (~350 px).
-    expect(commentsBox!.width).toBeGreaterThanOrEqual(340)
-    expect(commentsBox!.width).toBeLessThanOrEqual(360)
+    // Ancho cómodo y compacto a la derecha (~280 px).
+    expect(commentsBox!.width).toBeGreaterThanOrEqual(270)
+    expect(commentsBox!.width).toBeLessThanOrEqual(290)
 
-    // La zona principal conserva el espacio original del activo (~670-700 px).
+    // La zona principal conserva y amplía el espacio del activo (~750 px).
     const mainSection = assetDialog.locator('div.min-h-0.flex-1.flex.flex-col.lg\\:flex-row > div:first-child')
     const mainBox = await mainSection.boundingBox()
     expect(mainBox).not.toBeNull()
-    expect(mainBox!.width).toBeGreaterThanOrEqual(660)
+    expect(mainBox!.width).toBeGreaterThanOrEqual(720)
 
     expect(consoleIssues).toEqual([])
   })
@@ -201,7 +201,7 @@ test.describe.serial('comments', () => {
     await expect.poll(async () => {
       const box = await manageDialog.boundingBox()
       return box?.width ?? 0
-    }).toBeGreaterThanOrEqual(1360)
+    }).toBeGreaterThanOrEqual(1280)
 
     // El ancho útil del formulario y de la vista previa se conserva prácticamente idéntico (delta < 20 px).
     await expect.poll(async () => {

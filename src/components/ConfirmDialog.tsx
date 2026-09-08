@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -16,6 +17,8 @@ interface ConfirmDialogProps {
 /**
  * Diálogo compartido para cualquier acción destructiva, de retirada o baja.
  * Captura Escape para cerrar solo esta capa cuando está sobre otro modal.
+ * Se monta en portal a `document.body` con z-[80] para garantizar visualización
+ * completa independientemente del stacking context o overflow de modales padres.
  */
 export default function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onCancel, error = null, variant = 'danger', busy = false, busyLabel = 'Procesando…' }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null)
@@ -43,8 +46,8 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, onCo
 
   const confirmClass = variant === 'danger' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-brand-600 hover:bg-brand-700 text-white'
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && !busy && onCancel()}>
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && !busy && onCancel()}>
       <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-busy={busy} className="flex min-h-0 max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
         <div className="shrink-0 p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <h3 id="confirm-dialog-title" className="font-semibold">{title}</h3>
@@ -59,6 +62,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, onCo
           <button ref={confirmRef} type="button" onClick={onConfirm} disabled={busy} className={`px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-40 ${confirmClass}`}>{busy ? busyLabel : confirmLabel}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

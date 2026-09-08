@@ -109,7 +109,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
         aria-labelledby="document-dialog-title"
         tabIndex={-1}
         className={`flex min-h-0 max-h-[92vh] w-full flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl focus:outline-none ${
-          commentsOpen ? 'max-w-5xl modal-3col:max-w-[1400px] 2xl:max-w-[1520px]' : 'max-w-5xl 2xl:max-w-6xl'
+          commentsOpen ? 'max-w-5xl modal-3col:max-w-[1320px] 2xl:max-w-[1440px]' : 'max-w-5xl 2xl:max-w-6xl'
         }`}
       >
         <DocumentHeader
@@ -211,7 +211,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
           {!isNew && commentsOpen && (
             <aside
               aria-label="Comentarios del documento"
-              className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-[420px] sm:w-[400px] min-h-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-2xl modal-3col:static modal-3col:z-auto modal-3col:w-[360px] modal-3col:shrink-0 modal-3col:shadow-none"
+              className="fixed inset-y-0 right-0 z-[60] flex w-full max-w-[320px] sm:w-[300px] min-h-0 flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 sm:p-4 shadow-2xl modal-3col:static modal-3col:z-auto modal-3col:w-[280px] modal-3col:shrink-0 modal-3col:shadow-none"
             >
               <EntityCommentsPanel
                 key={`document-${documentId}`}
