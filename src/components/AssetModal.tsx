@@ -244,7 +244,7 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`asset-dialog-title-${asset.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={`asset-dialog-title-${asset.id}`} tabIndex={-1} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl lg:max-w-[1040px] max-h-[90vh] overflow-hidden flex flex-col shadow-2xl focus:outline-none">
         <div className="shrink-0 p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-xs font-mono text-slate-500">{displayAsset.code}</div>
@@ -267,10 +267,11 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
 
         {activeTab === 0 && (
           // COM-01: la pestaña Resumen reparte el contenido en dos columnas en
-          // desktop (≈62 % información + ≈38 % comentarios con scroll propio);
-          // en tablet/móvil los comentarios se apilan debajo, sin columnas.
+          // desktop: la zona principal conserva el espacio original del activo
+          // y los comentarios ocupan un panel cómodo y estable de 350px.
+          // En tablet/móvil los comentarios se apilan debajo, sin columnas.
           <div className="min-h-0 flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-            <div className="w-full lg:w-[62%] lg:min-w-0 lg:overflow-y-auto scrollbar-thin p-5 border-t lg:border-t-0 lg:border-r border-slate-200 dark:border-slate-800">
+            <div className="w-full lg:flex-1 lg:min-w-0 lg:overflow-y-auto scrollbar-thin p-5 border-t lg:border-t-0 lg:border-r border-slate-200 dark:border-slate-800">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
               <div className="md:col-span-2 grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
@@ -352,9 +353,10 @@ export default function AssetModal({ asset, statuses, onClose, onEdit, onChangeS
             {documentDialog.error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{documentDialog.error}</p>}
             </div>
 
-            <aside className="w-full lg:w-[38%] min-h-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 p-5 pt-4 lg:pt-5">
+            <aside className="w-full lg:w-[350px] shrink-0 min-h-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 p-5 pt-4 lg:pt-5">
               {/* COM-01: se monta con el activo abierto y la pestaña Resumen visible. */}
               <EntityCommentsPanel
+                key={`asset-${asset.id}`}
                 projectId={asset.projectId}
                 entityType="asset"
                 entityId={asset.id}

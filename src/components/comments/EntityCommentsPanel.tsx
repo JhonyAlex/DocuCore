@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import type { ApiCommentEntityType } from '@/lib/api'
 import { SessionContext } from '@/contexts/SessionContext'
 import { responsibleColorMap } from '@/lib/assetMappers'
@@ -62,6 +62,12 @@ export default function EntityCommentsPanel({
   const canWrite = canComment && !readOnly
   const commentsApi = useEntityComments(projectId, entityType, entityId)
   const { comments, hasMore } = commentsApi
+
+  // Reiniciar el borrador al cambiar de entidad o proyecto para garantizar
+  // que un texto sin publicar nunca se arrastre a otra entidad.
+  useEffect(() => {
+    setDraft('')
+  }, [projectId, entityType, entityId])
 
   const submit = async () => {
     if (!trimmedDraft || commentsApi.creating) return
