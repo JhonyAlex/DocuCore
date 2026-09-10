@@ -54,6 +54,10 @@ export function useDocumentForm({
   const [locationLabel, setLocationLabel] = useState<string | null>(
     document?.location ? `${document.location.code} · ${document.location.label || document.location.name}` : null,
   )
+  // La fila de la lista llega sin ubicación fiable en algunas vías de apertura;
+  // cuando el detalle termina de cargar la sincronizamos salvo que el usuario
+  // ya haya elegido una en el formulario.
+  const locationTouchedRef = useRef(false)
   const [issueDate, setIssueDate] = useState(dateInput(document?.currentVersion?.issueDate) || new Date().toISOString().slice(0, 10))
   const [expiryDate, setExpiryDate] = useState(dateInput(document?.currentVersion?.expiryDate))
   const [periodicity, setPeriodicity] = useState<DocumentPeriodicity | null>(document?.periodicity ?? null)
@@ -98,12 +102,25 @@ export function useDocumentForm({
     if (!document) return
     let active = true
     fetchDocument(projectId, document.id)
-      .then((next) => active && setDetail(next))
+      .then((next) => {
+        if (!active) return
+        setDetail(next)
+        if (!locationTouchedRef.current) {
+          setLocationId(next.location?.id ?? null)
+          setLocationLabel(next.location ? `${next.location.code} · ${next.location.label || next.location.name}` : null)
+        }
+      })
       .catch(() => active && setError('No se pudo cargar el historial de versiones.'))
     return () => {
       active = false
     }
   }, [document, projectId])
+
+  const selectLocation = (option: SearchableOption | null) => {
+    locationTouchedRef.current = true
+    setLocationId(option ? Number(option.value) : null)
+    setLocationLabel(option?.label ?? null)
+  }
 
   useEffect(() => {
     if (!mountedRef.current) {
@@ -219,9 +236,8 @@ export function useDocumentForm({
     assets,
     setAssets,
     locationId,
-    setLocationId,
     locationLabel,
-    setLocationLabel,
+    selectLocation,
     issueDate,
     setIssueDate,
     expiryDate,

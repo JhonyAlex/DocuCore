@@ -144,10 +144,7 @@ export default function DocumentModal({ document, initialAssetIds = [], onClose,
               onSearchAssets={form.searchAssets}
               locationId={form.locationId}
               locationLabel={form.locationLabel}
-              onSelectLocation={(opt) => {
-                form.setLocationId(opt ? Number(opt.value) : null)
-                form.setLocationLabel(opt?.label ?? null)
-              }}
+              onSelectLocation={form.selectLocation}
               onSearchLocations={form.searchLocationOptions}
               issueDate={form.issueDate}
               setIssueDate={form.setIssueDate}

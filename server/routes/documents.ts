@@ -143,6 +143,7 @@ function serializeDocumentList(document: DocumentListRow) {
     periodicityMode: document.periodicityMode ?? null,
     assetCount: document._count.assets,
     assets: document.assets.map((link) => link.asset),
+    location: document.location ?? null,
     currentVersion: currentVersion ? {
       id: currentVersion.id,
       version: currentVersion.version,

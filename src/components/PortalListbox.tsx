@@ -4,6 +4,11 @@ import { createPortal } from 'react-dom'
 const GAP = 4
 const BOTTOM_PADDING = 8
 const MIN_MAX_HEIGHT = 96
+// Enfocar el campo puede disparar el scroll nativo de revelado del navegador
+// (alinea el input recién enfocado dentro de su contenedor con scroll). Ese
+// scroll llega justo después del focus de apertura y cerraría el listbox en el
+// mismo click; se ignora todo scroll durante los primeros ms tras abrir.
+const FOCUS_SCROLL_GRACE_MS = 150
 
 interface PortalListboxProps {
   anchorRef: React.RefObject<HTMLElement | null>
@@ -37,6 +42,7 @@ export default function PortalListbox({ anchorRef, onClose, children }: PortalLi
 
   useEffect(() => {
     if (!position) return
+    const openedAt = performance.now()
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node
       if (anchorRef.current?.contains(target) || listboxRef.current?.contains(target)) return
@@ -45,6 +51,7 @@ export default function PortalListbox({ anchorRef, onClose, children }: PortalLi
     const handleScroll = (event: Event) => {
       const target = event.target as Node | null
       if (target && listboxRef.current?.contains(target)) return
+      if (performance.now() - openedAt < FOCUS_SCROLL_GRACE_MS) return
       onClose()
     }
     document.addEventListener('pointerdown', handlePointerDown)

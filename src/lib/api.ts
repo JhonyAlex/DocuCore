@@ -1408,6 +1408,7 @@ function documentFormData(input: DocumentMetadataInput, files: File | File[]): F
   if (input.typeId !== undefined) body.set('typeId', String(input.typeId))
   body.set('projectId', String(input.projectId))
   if (input.assetIds && input.assetIds.length > 0) body.set('assetIds', JSON.stringify(input.assetIds))
+  if (input.locationId !== undefined && input.locationId !== null) body.set('locationId', String(input.locationId))
   body.set('issueDate', input.issueDate)
   if (input.expiryDate) body.set('expiryDate', input.expiryDate)
   if (input.periodicity) body.set('periodicity', input.periodicity)
