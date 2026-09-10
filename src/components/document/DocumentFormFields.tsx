@@ -153,6 +153,7 @@ export default function DocumentFormFields({
             type="date"
             value={issueDate}
             onChange={(e) => setIssueDate(e.target.value)}
+            required
             disabled={writeDisabled}
             className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50"
           />

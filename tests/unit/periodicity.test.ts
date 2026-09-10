@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { addDaysUtc, addMonthsClamped, calculateNextExpiry } from '../../server/lib/periodicity'
-import { addDaysUtc as clientAddDaysUtc, addMonthsClamped as clientAddMonthsClamped, calculateNextExpiry as clientCalculateNextExpiry } from '@/lib/periodicity'
+import {
+  addDaysUtc as clientAddDaysUtc,
+  addMonthsClamped as clientAddMonthsClamped,
+  calculateNextExpiry as clientCalculateNextExpiry,
+  calculateNextExpiryInput,
+  parseDateInput,
+} from '@/lib/periodicity'
 
 // DOC-03: el cálculo del próximo vencimiento vive duplicado en server y src con
 // la misma semántica (el servidor es la fuente autoritativa; el frontend
@@ -92,5 +98,22 @@ describe('frontend mirrors the server calculation', () => {
       expect(clientCalculateNextExpiry(args[0], args[1], args[2], args[3]).toISOString().slice(0, 10))
         .toBe(calculateNextExpiry(args[0], args[1], args[2], args[3]).toISOString().slice(0, 10))
     }
+  })
+})
+
+describe('frontend date input guards', () => {
+  it('rejects empty, incomplete and impossible date input values', () => {
+    expect(parseDateInput('')).toBeNull()
+    expect(parseDateInput('2026-09')).toBeNull()
+    expect(parseDateInput('2026-02-30')).toBeNull()
+  })
+
+  it('calculates only when the issue date input is valid', () => {
+    expect(calculateNextExpiryInput(null, '', 'Subida', 'Trimestral')).toBeNull()
+    expect(calculateNextExpiryInput(null, '2026-07-15', 'Subida', 'Trimestral')).toBe('2026-10-15')
+  })
+
+  it('falls back to the issue date when a previous expiry is invalid', () => {
+    expect(calculateNextExpiryInput('invalid', '2026-07-15', 'Calendario', 'Trimestral')).toBe('2026-10-15')
   })
 })

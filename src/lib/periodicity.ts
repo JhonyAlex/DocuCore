@@ -65,3 +65,26 @@ export function calculateNextExpiry(
   const days = PERIODICITY_DAYS[periodicity]
   return days ? addDaysUtc(base, days) : addMonthsClamped(base, PERIODICITY_MONTHS[periodicity])
 }
+
+export function parseDateInput(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return null
+  return date
+}
+
+// Los inputs type="date" pasan temporalmente por '' mientras el usuario borra
+// o sustituye su valor. Ese estado no debe llegar a Date#toISOString.
+export function calculateNextExpiryInput(
+  previousExpiry: string | null | undefined,
+  issueDateInput: string,
+  mode: DocumentPeriodicityMode,
+  periodicity: DocumentPeriodicity,
+): string | null {
+  const issueDate = parseDateInput(issueDateInput)
+  if (!issueDate) return null
+
+  const previousDate = previousExpiry ? new Date(previousExpiry) : null
+  const validPreviousDate = previousDate && !Number.isNaN(previousDate.getTime()) ? previousDate : null
+  return calculateNextExpiry(validPreviousDate, issueDate, mode, periodicity).toISOString().slice(0, 10)
+}

@@ -712,10 +712,16 @@ test.describe('DocuCore application', () => {
     await dialog.getByLabel('Tipo').selectOption({ label: 'Certificado' })
     await dialog.getByLabel('Emisión').fill('2026-07-15')
     await dialog.getByLabel('Periodicidad').selectOption({ label: 'Trimestral' })
+    const issueDateInput = dialog.getByLabel('Fecha de emisión', { exact: true })
+    const expiryDateInput = dialog.getByLabel('Vencimiento (opcional)')
+    await issueDateInput.fill('')
+    await expect(dialog).toBeVisible()
+    await expect(expiryDateInput).toHaveValue('')
+    await issueDateInput.fill('2026-07-15')
     // cf9caa1 fijó «Según subida» como modo por defecto; esta especificación
     // verifica el cálculo por vencimiento vigente, así que el modo se elige.
     await dialog.getByLabel('Modo').selectOption({ label: 'Según calendario (vencimiento anterior)' })
-    await expect(dialog.getByLabel('Vencimiento (opcional)')).toHaveValue('2026-10-15')
+    await expect(expiryDateInput).toHaveValue('2026-10-15')
     await expect(dialog.getByText('Automático: trimestral · según vencimiento vigente')).toBeVisible()
     await dialog.getByLabel('Fichero').setInputFiles({ name: 'periodicidad-v1.pdf', mimeType: 'application/pdf', buffer: minimalPdf() })
     const createResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/api/documents'))

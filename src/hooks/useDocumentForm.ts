@@ -14,14 +14,10 @@ import {
   type ApiDocumentType,
   type DocumentMetadataInput,
 } from '@/lib/api'
-import { calculateNextExpiry, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
+import { calculateNextExpiryInput, parseDateInput, type DocumentPeriodicity, type DocumentPeriodicityMode } from '@/lib/periodicity'
 
 function dateInput(value: string | null | undefined): string {
   return value ? value.slice(0, 10) : ''
-}
-
-function toUtcDateInput(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`)
 }
 
 interface UseDocumentFormOptions {
@@ -115,8 +111,7 @@ export function useDocumentForm({
       return
     }
     if (!periodicity || expiryTouched) return
-    const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
-    setExpiryDate(calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10))
+    setExpiryDate(calculateNextExpiryInput(currentExpiryRef.current, issueDate, periodicityMode, periodicity) ?? '')
   }, [periodicity, periodicityMode, issueDate, expiryTouched])
 
   const metadata = (): DocumentMetadataInput => ({
@@ -150,6 +145,8 @@ export function useDocumentForm({
     if (readOnly) return
     setError(null)
     const isNew = !document
+    if (!parseDateInput(issueDate)) return setError('Introduce una fecha de emisión válida.')
+    if (expiryDate && !parseDateInput(expiryDate)) return setError('Introduce una fecha de vencimiento válida.')
     if (isNew && files.length === 0) return setError('Selecciona al menos un fichero para subir el documento.')
     setSaving(true)
     try {
@@ -185,8 +182,12 @@ export function useDocumentForm({
     try {
       let nextExpiry = expiryDate
       if (periodicity && !expiryTouched) {
-        const previous = currentExpiryRef.current ? new Date(currentExpiryRef.current) : null
-        nextExpiry = calculateNextExpiry(previous, toUtcDateInput(issueDate), periodicityMode, periodicity).toISOString().slice(0, 10)
+        const calculatedExpiry = calculateNextExpiryInput(currentExpiryRef.current, issueDate, periodicityMode, periodicity)
+        if (!calculatedExpiry) {
+          setError('Introduce una fecha de emisión válida antes de subir una nueva versión.')
+          return
+        }
+        nextExpiry = calculatedExpiry
       }
       await createDocumentVersion(projectId, document.id, { issueDate, expiryDate: nextExpiry || undefined }, nextFiles)
       const next = await fetchDocument(projectId, document.id)
